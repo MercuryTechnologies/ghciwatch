@@ -50,7 +50,8 @@ pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 /// A `ghci` session.
 pub struct Ghci {
     /// A function which returns the command used to start this `ghci` session.
-    /// This needs to be a function because [`Command`] doesn't implement [`Clone`].
+    /// This needs to be an [`Arc`] because [`Command`] doesn't implement [`Clone`] and we need to
+    /// use this command to construct a new [`Ghci`] when we restart the `ghci` session.
     command: Arc<Mutex<Command>>,
     /// The running `ghci` process.
     process: Child,
