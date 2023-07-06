@@ -154,7 +154,7 @@ pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>
         }
 
         // Write existing file from Vim:    exists, renamed, created, modified
-        // Write existing file from VSCode: exists,          created, modified
+        // Write existing file from VSCode: exists,                   modified
         // Create a new file:               exists,          created, modified
         // `mv`:                            exists, renamed, created, modified
         // `rm -rf`:                        !exists,                            removed
