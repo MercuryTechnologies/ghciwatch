@@ -1,4 +1,4 @@
-//! [`textwrap`] helpers.
+//! Extensions and utilities for the [`textwrap`] crate.
 
 use std::borrow::Cow;
 
