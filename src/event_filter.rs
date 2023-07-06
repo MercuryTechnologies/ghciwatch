@@ -41,13 +41,13 @@ Events when I write an existing source file in vim:
 Events when I write an existing source file in VSCode:
 • FileEventKind(Modify(Metadata(Any))) "/Users/wiggles/mwb4/src/App.hs" file_type: Some(File)
 • FileEventKind(Modify(Data(Content))) "/Users/wiggles/mwb4/src/App.hs" file_type: Some(File)
-^ A `Modify(Data(Content))` and nothing else for that path.
+^ A `Modify(Data(Content))` and `Modify(Metadata(_))` and nothing else for that path.
 
 Events when I create a new file:
 • FileEventKind(Create(Folder)),        "/Users/wiggles/mwb4/src/Foo",             file_type: Some(Dir)
 • FileEventKind(Create(File)),          "/Users/wiggles/mwb4/src/Foo/MyModule.hs", file_type: Some(File)
 • FileEventKind(Modify(Data(Content))), "/Users/wiggles/mwb4/src/Foo/MyModule.hs", file_type: Some(File)
-^ There's a `Create(File)` event and nothing else for that path.
+^ There's a `Create(File)` and `Modify(Data(_))`and nothing else for that path.
 
 Events when I `rm -rf` a directory:
 • FileEventKind(Remove(File)),   "/Users/wiggles/mwb4/src/Foo/MyModule.hs", file_type: None
