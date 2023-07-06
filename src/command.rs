@@ -1,3 +1,5 @@
+//! Shell commands: parsing, formatting, signalling, and so on.
+
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;

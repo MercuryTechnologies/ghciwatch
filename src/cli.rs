@@ -34,10 +34,12 @@ pub struct Opts {
     #[arg(long)]
     pub test: Option<String>,
 
+    /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
 }
 
+/// Options for watching files.
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "File watching options")]
 pub struct WatchOpts {
@@ -59,9 +61,12 @@ pub struct WatchOpts {
 // TODO: Possibly set `RUST_LIB_BACKTRACE` from `RUST_BACKTRACE` as well, so that `full`
 // enables source snippets for spantraces?
 // https://docs.rs/color-eyre/latest/color_eyre/#multiple-report-format-verbosity-levels
+
+/// Options to modify logging and error-handling behavior.
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "Logging options")]
 pub struct LoggingOpts {
+    #[allow(rustdoc::bare_urls)]
     /// Tracing filter.
     ///
     /// Can be any of "error", "warn", "info", "debug", or

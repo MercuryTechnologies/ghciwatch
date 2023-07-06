@@ -1,3 +1,5 @@
+//! The [`IncrementalReader`] struct, which handles reading to delimiters without line buffering.
+
 use std::pin::Pin;
 
 use aho_corasick::AhoCorasick;
@@ -65,7 +67,7 @@ where
     /// Read from the contained reader until a line beginning with one of the `end_marker` patterns
     /// is seen, returning the lines until the marker is found.
     ///
-    /// This calls [`try_read_until`] in a loop.
+    /// This calls [`Self::try_read_until`] in a loop.
     ///
     /// TODO: Should this even use `aho_corasick`? Might be overkill, and with the automaton
     /// construction cost it might not even be more efficient.

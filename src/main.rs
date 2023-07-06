@@ -1,27 +1,17 @@
+//! `ghcid-ng` is a `ghci`-based file watcher and recompiler for Haskell projects, leveraging
+//! Haskell's interpreted mode for faster reloads.
+//!
+//! `ghcid-ng` watches your modules for changes and reloads them in a `ghci` session, displaying
+//! any errors.
+
 use clap::Parser;
+use ghcid_ng::cli;
+use ghcid_ng::command;
+use ghcid_ng::ghci::Ghci;
+use ghcid_ng::tracing;
+use ghcid_ng::watcher::Watcher;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
-
-mod aho_corasick;
-mod buffers;
-mod clap_camino;
-mod cli;
-mod command;
-mod event_filter;
-mod ghci;
-mod haskell_show;
-mod incremental_reader;
-mod lines;
-mod sync_sentinel;
-mod textwrap;
-mod tracing;
-mod watcher;
-
-#[cfg(test)]
-mod fake_reader;
-
-use ghci::Ghci;
-use watcher::Watcher;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {

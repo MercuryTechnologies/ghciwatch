@@ -5,6 +5,13 @@ edition = "2021"
 authors = [
     "Rebecca Turner <rebeccat@mercury.com>"
 ]
+description = "ghci-based file watcher and recompiler for Haskell projects"
+readme = "README.md"
+homepage = "https://github.com/MercuryTechnologies/ghcid-ng"
+repository = "https://github.com/MercuryTechnologies/ghcid-ng"
+license = "MIT"
+keywords = ["haskell", "ghci", "watchexec"]
+categories = ["command-line-utilities", "development-tools"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,3 +39,6 @@ watchexec-signals = "1.0.0"
 expect-test = "1.4.0"
 indoc = "1.0.6"
 pretty_assertions = "1.2.1"
+
+[lib]
+path = "src/lib.rs"

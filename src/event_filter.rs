@@ -1,3 +1,5 @@
+//! Parsing [`watchexec::event::Event`]s into changes `ghcid-ng` can respond to.
+
 use std::collections::HashMap;
 
 use camino::Utf8PathBuf;

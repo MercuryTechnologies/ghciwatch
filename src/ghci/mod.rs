@@ -1,3 +1,5 @@
+//! The core [`Ghci`] session struct.
+
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::process::Stdio;
@@ -36,7 +38,13 @@ use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
 use crate::sync_sentinel::SyncSentinel;
 
+/// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
+/// private-use-area codepoints or something in the future.
 pub const PROMPT: &str = "###~GHCID-NG-PROMPT~###";
+
+/// The name we import `System.IO` as in `ghci`. This is used to run a few `putStrLn` commands and
+/// similar without messing with the user's namespace. If you have a module in your project named
+/// `GHCID_NG_IO_INTERNAL__` that's on you.
 pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 
 /// A `ghci` session.

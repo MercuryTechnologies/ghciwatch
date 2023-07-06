@@ -35,7 +35,7 @@ pub trait TextWrapOptionsExt {
 
     /// Wrap the given text into lines and return a `String`.
     ///
-    /// Like [`wrap`] but with the lines pre-joined.
+    /// Like [`Self::wrap`] but with the lines pre-joined.
     fn fill(&self, text: &str) -> String;
 }
 

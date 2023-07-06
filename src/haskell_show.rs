@@ -1,8 +1,11 @@
+//! The [`HaskellShow`] trait, which describes printing objects in a form that `ghci` can
+//! understand.
+
 /// A mechanism for printing objects in a form that `ghci` can understand.
 ///
 /// In particular, we print strings in the list-of-characters format (`['a', 'b', 'c']`) to avoid
 /// issues with the `RebindableSyntax` language extension. See:
-/// https://github.com/ndmitchell/ghcid/issues/109
+/// <https://github.com/ndmitchell/ghcid/issues/109>
 pub trait HaskellShow {
     /// Print this object in a form suitable for evaluation in `ghci`.
     fn haskell_show(&self) -> String;

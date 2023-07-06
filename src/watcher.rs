@@ -1,3 +1,5 @@
+//! A [`Watcher`], which waits for file changes and sends reload events to the `ghci` session.
+
 use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,13 +23,19 @@ use watchexec_signals::Signal;
 use crate::event_filter::file_events_from_action;
 use crate::ghci::Ghci;
 
+/// A [`watchexec`] watcher which waits for file changes and sends reload events to the contained
+/// `ghci` session.
 pub struct Watcher {
+    /// The inner `Watchexec` struct.
     inner: Arc<Watchexec>,
+    /// A handle to wait on the file watcher task.
     pub handle: JoinHandle<Result<(), watchexec::error::CriticalError>>,
+    /// The runtime configuration for the watcher to use.
     config: RuntimeConfig,
 }
 
 impl Watcher {
+    /// Create a new [`Watcher`] from a [`Ghci`] session.
     pub fn new(ghci: Arc<Mutex<Ghci>>, watch: &[Utf8PathBuf]) -> miette::Result<Self> {
         let mut init_config = InitConfig::default();
         init_config.on_error(PrintDebug(std::io::stderr()));

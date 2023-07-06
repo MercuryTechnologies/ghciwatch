@@ -1,3 +1,5 @@
+//! [`SyncSentinel`], a unique token that can be identified in `ghci` output.
+
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
