@@ -4,6 +4,8 @@
 //! `ghcid-ng` watches your modules for changes and reloads them in a `ghci` session, displaying
 //! any errors.
 
+use std::sync::Arc;
+
 use clap::Parser;
 use ghcid_ng::cli;
 use ghcid_ng::command;
@@ -12,6 +14,7 @@ use ghcid_ng::tracing;
 use ghcid_ng::watcher::Watcher;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
@@ -24,10 +27,10 @@ async fn main() -> miette::Result<()> {
 
     // TODO: implement fancier default command
     // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
-    let ghci_command = || {
+    let ghci_command = Arc::new(Mutex::new(
         cli::with_opts(|opts| command::from_string(opts.command.as_deref().unwrap_or("ghci")))
-            .wrap_err("Failed to split `--command` value into arguments")
-    };
+            .wrap_err("Failed to split `--command` value into arguments")?,
+    ));
 
     let ghci = Ghci::new(ghci_command).await?;
     let watcher = cli::with_opts(|opts| Watcher::new(ghci, &opts.watch))?;

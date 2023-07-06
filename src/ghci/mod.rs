@@ -51,7 +51,7 @@ pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 pub struct Ghci {
     /// A function which returns the command used to start this `ghci` session.
     /// This needs to be a function because [`Command`] doesn't implement [`Clone`].
-    command: Box<dyn Fn() -> miette::Result<Command> + Send + Sync>,
+    command: Arc<Mutex<Command>>,
     /// The running `ghci` process.
     process: Child,
     /// The handle for the stdout reader task.
@@ -83,21 +83,20 @@ impl Ghci {
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(
-        command_fn: impl Fn() -> miette::Result<Command> + Send + Sync + 'static,
-    ) -> miette::Result<Arc<Mutex<Self>>> {
-        let mut command = command_fn()?;
+    pub async fn new(command_arc: Arc<Mutex<Command>>) -> miette::Result<Arc<Mutex<Self>>> {
+        let mut child = {
+            let mut command = command_arc.lock().await;
 
-        command
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true);
+            command
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdout(Stdio::piped())
+                .kill_on_drop(true);
 
-        let mut child = command
-            .spawn()
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to start `{}`", crate::command::format(&command)))?;
+            command.spawn().into_diagnostic().wrap_err_with(|| {
+                format!("Failed to start `{}`", crate::command::format(&command))
+            })?
+        };
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -115,7 +114,7 @@ impl Ghci {
         let stdin_handle = task::spawn(async { Ok(()) });
 
         let ret = Arc::new(Mutex::new(Ghci {
-            command: Box::new(command_fn),
+            command: command_arc,
             process: child,
             stdout: stdout_handle,
             stderr: stderr_handle,
@@ -235,8 +234,10 @@ impl Ghci {
                 format_bulleted_list(&needs_restart)
             );
             // TODO: Probably also need a restart hook / `.cabal` hook / similar.
-            this.lock().await.stop().await?;
-            return Self::new(Self::into_command(this)).await;
+            let mut guard = this.lock().await;
+            guard.stop().await?;
+            let command = guard.command.clone();
+            return Self::new(command).await;
         }
 
         if !add.is_empty() {
@@ -327,17 +328,6 @@ impl Ghci {
         self.process.kill().await.into_diagnostic()?;
 
         Ok(())
-    }
-
-    /// Consume this `ghci` session, returning the [`Command`]-generation function.
-    fn into_command(
-        this: Arc<Mutex<Self>>,
-    ) -> Box<dyn Fn() -> miette::Result<Command> + Send + Sync + 'static> {
-        // TODO: Use `into_inner` here once nixpkgs is on Rust 1.70.
-        Arc::try_unwrap(this)
-            .expect("ghci `Arc` should only have one reference when `into_command` is called")
-            .into_inner()
-            .command
     }
 }
 

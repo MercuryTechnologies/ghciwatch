@@ -40,7 +40,7 @@ impl Watcher {
         let mut init_config = InitConfig::default();
         init_config.on_error(PrintDebug(std::io::stderr()));
 
-        let action_handler = ActionHandler { ghci: Some(ghci) };
+        let action_handler = ActionHandler { ghci };
 
         let mut runtime_config = RuntimeConfig::default();
         runtime_config
@@ -62,7 +62,7 @@ impl Watcher {
 
 #[derive(Clone)]
 struct ActionHandler {
-    ghci: Option<Arc<Mutex<Ghci>>>,
+    ghci: Arc<Mutex<Ghci>>,
 }
 
 impl ActionHandler {
@@ -84,17 +84,7 @@ impl ActionHandler {
 
         let events = file_events_from_action(&action)?;
         if !events.is_empty() {
-            // We have to be sure that this is the only strong reference to the `Arc<Mutex<Ghci>>`
-            // here, or this will panic. Sorry!
-            self.ghci = Some(
-                Ghci::reload(
-                    self.ghci
-                        .take()
-                        .expect("ghci should be present in ActionHandler"),
-                    events,
-                )
-                .await?,
-            );
+            self.ghci = Ghci::reload(self.ghci.clone(), events).await?;
         }
 
         Ok(())
