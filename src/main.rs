@@ -28,8 +28,10 @@ async fn main() -> miette::Result<()> {
     // TODO: implement fancier default command
     // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
     let ghci_command = Arc::new(Mutex::new(
-        cli::with_opts(|opts| command::from_string(opts.command.as_deref().unwrap_or("ghci")))
-            .wrap_err("Failed to split `--command` value into arguments")?,
+        cli::with_opts(|opts| {
+            command::from_string(opts.command.as_deref().unwrap_or("cabal repl"))
+        })
+        .wrap_err("Failed to split `--command` value into arguments")?,
     ));
 
     let ghci = Ghci::new(ghci_command).await?;
