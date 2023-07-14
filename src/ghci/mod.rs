@@ -220,7 +220,7 @@ impl Ghci {
                             tracing::debug!(?path, "Needs reload");
                             needs_reload.push(path);
                         } else {
-                            // Otherwise we need to `:add` the new paths.
+                            // Otherwise we need to `:load` the new paths.
                             tracing::debug!(?path, "Needs add");
                             add.push(path);
                         }
@@ -301,7 +301,7 @@ impl Ghci {
         Ok(())
     }
 
-    /// `:add` a module to the `ghci` session by path.
+    /// `:load` a module to the `ghci` session by path.
     #[instrument(skip(self), level = "debug")]
     pub async fn add_module(&mut self, path: Utf8PathBuf) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();

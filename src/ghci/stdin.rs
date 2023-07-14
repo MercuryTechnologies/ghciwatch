@@ -25,7 +25,7 @@ pub enum StdinEvent {
     Initialize(oneshot::Sender<()>),
     /// Reload the `ghci` session with `:reload`.
     Reload(oneshot::Sender<()>),
-    /// Add a module to the `ghci` session by path with `:add`.
+    /// Add a module to the `ghci` session by path with `:load`.
     AddModule(Utf8PathBuf, oneshot::Sender<()>),
     /// Sync the `ghci` session's input/output.
     Sync(SyncSentinel),
@@ -134,7 +134,8 @@ impl GhciStdin {
         path: Utf8PathBuf,
         sender: oneshot::Sender<()>,
     ) -> miette::Result<()> {
-        self.write_line_sender(&format!(":add {path}\n"), sender)
+        // We use `:load` here instead of `:add` because `:add` forces interpreted mode.
+        self.write_line_sender(&format!(":load {path}\n"), sender)
             .await?;
         Ok(())
     }
