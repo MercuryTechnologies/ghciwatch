@@ -38,8 +38,12 @@ impl TypedValueParser for DurationValueParser {
                     code: None,
                     severity: None,
                     help: match &err {
-                        DurationError::InvalidCharacter(_) => {
-                            Some("Non-alphanumeric characters are prohibited".to_owned())
+                        DurationError::InvalidCharacter(index) => {
+                            if &str_value[*index..*index + 1] == "." {
+                                Some("Decimals are not supported".to_owned())
+                            } else {
+                                Some("Non-alphanumeric characters are prohibited".to_owned())
+                            }
                         }
                         DurationError::NumberExpected(_) => {
                             Some("Did you split a unit into multiple words?".to_owned())
