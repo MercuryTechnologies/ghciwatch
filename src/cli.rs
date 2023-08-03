@@ -1,19 +1,9 @@
 //! Command-line argument parser and argument access.
-//!
-//! To access arguments at any point in the program, use [`with_opts`] or [`with_opts_mut`].
-
-use std::sync::Mutex;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
-use once_cell::sync::OnceCell;
 
 use crate::clap::RustBacktrace;
-
-/// The current command-line options.
-///
-/// Access these options with [`with_opts`] and [`with_opts_mut`].
-static OPTS: Mutex<OnceCell<Opts>> = Mutex::new(OnceCell::new());
 
 /// A `ghci`-based file watcher and Haskell recompiler.
 #[derive(Debug, Clone, Parser)]
@@ -86,11 +76,9 @@ pub struct LoggingOpts {
 }
 
 impl Opts {
-    /// Move these options into the global scope. Then, the options can be accessed by using
-    /// [`with_opts`] or [`with_opts_mut`].
-    ///
-    /// Also sets environment variables according to the arguments.
-    pub fn set_opts(mut self) {
+    /// Perform late initialization of the command-line arguments. If `init` isn't called before
+    /// the arguments are used, the behavior is undefined.
+    pub fn init(&mut self) {
         if self.watch.is_empty() {
             self.watch.push("src".into());
         }
@@ -98,36 +86,5 @@ impl Opts {
         // These help our libraries (particularly `color-eyre`) see these options.
         // The options are provided mostly for documentation.
         std::env::set_var("RUST_BACKTRACE", self.logging.backtrace.to_string());
-
-        OPTS.lock()
-            .expect("Command-line arguments mutex is poisoned")
-            .set(self)
-            .expect("Failed to set command-line arguments");
-    }
-}
-
-/// Execute a function with the current command-line options as context.
-///
-/// This is like an algebraic effect :)
-pub fn with_opts<T>(f: impl FnOnce(&Opts) -> T) -> T {
-    match OPTS
-        .lock()
-        .expect("Command-line arguments mutex is poisoned")
-        .get()
-    {
-        Some(opts) => f(opts),
-        None => panic!("Command-line arguments should be set"),
-    }
-}
-
-/// Execute a mutable function with the current command-line options as context.
-pub fn with_opts_mut<T>(f: impl FnOnce(&mut Opts) -> T) -> T {
-    match OPTS
-        .lock()
-        .expect("Command-line arguments mutex is poisoned")
-        .get_mut()
-    {
-        Some(opts) => f(opts),
-        None => panic!("Command-line arguments should be set"),
     }
 }
