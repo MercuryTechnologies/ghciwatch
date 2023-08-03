@@ -81,10 +81,6 @@ pub struct LoggingOpts {
     /// backtraces, and 'full' to display source snippets.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
     pub backtrace: String,
-
-    /// Set to '1' to enable spantraces in error messages.
-    #[arg(long, env = "RUST_SPANTRACE", default_value = "0")]
-    pub spantrace: String,
 }
 
 impl Opts {
@@ -100,7 +96,6 @@ impl Opts {
         // These help our libraries (particularly `color-eyre`) see these options.
         // The options are provided mostly for documentation.
         std::env::set_var("RUST_BACKTRACE", &self.logging.backtrace);
-        std::env::set_var("RUST_SPANTRACE", &self.logging.spantrace);
 
         OPTS.lock()
             .expect("Command-line arguments mutex is poisoned")
