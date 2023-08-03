@@ -13,7 +13,7 @@
 
 pub mod aho_corasick;
 pub mod buffers;
-pub mod clap_camino;
+pub mod clap;
 pub mod cli;
 pub mod command;
 pub mod event_filter;

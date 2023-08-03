@@ -8,6 +8,8 @@ use camino::Utf8PathBuf;
 use clap::Parser;
 use once_cell::sync::OnceCell;
 
+use crate::clap::RustBacktrace;
+
 /// The current command-line options.
 ///
 /// Access these options with [`with_opts`] and [`with_opts_mut`].
@@ -80,7 +82,7 @@ pub struct LoggingOpts {
     /// How to display backtraces in error messages. '0' for no backtraces, '1' for standard
     /// backtraces, and 'full' to display source snippets.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
-    pub backtrace: String,
+    pub backtrace: RustBacktrace,
 }
 
 impl Opts {
@@ -95,7 +97,7 @@ impl Opts {
 
         // These help our libraries (particularly `color-eyre`) see these options.
         // The options are provided mostly for documentation.
-        std::env::set_var("RUST_BACKTRACE", &self.logging.backtrace);
+        std::env::set_var("RUST_BACKTRACE", self.logging.backtrace.to_string());
 
         OPTS.lock()
             .expect("Command-line arguments mutex is poisoned")
