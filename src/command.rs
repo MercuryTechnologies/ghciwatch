@@ -28,11 +28,11 @@ pub fn from_string(shell_command: &str) -> miette::Result<Command> {
         .into_diagnostic()
         .wrap_err_with(|| format!("Failed to split shell command: {shell_command:?}"))?;
 
-    match tokens.len() {
-        0 => Err(miette!("Command has no program: {shell_command:?}")),
-        1 => Ok(Command::new(&tokens[0])),
-        _ => Ok(Command::new(&tokens[0]).tap_mut(|cmd| {
-            cmd.args(tokens.into_iter().skip(1));
+    match &*tokens {
+        [] => Err(miette!("Command has no program: {shell_command:?}")),
+        [program] => Ok(Command::new(program)),
+        [program, args @ ..] => Ok(Command::new(program).tap_mut(|cmd| {
+            cmd.args(args);
         })),
     }
 }
