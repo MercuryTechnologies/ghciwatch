@@ -39,7 +39,7 @@ pub fn from_string(shell_command: &str) -> miette::Result<Command> {
 
 /// Send a signal to a child process.
 pub fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
-    Ok(signal::kill(
+    signal::kill(
         Pid::from_raw(
             child
                 .id()
@@ -50,7 +50,7 @@ pub fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
         ),
         signal,
     )
-    .into_diagnostic()?)
+    .into_diagnostic()
 }
 
 /// Partially-applied form of [`send_signal`].
