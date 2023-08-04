@@ -64,7 +64,10 @@
             ];
 
             # Native libs
-            buildInputs = [];
+            buildInputs =
+              final.lib.optionals
+              final.stdenv.isDarwin
+              [final.darwin.apple_sdk.frameworks.CoreServices];
 
             postCheck = ''
               cargo fmt --check && echo "\`cargo fmt\` is OK"
