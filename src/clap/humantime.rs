@@ -5,10 +5,14 @@ use std::time::Duration;
 use clap::builder::StringValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
+use clap::error::ContextKind;
+use clap::error::ContextValue;
 use humantime::DurationError;
 use miette::LabeledSpan;
 use miette::MietteDiagnostic;
 use miette::Report;
+
+use super::value_validation_error;
 
 /// Adapter for parsing [`Duration`] with a [`clap::builder::Arg::value_parser`].
 #[derive(Default, Clone)]
@@ -73,12 +77,8 @@ impl TypedValueParser for DurationValueParser {
                         DurationError::Empty => None,
                     },
                 })
-                .with_source_code(str_value);
-                clap::Error::raw(
-                    clap::error::ErrorKind::ValueValidation,
-                    format!("{diagnostic:?}"),
-                )
-                .with_cmd(cmd)
+                .with_source_code(str_value.clone());
+                value_validation_error(arg, &str_value, format!("{diagnostic:?}"))
             })
         })
     }
