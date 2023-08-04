@@ -28,7 +28,6 @@ use stdin::StdinEvent;
 
 mod stdout;
 use stdout::GhciStdout;
-use stdout::StdoutEvent;
 
 mod show_modules;
 use show_modules::ModuleSet;
@@ -63,8 +62,6 @@ pub struct Ghci {
     stdin: JoinHandle<miette::Result<()>>,
     /// A channel for sending events to interact with the stdin task.
     stdin_channel: mpsc::Sender<StdinEvent>,
-    /// A channel for sending events to interact with the stdout task.
-    stdout_channel: mpsc::Sender<StdoutEvent>,
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
     sync_count: AtomicUsize,
@@ -121,7 +118,6 @@ impl Ghci {
             stderr: stderr_handle,
             stdin: stdin_handle,
             stdin_channel: stdin_sender.clone(),
-            stdout_channel: stdout_sender.clone(),
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
         }));
