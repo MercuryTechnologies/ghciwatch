@@ -45,8 +45,6 @@ path = "src/lib.rs"
 
 # See: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
 [package.metadata.release]
-# After releasing a new version, don't bump the version to a pre-release.
-dev-version = false
 # Don't tag commits
 tag = false
 # Don't do `git push`
