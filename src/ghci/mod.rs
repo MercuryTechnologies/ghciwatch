@@ -13,7 +13,6 @@ use miette::WrapErr;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Child;
-use tokio::process::ChildStderr;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -28,6 +27,9 @@ use stdin::StdinEvent;
 
 mod stdout;
 use stdout::GhciStdout;
+
+mod stderr;
+use stderr::GhciStderr;
 
 mod show_modules;
 use show_modules::ModuleSet;
@@ -67,6 +69,8 @@ pub struct Ghci {
     sync_count: AtomicUsize,
     /// The currently-loaded modules in this `ghci` session.
     modules: ModuleSet,
+    /// Path to write errors to, if any. Like `ghcid.txt`.
+    error_path: Option<Utf8PathBuf>,
 }
 
 impl Debug for Ghci {
@@ -81,7 +85,10 @@ impl Ghci {
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(command_arc: Arc<Mutex<Command>>) -> miette::Result<Arc<Mutex<Self>>> {
+    pub async fn new(
+        command_arc: Arc<Mutex<Command>>,
+        error_path: Option<Utf8PathBuf>,
+    ) -> miette::Result<Arc<Mutex<Self>>> {
         let mut child = {
             let mut command = command_arc.lock().await;
 
@@ -98,11 +105,12 @@ impl Ghci {
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let stderr = BufReader::new(child.stderr.take().unwrap());
+        let stderr = child.stderr.take().unwrap();
 
         // TODO: Is this a good capacity? Maybe it should just be 1.
         let (stdin_sender, stdin_receiver) = mpsc::channel(8);
         let (stdout_sender, stdout_receiver) = mpsc::channel(8);
+        let (stderr_sender, stderr_receiver) = mpsc::channel(8);
 
         // So we want to put references to the `Ghci` struct we return in our tasks, but we don't
         // have that struct yet. So we create some trivial tasks to construct a valid `Ghci`, and
@@ -120,6 +128,7 @@ impl Ghci {
             stdin_channel: stdin_sender.clone(),
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
+            error_path: error_path.clone(),
         }));
 
         let (init_sender, init_receiver) = oneshot::channel::<()>();
@@ -130,12 +139,22 @@ impl Ghci {
                 ghci: Arc::downgrade(&ret),
                 reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
                 stdin_sender: stdin_sender.clone(),
+                stderr_sender,
                 receiver: stdout_receiver,
                 buffer: vec![0; LINE_BUFFER_CAPACITY],
             }
             .run(init_sender),
         );
-        let stderr = task::spawn(stderr_task(stderr));
+        let stderr = task::spawn(
+            GhciStderr {
+                ghci: Arc::downgrade(&ret),
+                reader: BufReader::new(stderr).lines(),
+                receiver: stderr_receiver,
+                buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
+                error_path,
+            }
+            .run(),
+        );
         let stdin = task::spawn(
             GhciStdin {
                 ghci: Arc::downgrade(&ret),
@@ -157,7 +176,10 @@ impl Ghci {
         // Wait for the stdout job to start up.
         init_receiver.await.into_diagnostic()?;
 
-        let (initialize_event, init_receiver) = StdinEvent::initialize();
+        let (initialize_event, init_receiver) = {
+            let (sender, receiver) = oneshot::channel();
+            (StdinEvent::Initialize(sender), receiver)
+        };
 
         // Perform start-of-session initialization.
         stdin_sender
@@ -234,7 +256,7 @@ impl Ghci {
             let mut guard = this.lock().await;
             guard.stop().await?;
             let command = guard.command.clone();
-            return Self::new(command).await;
+            return Self::new(command, guard.error_path.clone()).await;
         }
 
         if !add.is_empty() {
@@ -326,16 +348,6 @@ impl Ghci {
 
         Ok(())
     }
-}
-
-#[instrument(skip_all, level = "debug")]
-async fn stderr_task(stderr: BufReader<ChildStderr>) -> miette::Result<()> {
-    let mut lines = stderr.lines();
-    while let Some(line) = lines.next_line().await.into_diagnostic()? {
-        tracing::info!("[ghci stderr] {line}");
-    }
-
-    Ok(())
 }
 
 fn format_bulleted_list(items: &[impl Display]) -> String {

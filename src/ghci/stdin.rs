@@ -33,14 +33,6 @@ pub enum StdinEvent {
     ShowModules(oneshot::Sender<ModuleSet>),
 }
 
-impl StdinEvent {
-    /// Construct an initialize event and the corresponding receiver.
-    pub fn initialize() -> (Self, oneshot::Receiver<()>) {
-        let (sender, receiver) = oneshot::channel();
-        (Self::Initialize(sender), receiver)
-    }
-}
-
 pub struct GhciStdin {
     pub ghci: Weak<Mutex<Ghci>>,
     pub stdin: ChildStdin,

@@ -15,6 +15,7 @@ use crate::incremental_reader::WriteBehavior;
 use crate::sync_sentinel::SyncSentinel;
 
 use super::show_modules::ModuleSet;
+use super::stderr::StderrEvent;
 use super::stdin::StdinEvent;
 use super::Ghci;
 
@@ -33,6 +34,7 @@ pub struct GhciStdout {
     pub ghci: Weak<Mutex<Ghci>>,
     pub reader: IncrementalReader<ChildStdout, Stdout>,
     pub stdin_sender: mpsc::Sender<StdinEvent>,
+    pub stderr_sender: mpsc::Sender<StderrEvent>,
     pub receiver: mpsc::Receiver<StdoutEvent>,
     pub buffer: Vec<u8>,
 }
@@ -102,7 +104,8 @@ impl GhciStdout {
             )
             .await?;
         tracing::debug!(?lines, "Got data from ghci");
-        let _ = sender.send(());
+        // Tell the stderr stream to write the error log and then finish.
+        let _ = self.stderr_sender.send(StderrEvent::Write(sender)).await;
         Ok(())
     }
 
@@ -124,6 +127,15 @@ impl GhciStdout {
             .read_until(prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
         tracing::debug!(?lines, "Got data from ghci");
+
+        // Tell the stderr stream to write the error log and then finish.
+        let (err_sender, err_receiver) = oneshot::channel();
+        let _ = self
+            .stderr_sender
+            .send(StderrEvent::Write(err_sender))
+            .await;
+        let _ = err_receiver.await;
+
         sentinel.finish();
         Ok(())
     }

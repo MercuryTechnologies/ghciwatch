@@ -5,8 +5,6 @@ use std::time::Duration;
 use clap::builder::StringValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
-use clap::error::ContextKind;
-use clap::error::ContextValue;
 use humantime::DurationError;
 use miette::LabeledSpan;
 use miette::MietteDiagnostic;

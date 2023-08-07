@@ -24,7 +24,8 @@ impl TypedValueParser for Utf8PathBufValueParser {
                 clap::Error::raw(
                     clap::error::ErrorKind::InvalidUtf8,
                     format!("Path isn't UTF-8: {path_buf:?}"),
-                ).with_cmd(cmd)
+                )
+                .with_cmd(cmd)
             })
         })
     }

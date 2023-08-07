@@ -33,7 +33,7 @@ async fn main() -> miette::Result<()> {
             .wrap_err("Failed to split `--command` value into arguments")?,
     ));
 
-    let ghci = Ghci::new(ghci_command).await?;
+    let ghci = Ghci::new(ghci_command, opts.errors.clone()).await?;
     let watcher = Watcher::new(
         ghci,
         &opts.watch.paths,
