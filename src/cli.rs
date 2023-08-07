@@ -24,6 +24,10 @@ pub struct Opts {
     #[arg(long)]
     pub test: Option<String>,
 
+    /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
+    #[arg(long)]
+    pub errors: Option<Utf8PathBuf>,
+
     /// Options to modify file watching.
     #[command(flatten)]
     pub watch: WatchOpts,
@@ -80,8 +84,7 @@ pub struct LoggingOpts {
     #[arg(long, default_value = "ghcid_ng=info")]
     pub tracing_filter: String,
 
-    /// How to display backtraces in error messages. '0' for no backtraces, '1' for standard
-    /// backtraces, and 'full' to display source snippets.
+    /// How to display backtraces in error messages.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
     pub backtrace: RustBacktrace,
 }
