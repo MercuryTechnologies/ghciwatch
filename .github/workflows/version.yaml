@@ -31,7 +31,7 @@ jobs:
     steps:
       - run: |
           echo "This is a canonical hack to run GitHub Actions on merged PRs"
-          echo "See: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-your-workflow-when-a-pull-request-merges"
+          echo "See: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-your-pull_request-workflow-when-a-pull-request-merges"
 
   bump_type:
     name: Determine version bump type
