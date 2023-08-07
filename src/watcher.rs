@@ -26,12 +26,8 @@ use crate::ghci::Ghci;
 /// A [`watchexec`] watcher which waits for file changes and sends reload events to the contained
 /// `ghci` session.
 pub struct Watcher {
-    /// The inner `Watchexec` struct.
-    inner: Arc<Watchexec>,
     /// A handle to wait on the file watcher task.
     pub handle: JoinHandle<Result<(), watchexec::error::CriticalError>>,
-    /// The runtime configuration for the watcher to use.
-    config: RuntimeConfig,
 }
 
 impl Watcher {
@@ -62,9 +58,7 @@ impl Watcher {
         let watcher_handle = watcher.main();
 
         Ok(Self {
-            inner: watcher,
             handle: watcher_handle,
-            config: runtime_config,
         })
     }
 }
