@@ -36,7 +36,12 @@ pub struct Watcher {
 
 impl Watcher {
     /// Create a new [`Watcher`] from a [`Ghci`] session.
-    pub fn new(ghci: Arc<Mutex<Ghci>>, watch: &[Utf8PathBuf]) -> miette::Result<Self> {
+    pub fn new(
+        ghci: Arc<Mutex<Ghci>>,
+        watch: &[Utf8PathBuf],
+        debounce: Duration,
+        poll: Option<Duration>,
+    ) -> miette::Result<Self> {
         let mut init_config = InitConfig::default();
         init_config.on_error(PrintDebug(std::io::stderr()));
 
@@ -45,8 +50,12 @@ impl Watcher {
         let mut runtime_config = RuntimeConfig::default();
         runtime_config
             .pathset(watch)
-            .action_throttle(Duration::from_millis(500))
+            .action_throttle(debounce)
             .on_action(action_handler);
+
+        if let Some(interval) = poll {
+            runtime_config.file_watcher(watchexec::fs::Watcher::Poll(interval));
+        }
 
         let watcher = Watchexec::new(init_config, runtime_config.clone())?;
 

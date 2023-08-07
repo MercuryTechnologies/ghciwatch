@@ -1,5 +1,7 @@
 //! Command-line argument parser and argument access.
 
+use std::time::Duration;
+
 use camino::Utf8PathBuf;
 use clap::Parser;
 
@@ -16,15 +18,15 @@ pub struct Opts {
     #[arg(long)]
     pub command: Option<String>,
 
-    /// A path to watch for changes. Can be given multiple times.
-    #[arg(long)]
-    pub watch: Vec<Utf8PathBuf>,
-
     /// A shell command which runs tests. If given, this command will be run after reloads.
     ///
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
     #[arg(long)]
     pub test: Option<String>,
+
+    /// Options to modify file watching.
+    #[command(flatten)]
+    pub watch: WatchOpts,
 
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
@@ -35,19 +37,28 @@ pub struct Opts {
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "File watching options")]
 pub struct WatchOpts {
-    /// Use polling rather than notification-based file watching. Polling tends to be more reliable
-    /// and less performant.
-    #[arg(long)]
-    pub poll: bool,
+    /// Use polling with the given interval rather than notification-based file watching. Polling
+    /// tends to be more reliable and less performant.
+    #[arg(long, value_name = "DURATION", value_parser = crate::clap::DurationValueParser::default())]
+    pub poll: Option<Duration>,
 
     /// Debounce file events; wait this duration after receiving an event before attempting to
     /// reload.
     ///
     /// Defaults to 0.5 seconds.
-    ///
-    /// TODO: Parse this into a duration.
-    #[arg(long, default_value = "500ms")]
-    pub debounce: String,
+    // Why do we need to use `value_parser` with this argument but not with the `Utf8PathBuf`
+    // arguments? I have no clue!
+    #[arg(
+        long,
+        default_value = "500ms",
+        value_name = "DURATION",
+        value_parser = crate::clap::DurationValueParser::default(),
+    )]
+    pub debounce: Duration,
+
+    /// A path to watch for changes. Can be given multiple times.
+    #[arg(long = "watch")]
+    pub paths: Vec<Utf8PathBuf>,
 }
 
 // TODO: Possibly set `RUST_LIB_BACKTRACE` from `RUST_BACKTRACE` as well, so that `full`
@@ -79,8 +90,8 @@ impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
     pub fn init(&mut self) {
-        if self.watch.is_empty() {
-            self.watch.push("src".into());
+        if self.watch.paths.is_empty() {
+            self.watch.paths.push("src".into());
         }
 
         // These help our libraries (particularly `color-eyre`) see these options.
