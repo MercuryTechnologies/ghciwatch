@@ -73,7 +73,7 @@ impl GhciStderr {
             let file = File::create(path).await.into_diagnostic()?;
             let mut writer = BufWriter::new(file);
             writer
-                .write_all(self.buffer.as_bytes())
+                .write_all(&strip_ansi_escapes::strip(self.buffer.as_bytes()))
                 .await
                 .into_diagnostic()?;
             // This is load-bearing! If we don't properly flush/shutdown the handle, nothing gets
