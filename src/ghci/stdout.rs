@@ -1,6 +1,8 @@
 use std::sync::Weak;
 
 use aho_corasick::AhoCorasick;
+use backoff::backoff::Backoff;
+use backoff::ExponentialBackoff;
 use tokio::io::Stdout;
 use tokio::process::ChildStdout;
 use tokio::sync::mpsc;
@@ -9,7 +11,6 @@ use tokio::sync::Mutex;
 use tracing::instrument;
 
 use crate::aho_corasick::AhoCorasickExt;
-use crate::ghci::PROMPT;
 use crate::incremental_reader::IncrementalReader;
 use crate::incremental_reader::WriteBehavior;
 use crate::sync_sentinel::SyncSentinel;
@@ -22,6 +23,8 @@ use super::Ghci;
 /// An event sent to a `ghci` session's stdout channel.
 #[derive(Debug)]
 pub enum StdoutEvent {
+    /// Wait for `ghci` startup indicators, then wait for the initial prompt.
+    Initialize(oneshot::Sender<()>),
     /// Wait for a regular `ghci` prompt.
     Prompt(oneshot::Sender<()>),
     /// Wait for a sync marker.
@@ -36,12 +39,56 @@ pub struct GhciStdout {
     pub stdin_sender: mpsc::Sender<StdinEvent>,
     pub stderr_sender: mpsc::Sender<StderrEvent>,
     pub receiver: mpsc::Receiver<StdoutEvent>,
+    pub prompt_patterns: AhoCorasick,
     pub buffer: Vec<u8>,
 }
 
 impl GhciStdout {
     #[instrument(skip_all, name = "stdout", level = "debug")]
-    pub async fn run(mut self, when_ready: oneshot::Sender<()>) -> miette::Result<()> {
+    pub async fn run(mut self) -> miette::Result<()> {
+        let mut backoff = ExponentialBackoff::default();
+        while let Some(duration) = backoff.next_backoff() {
+            match self.run_inner().await {
+                Ok(()) => {
+                    // MPSC channel closed, probably a graceful shutdown?
+                    tracing::debug!("Channel closed");
+                    break;
+                }
+                Err(err) => {
+                    tracing::error!("{err:?}");
+                }
+            }
+
+            tracing::debug!("Waiting {duration:?} before retrying");
+            tokio::time::sleep(duration).await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_inner(&mut self) -> miette::Result<()> {
+        while let Some(event) = self.receiver.recv().await {
+            match event {
+                StdoutEvent::Initialize(sender) => {
+                    self.initialize(sender).await?;
+                }
+                StdoutEvent::Sync(sentinel) => {
+                    self.sync(sentinel).await?;
+                }
+                StdoutEvent::Prompt(sender) => {
+                    self.prompt(sender, None).await?;
+                }
+                StdoutEvent::ShowModules(sender) => {
+                    self.show_modules(sender).await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    async fn initialize(&mut self, when_ready: oneshot::Sender<()>) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -56,7 +103,7 @@ impl GhciStdout {
 
         let init_prompt_patterns = AhoCorasick::from_anchored_patterns(["ghci> "]);
         // We know that we'll get _one_ `ghci> ` prompt on startup.
-        self.prompt(&init_prompt_patterns, when_ready).await?;
+        self.prompt(when_ready, Some(&init_prompt_patterns)).await?;
         // But we might get more than one `ghci> ` prompt, so digest any others from the buffer.
         while let Some(lines) = self
             .reader
@@ -70,31 +117,21 @@ impl GhciStdout {
             tracing::debug!(?lines, "initial ghci prompt");
         }
 
-        let prompt_patterns = AhoCorasick::from_anchored_patterns([PROMPT]);
-
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                StdoutEvent::Sync(sentinel) => {
-                    self.sync(&prompt_patterns, sentinel).await?;
-                }
-                StdoutEvent::Prompt(sender) => {
-                    self.prompt(&prompt_patterns, sender).await?;
-                }
-                StdoutEvent::ShowModules(sender) => {
-                    self.show_modules(&prompt_patterns, sender).await?;
-                }
-            }
-        }
-
         Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]
     async fn prompt(
         &mut self,
-        prompt_patterns: &AhoCorasick,
         sender: oneshot::Sender<()>,
+        // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
+        // pass in a different value. This method takes an `&mut self` reference, so if we try to
+        // pass in `&self.prompt_patterns` when we call it we get a borrow error because the
+        // compiler doesn't know we don't mess with `self.prompt_patterns` in here. So we use
+        // `None` to represent that case and handle the default inline.
+        prompt_patterns: Option<&AhoCorasick>,
     ) -> miette::Result<()> {
+        let prompt_patterns = prompt_patterns.unwrap_or(&self.prompt_patterns);
         let lines = self
             .reader
             .read_until(
@@ -110,11 +147,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn sync(
-        &mut self,
-        prompt_patterns: &AhoCorasick,
-        sentinel: SyncSentinel,
-    ) -> miette::Result<()> {
+    async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         // Read until the sync marker...
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
         let lines = self
@@ -124,7 +157,7 @@ impl GhciStdout {
         // Then make sure to consume the prompt on the next line, and then we'll be caught up.
         let _ = self
             .reader
-            .read_until(prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
         tracing::debug!(?lines, "Got data from ghci");
 
@@ -141,14 +174,10 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn show_modules(
-        &mut self,
-        prompt_patterns: &AhoCorasick,
-        sender: oneshot::Sender<ModuleSet>,
-    ) -> miette::Result<()> {
+    async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
         let lines = self
             .reader
-            .read_until(prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
         let map = ModuleSet::from_lines(&lines)?;
         let _ = sender.send(map);

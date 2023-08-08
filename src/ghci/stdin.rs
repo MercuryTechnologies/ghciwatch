@@ -1,5 +1,7 @@
 use std::sync::Weak;
 
+use backoff::backoff::Backoff;
+use backoff::ExponentialBackoff;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
@@ -43,11 +45,27 @@ pub struct GhciStdin {
 impl GhciStdin {
     #[instrument(skip_all, name = "stdin", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
-        // For Stack, send a blank line to skip an initial prompt.
-        //
-        // See: https://github.com/ndmitchell/ghcid/issues/57
-        self.stdin.write_all(b"\n").await.into_diagnostic()?;
+        let mut backoff = ExponentialBackoff::default();
+        while let Some(duration) = backoff.next_backoff() {
+            match self.run_inner().await {
+                Ok(()) => {
+                    // MPSC channel closed, probably a graceful shutdown?
+                    tracing::debug!("Channel closed");
+                    break;
+                }
+                Err(err) => {
+                    tracing::error!("{err:?}");
+                }
+            }
 
+            tracing::debug!("Waiting {duration:?} before retrying");
+            tokio::time::sleep(duration).await;
+        }
+
+        Ok(())
+    }
+
+    pub async fn run_inner(&mut self) -> miette::Result<()> {
         while let Some(event) = self.receiver.recv().await {
             match event {
                 StdinEvent::Initialize(sender) => {
@@ -105,6 +123,11 @@ impl GhciStdin {
 
     #[instrument(skip_all, level = "debug")]
     async fn initialize(&mut self, sender: oneshot::Sender<()>) -> miette::Result<()> {
+        // For Stack, send a blank line to skip an initial prompt.
+        //
+        // See: https://github.com/ndmitchell/ghcid/issues/57
+        self.stdin.write_all(b"\n").await.into_diagnostic()?;
+
         self.write_line(&format!(":set prompt {PROMPT}\n")).await?;
         self.write_line(&format!(":set prompt-cont {PROMPT}\n"))
             .await?;

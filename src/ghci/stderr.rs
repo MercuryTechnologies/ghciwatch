@@ -1,5 +1,7 @@
 use std::sync::Weak;
 
+use backoff::backoff::Backoff;
+use backoff::ExponentialBackoff;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use tokio::fs::File;
@@ -33,6 +35,27 @@ pub struct GhciStderr {
 impl GhciStderr {
     #[instrument(skip_all, name = "stderr", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
+        let mut backoff = ExponentialBackoff::default();
+        while let Some(duration) = backoff.next_backoff() {
+            match self.run_inner().await {
+                Ok(()) => {
+                    // MPSC channel closed, probably a graceful shutdown?
+                    tracing::debug!("Channel closed");
+                    break;
+                }
+                Err(err) => {
+                    tracing::error!("{err:?}");
+                }
+            }
+
+            tracing::debug!("Waiting {duration:?} before retrying");
+            tokio::time::sleep(duration).await;
+        }
+
+        Ok(())
+    }
+
+    pub async fn run_inner(&mut self) -> miette::Result<()> {
         loop {
             // TODO: Could this cause problems where we get an event and a final stderr line is only
             // processed after we write the error log?
