@@ -34,7 +34,7 @@ async fn main() -> miette::Result<()> {
             .wrap_err("Failed to split `--command` value into arguments")?,
     ));
 
-    let ghci = Ghci::new(ghci_command, opts.errors.clone())
+    let ghci = Ghci::new(ghci_command, opts.errors.clone(), opts.setup, opts.test)
         .await
         .wrap_err("Failed to start `ghci`")?;
     let watcher = Watcher::new(

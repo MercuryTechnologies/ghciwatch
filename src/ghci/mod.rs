@@ -1,10 +1,12 @@
 //! The core [`Ghci`] session struct.
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::process::Stdio;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
 use camino::Utf8PathBuf;
@@ -74,6 +76,10 @@ pub struct Ghci {
     modules: ModuleSet,
     /// Path to write errors to, if any. Like `ghcid.txt`.
     error_path: Option<Utf8PathBuf>,
+    /// `ghci` commands to run on startup.
+    setup_commands: Vec<String>,
+    /// `ghci` command to run tests.
+    test_command: Option<String>,
 }
 
 impl Debug for Ghci {
@@ -91,7 +97,11 @@ impl Ghci {
     pub async fn new(
         command_arc: Arc<Mutex<Command>>,
         error_path: Option<Utf8PathBuf>,
+        setup_commands: Vec<String>,
+        test_command: Option<String>,
     ) -> miette::Result<Arc<Mutex<Self>>> {
+        let start_instant = Instant::now();
+
         let mut child = {
             let mut command = command_arc.lock().await;
 
@@ -132,36 +142,42 @@ impl Ghci {
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
             error_path: error_path.clone(),
+            setup_commands: setup_commands.clone(),
+            test_command,
         }));
 
         // Three tasks for my three beautiful streams.
         let stdout = task::spawn(
             GhciStdout {
-                ghci: Arc::downgrade(&ret),
                 reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
-                stdin_sender: stdin_sender.clone(),
-                stderr_sender,
+                stderr_sender: stderr_sender.clone(),
                 receiver: stdout_receiver,
                 buffer: vec![0; LINE_BUFFER_CAPACITY],
                 prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
+                mode: Mode::Compiling,
             }
             .run(),
         );
         let stderr = task::spawn(
             GhciStderr {
-                ghci: Arc::downgrade(&ret),
                 reader: BufReader::new(stderr).lines(),
                 receiver: stderr_receiver,
-                buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
+                compilation_summary: String::new(),
+                buffers: BTreeMap::from([
+                    (Mode::Compiling, String::with_capacity(LINE_BUFFER_CAPACITY)),
+                    (Mode::Testing, String::with_capacity(LINE_BUFFER_CAPACITY)),
+                ]),
                 error_path,
+                mode: Mode::Compiling,
+                has_unwritten_data: false,
             }
             .run(),
         );
         let stdin = task::spawn(
             GhciStdin {
-                ghci: Arc::downgrade(&ret),
                 stdin,
                 stdout_sender: stdout_sender.clone(),
+                stderr_sender: stderr_sender.clone(),
                 receiver: stdin_receiver,
             }
             .run(),
@@ -177,6 +193,8 @@ impl Ghci {
 
         // Wait for the stdout job to start up.
         {
+            let span = tracing::debug_span!("Stdout startup");
+            let _enter = span.enter();
             let (sender, receiver) = oneshot::channel();
             stdout_sender
                 .send(StdoutEvent::Initialize(sender))
@@ -187,15 +205,22 @@ impl Ghci {
 
         // Perform start-of-session initialization.
         {
+            let span = tracing::debug_span!("Start-of-session initialization");
+            let _enter = span.enter();
             let (sender, receiver) = oneshot::channel();
             stdin_sender
-                .send(StdinEvent::Initialize(sender))
+                .send(StdinEvent::Initialize {
+                    sender,
+                    setup_commands,
+                })
                 .await
                 .into_diagnostic()?;
             receiver.await.into_diagnostic()?;
         }
 
         {
+            let span = tracing::debug_span!("Start-of-session sync");
+            let _enter = span.enter();
             // Sync up for any prompts.
             let mut guard = ret.lock().await;
             guard.sync().await?;
@@ -203,7 +228,11 @@ impl Ghci {
             guard.refresh_modules().await?;
         }
 
-        tracing::info!("`ghci` ready!");
+        tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
+
+        // Run the user-provided test command, if any.
+        ret.lock().await.test().await?;
+
         Ok(ret)
     }
 
@@ -244,7 +273,7 @@ impl Ghci {
                             tracing::debug!(?path, "Needs reload");
                             needs_reload.push(path);
                         } else {
-                            // Otherwise we need to `:load` the new paths.
+                            // Otherwise we need to `:add` the new paths.
                             tracing::debug!(?path, "Needs add");
                             add.push(path);
                         }
@@ -262,8 +291,16 @@ impl Ghci {
             let mut guard = this.lock().await;
             guard.stop().await?;
             let command = guard.command.clone();
-            return Self::new(command, guard.error_path.clone()).await;
+            return Self::new(
+                command,
+                guard.error_path.clone(),
+                guard.setup_commands.clone(),
+                guard.test_command.clone(),
+            )
+            .await;
         }
+
+        let needs_add_or_reload = !add.is_empty() || !needs_reload.is_empty();
 
         if !add.is_empty() {
             tracing::info!(
@@ -281,10 +318,26 @@ impl Ghci {
                 format_bulleted_list(&needs_reload)
             );
             let (sender, receiver) = oneshot::channel();
-            this.lock()
-                .await
+            let guard = this.lock().await;
+            guard
                 .stdin_channel
                 .send(StdinEvent::Reload(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
+
+        if needs_add_or_reload {
+            // If we loaded or reloaded any modules, we should run tests.
+            // TODO: Skip this if there were compilation failures?
+            let (sender, receiver) = oneshot::channel();
+            let guard = this.lock().await;
+            guard
+                .stdin_channel
+                .send(StdinEvent::Test {
+                    sender,
+                    test_command: guard.test_command.clone(),
+                })
                 .await
                 .into_diagnostic()?;
             receiver.await.into_diagnostic()?;
@@ -308,6 +361,21 @@ impl Ghci {
         Ok(())
     }
 
+    /// Run the user provided test command.
+    #[instrument(skip_all, level = "debug")]
+    pub async fn test(&self) -> miette::Result<()> {
+        let (sender, receiver) = oneshot::channel();
+        self.stdin_channel
+            .send(StdinEvent::Test {
+                sender,
+                test_command: self.test_command.clone(),
+            })
+            .await
+            .into_diagnostic()?;
+        receiver.await.into_diagnostic()?;
+        Ok(())
+    }
+
     /// Refresh the listing of loaded modules by parsing the `:show modules` output.
     #[instrument(skip_all, level = "debug")]
     pub async fn refresh_modules(&mut self) -> miette::Result<()> {
@@ -325,7 +393,7 @@ impl Ghci {
         Ok(())
     }
 
-    /// `:load` a module to the `ghci` session by path.
+    /// `:add` a module to the `ghci` session by path.
     #[instrument(skip(self), level = "debug")]
     pub async fn add_module(&mut self, path: Utf8PathBuf) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
@@ -353,6 +421,40 @@ impl Ghci {
         self.process.kill().await.into_diagnostic()?;
 
         Ok(())
+    }
+}
+
+/// The mode a `ghci` session is in. This is used to track output, particularly for the error log
+/// (`ghcid.txt`).
+///
+/// Note: The [`Ord`] implementation on this type determines the order in which sections will be
+/// written to the error log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Mode {
+    /// We're doing something private, like initializing the session, refreshing the list of loaded
+    /// modules, etc.
+    ///
+    /// Stderr messages sent when the session is in this mode are not written to the error log.
+    Internal,
+
+    /// Compiling, loading, reloading, adding modules. We expect chunks of this output to end with
+    /// a string like this before the prompt:
+    ///
+    /// 1. `Ok, [0-9]+ modules loaded.`
+    /// 2. `Failed, [0-9]+ modules loaded.`
+    Compiling,
+
+    /// Running tests.
+    Testing,
+}
+
+impl Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mode::Internal => write!(f, "internal"),
+            Mode::Compiling => write!(f, "compilation"),
+            Mode::Testing => write!(f, "test"),
+        }
     }
 }
 

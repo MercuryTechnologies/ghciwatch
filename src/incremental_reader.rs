@@ -94,6 +94,7 @@ where
         buffer: &mut [u8],
     ) -> miette::Result<Option<Lines>> {
         if let Some(lines) = self.take_chunk_from_buffer(end_marker) {
+            tracing::trace!(lines = lines.len(), "Got lines from buffer");
             return Ok(Some(lines));
         }
 
@@ -112,7 +113,11 @@ where
                         )
                     })?;
                 match self.consume_str(decoded, end_marker, writing).await? {
-                    Some(lines) => Ok(Some(lines)),
+                    Some(lines) => {
+                        tracing::trace!(data = ?decoded, "Decoded data");
+                        tracing::trace!(lines = lines.len(), "Got chunk");
+                        Ok(Some(lines))
+                    }
                     None => {
                         tracing::trace!(data = ?decoded, "Decoded data, no end marker found");
                         Ok(None)
@@ -249,8 +254,10 @@ where
         Ok(())
     }
 
-    /// Attempt to take a chunk of lines from the data already buffered in `self.lines` and
-    /// `self.line`.
+    /// Examines the internal buffer. If a line beginning with one of the `end_marker` patterns is
+    /// seen, the lines before the marker are returned. Otherwise, nothing is returned.
+    ///
+    /// Does _not_ read from the underlying reader.
     fn take_chunk_from_buffer(&mut self, end_marker: &AhoCorasick) -> Option<Lines> {
         // Do any of the lines in `self.lines` start with `end_marker`?
         if let Some((i, _line)) = self
