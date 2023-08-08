@@ -6,6 +6,7 @@ use std::process::Stdio;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use aho_corasick::AhoCorasick;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -27,6 +28,7 @@ use stdin::StdinEvent;
 
 mod stdout;
 use stdout::GhciStdout;
+use stdout::StdoutEvent;
 
 mod stderr;
 use stderr::GhciStderr;
@@ -34,6 +36,7 @@ use stderr::GhciStderr;
 mod show_modules;
 use show_modules::ModuleSet;
 
+use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
@@ -131,8 +134,6 @@ impl Ghci {
             error_path: error_path.clone(),
         }));
 
-        let (init_sender, init_receiver) = oneshot::channel::<()>();
-
         // Three tasks for my three beautiful streams.
         let stdout = task::spawn(
             GhciStdout {
@@ -142,8 +143,9 @@ impl Ghci {
                 stderr_sender,
                 receiver: stdout_receiver,
                 buffer: vec![0; LINE_BUFFER_CAPACITY],
+                prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
             }
-            .run(init_sender),
+            .run(),
         );
         let stderr = task::spawn(
             GhciStderr {
@@ -159,7 +161,7 @@ impl Ghci {
             GhciStdin {
                 ghci: Arc::downgrade(&ret),
                 stdin,
-                stdout_sender,
+                stdout_sender: stdout_sender.clone(),
                 receiver: stdin_receiver,
             }
             .run(),
@@ -174,20 +176,24 @@ impl Ghci {
         };
 
         // Wait for the stdout job to start up.
-        init_receiver.await.into_diagnostic()?;
-
-        let (initialize_event, init_receiver) = {
+        {
             let (sender, receiver) = oneshot::channel();
-            (StdinEvent::Initialize(sender), receiver)
-        };
+            stdout_sender
+                .send(StdoutEvent::Initialize(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
 
         // Perform start-of-session initialization.
-        stdin_sender
-            .send(initialize_event)
-            .await
-            .into_diagnostic()?;
-
-        init_receiver.await.into_diagnostic()?;
+        {
+            let (sender, receiver) = oneshot::channel();
+            stdin_sender
+                .send(StdinEvent::Initialize(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
 
         {
             // Sync up for any prompts.

@@ -19,6 +19,7 @@ use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    miette::set_panic_hook();
     let opts = cli::Opts::parse().tap_mut(|opts| opts.init());
     tracing::install_tracing(&opts.logging.tracing_filter)?;
 
@@ -33,15 +34,22 @@ async fn main() -> miette::Result<()> {
             .wrap_err("Failed to split `--command` value into arguments")?,
     ));
 
-    let ghci = Ghci::new(ghci_command, opts.errors.clone()).await?;
+    let ghci = Ghci::new(ghci_command, opts.errors.clone())
+        .await
+        .wrap_err("Failed to start `ghci`")?;
     let watcher = Watcher::new(
         ghci,
         &opts.watch.paths,
         opts.watch.debounce,
         opts.watch.poll,
-    )?;
+    )
+    .wrap_err("Failed to start file watcher")?;
 
-    watcher.handle.await.into_diagnostic()??;
+    watcher
+        .handle
+        .await
+        .into_diagnostic()?
+        .wrap_err("File watcher failed")?;
 
     Ok(())
 }
