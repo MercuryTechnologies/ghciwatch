@@ -32,6 +32,10 @@ pub struct Opts {
     #[arg(long)]
     pub errors: Option<Utf8PathBuf>,
 
+    /// Run in scripted mode; execute the given `ghci` commands and then exit.
+    #[command(flatten)]
+    pub script: ScriptOpts,
+
     /// Options to modify file watching.
     #[command(flatten)]
     pub watch: WatchOpts,
@@ -91,6 +95,24 @@ pub struct LoggingOpts {
     /// How to display backtraces in error messages.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
     pub backtrace: RustBacktrace,
+}
+
+/// Options to run `ghcid-ng` in scripted mode.
+#[derive(Debug, Clone, clap::Args)]
+#[clap(next_help_heading = "Script options")]
+#[group(multiple = false)]
+pub struct ScriptOpts {
+    /// Run in scripted mode; execute the given `ghci` commands and then exit.
+    ///
+    /// Can be given multiple times for additional commands.
+    #[arg(long = "script")]
+    pub commands: Vec<String>,
+
+    /// Run in scripted mode; see `--script`.
+    ///
+    /// Reads script commands from the given file instead of from arguments.
+    #[arg(long = "script-file")]
+    pub file: Option<Utf8PathBuf>,
 }
 
 impl Opts {
