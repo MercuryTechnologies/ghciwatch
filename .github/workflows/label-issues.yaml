@@ -1,0 +1,26 @@
+---
+# This workflow runs when issues are opened and labels them `linear`.
+
+on:
+  issues:
+    types:
+      - opened
+
+name: Label issues with `linear`
+
+jobs:
+  label:
+    name: Label issue with `linear`
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ["linear"]
+            })
