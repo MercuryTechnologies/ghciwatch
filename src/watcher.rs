@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use camino::Utf8PathBuf;
 use tokio::runtime::Handle;
-use tokio::sync::Mutex;
 use tokio::task::block_in_place;
 use tokio::task::JoinHandle;
 use tracing::instrument;
@@ -39,7 +38,7 @@ pub struct Watcher {
 impl Watcher {
     /// Create a new [`Watcher`] from a [`Ghci`] session.
     pub fn new(
-        ghci: Arc<Mutex<Ghci>>,
+        ghci: Ghci,
         watch: &[Utf8PathBuf],
         debounce: Duration,
         poll: Option<Duration>,
@@ -70,9 +69,8 @@ impl Watcher {
     }
 }
 
-#[derive(Clone)]
 struct ActionHandler {
-    ghci: Arc<Mutex<Ghci>>,
+    ghci: Ghci,
 }
 
 impl ActionHandler {
@@ -94,7 +92,7 @@ impl ActionHandler {
 
         let events = file_events_from_action(&action)?;
         if !events.is_empty() {
-            self.ghci = Ghci::reload(self.ghci.clone(), events).await?;
+            self.ghci.reload(events).await?;
         }
 
         Ok(())
