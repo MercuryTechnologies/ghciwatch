@@ -22,8 +22,6 @@ use super::show_modules::ModuleSet;
 use super::stderr::StderrEvent;
 use super::Mode;
 
-static COMPILATION_FINISHED_RE: OnceLock<Regex> = OnceLock::new();
-
 /// An event sent to a `ghci` session's stdout channel.
 #[derive(Debug)]
 pub enum StdoutEvent {
@@ -229,13 +227,8 @@ impl GhciStdout {
         &mut self,
         mut lines: Lines,
     ) -> miette::Result<Option<Result<(), ()>>> {
-        // TODO: This would be pretty clumsy if we wanted to use this regex in multiple places.
-        // Might be worth bringing in `lazy_static`.
-        let compilation_finished_re = COMPILATION_FINISHED_RE
-            .get_or_init(|| Regex::new(r"^(?:Ok|Failed), [0-9]+ modules loaded.$").unwrap());
-
         if let Some(line) = lines.pop() {
-            if compilation_finished_re.is_match(&line) {
+            if compilation_finished_re().is_match(&line) {
                 let result = if line.starts_with("Ok") {
                     Ok(())
                 } else {
@@ -258,4 +251,9 @@ impl GhciStdout {
 
         Ok(None)
     }
+}
+
+fn compilation_finished_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^(?:Ok|Failed), [0-9]+ modules loaded.$").unwrap())
 }
