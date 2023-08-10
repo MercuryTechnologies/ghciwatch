@@ -244,6 +244,8 @@ impl Ghci {
         this: Arc<Mutex<Self>>,
         events: Vec<FileEvent>,
     ) -> miette::Result<Arc<Mutex<Self>>> {
+        // TODO: This method is pretty big -- we should break it up.
+
         // Once we know which paths were modified and which paths were removed, we can combine
         // that with information about this `ghci` session to determine which modules need to be
         // reloaded, which modules need to be added, and which modules were removed. In the case
@@ -301,6 +303,7 @@ impl Ghci {
         }
 
         let needs_add_or_reload = !add.is_empty() || !needs_reload.is_empty();
+        let mut compilation_failed = needs_add_or_reload;
 
         if !add.is_empty() {
             tracing::info!(
@@ -308,7 +311,10 @@ impl Ghci {
                 format_bulleted_list(&add)
             );
             for path in add {
-                this.lock().await.add_module(path).await?;
+                let add_result = this.lock().await.add_module(path).await?;
+                if let Some(Err(())) = add_result {
+                    compilation_failed = false;
+                }
             }
         }
 
@@ -324,23 +330,29 @@ impl Ghci {
                 .send(StdinEvent::Reload(sender))
                 .await
                 .into_diagnostic()?;
-            receiver.await.into_diagnostic()?;
+            let reload_result = receiver.await.into_diagnostic()?;
+            if let Some(Err(())) = reload_result {
+                compilation_failed = false;
+            }
         }
 
         if needs_add_or_reload {
-            // If we loaded or reloaded any modules, we should run tests.
-            // TODO: Skip this if there were compilation failures?
-            let (sender, receiver) = oneshot::channel();
-            let guard = this.lock().await;
-            guard
-                .stdin_channel
-                .send(StdinEvent::Test {
-                    sender,
-                    test_command: guard.test_command.clone(),
-                })
-                .await
-                .into_diagnostic()?;
-            receiver.await.into_diagnostic()?;
+            if compilation_failed {
+                tracing::debug!("Compilation failed, skipping running tests.");
+            } else {
+                // If we loaded or reloaded any modules, we should run tests.
+                let (sender, receiver) = oneshot::channel();
+                let guard = this.lock().await;
+                guard
+                    .stdin_channel
+                    .send(StdinEvent::Test {
+                        sender,
+                        test_command: guard.test_command.clone(),
+                    })
+                    .await
+                    .into_diagnostic()?;
+                receiver.await.into_diagnostic()?;
+            }
         }
 
         this.lock().await.sync().await?;
@@ -394,8 +406,13 @@ impl Ghci {
     }
 
     /// `:add` a module to the `ghci` session by path.
+    ///
+    /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
-    pub async fn add_module(&mut self, path: Utf8PathBuf) -> miette::Result<()> {
+    pub async fn add_module(
+        &mut self,
+        path: Utf8PathBuf,
+    ) -> miette::Result<Option<Result<(), ()>>> {
         let (sender, receiver) = oneshot::channel();
         self.stdin_channel
             .send(StdinEvent::AddModule(path.clone(), sender))
@@ -403,8 +420,7 @@ impl Ghci {
             .into_diagnostic()?;
         // TODO: What if adding the new module fails?
         self.modules.insert_source_path(path);
-        receiver.await.into_diagnostic()?;
-        Ok(())
+        receiver.await.into_diagnostic()
     }
 
     /// Stop this `ghci` session and cancel the async tasks associated with it.

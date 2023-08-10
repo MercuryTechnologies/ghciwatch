@@ -30,7 +30,7 @@ pub enum StdoutEvent {
     /// Wait for `ghci` startup indicators, then wait for the initial prompt.
     Initialize(oneshot::Sender<()>),
     /// Wait for a regular `ghci` prompt.
-    Prompt(oneshot::Sender<()>),
+    Prompt(oneshot::Sender<Option<Result<(), ()>>>),
     /// Wait for a sync marker.
     Sync(SyncSentinel),
     /// Parse `:show modules` output.
@@ -134,7 +134,7 @@ impl GhciStdout {
     #[instrument(skip_all, level = "debug")]
     async fn prompt(
         &mut self,
-        sender: oneshot::Sender<()>,
+        sender: oneshot::Sender<Option<Result<(), ()>>>,
         // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
         // pass in a different value. This method takes an `&mut self` reference, so if we try to
         // pass in `&self.prompt_patterns` when we call it we get a borrow error because the
@@ -153,14 +153,26 @@ impl GhciStdout {
             .await?;
         tracing::debug!(lines = lines.len(), "Got data from ghci");
 
+        let mut result = None;
         if self.mode == Mode::Compiling {
-            self.get_status_from_compile_output(lines)
+            result = self
+                .get_status_from_compile_output(lines)
                 .await
                 .wrap_err("Failed to get status from compilation output")?;
         }
 
         // Tell the stderr stream to write the error log and then finish.
-        let _ = self.stderr_sender.send(StderrEvent::Write(sender)).await;
+        {
+            let (sender, receiver) = oneshot::channel();
+            self.stderr_sender
+                .send(StderrEvent::Write(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
+
+        let _ = sender.send(result);
+
         Ok(())
     }
 
@@ -208,7 +220,15 @@ impl GhciStdout {
         let _ = sender.send(());
     }
 
-    async fn get_status_from_compile_output(&mut self, mut lines: Lines) -> miette::Result<()> {
+    /// Get the compilation status from a chunk of lines. The compilation status is on the last
+    /// line.
+    ///
+    /// The outer result fails if any of the operation failed, the inner `Option` conveys the
+    /// compilation status.
+    async fn get_status_from_compile_output(
+        &mut self,
+        mut lines: Lines,
+    ) -> miette::Result<Option<Result<(), ()>>> {
         // TODO: This would be pretty clumsy if we wanted to use this regex in multiple places.
         // Might be worth bringing in `lazy_static`.
         let compilation_finished_re = COMPILATION_FINISHED_RE
@@ -216,6 +236,12 @@ impl GhciStdout {
 
         if let Some(line) = lines.pop() {
             if compilation_finished_re.is_match(&line) {
+                let result = if line.starts_with("Ok") {
+                    Ok(())
+                } else {
+                    Err(())
+                };
+
                 let (sender, receiver) = oneshot::channel();
                 self.stderr_sender
                     .send(StderrEvent::SetCompilationSummary {
@@ -225,9 +251,11 @@ impl GhciStdout {
                     .await
                     .into_diagnostic()?;
                 receiver.await.into_diagnostic()?;
+
+                return Ok(Some(result));
             }
         }
 
-        Ok(())
+        Ok(None)
     }
 }
