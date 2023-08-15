@@ -20,6 +20,7 @@ use crate::sync_sentinel::SyncSentinel;
 
 use super::show_modules::ModuleSet;
 use super::stderr::StderrEvent;
+use super::CompilationResult;
 use super::Mode;
 
 /// An event sent to a `ghci` session's stdout channel.
@@ -28,7 +29,7 @@ pub enum StdoutEvent {
     /// Wait for `ghci` startup indicators, then wait for the initial prompt.
     Initialize(oneshot::Sender<()>),
     /// Wait for a regular `ghci` prompt.
-    Prompt(oneshot::Sender<Option<Result<(), ()>>>),
+    Prompt(oneshot::Sender<Option<CompilationResult>>),
     /// Wait for a sync marker.
     Sync(SyncSentinel),
     /// Parse `:show modules` output.
@@ -132,7 +133,7 @@ impl GhciStdout {
     #[instrument(skip_all, level = "debug")]
     async fn prompt(
         &mut self,
-        sender: oneshot::Sender<Option<Result<(), ()>>>,
+        sender: oneshot::Sender<Option<CompilationResult>>,
         // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
         // pass in a different value. This method takes an `&mut self` reference, so if we try to
         // pass in `&self.prompt_patterns` when we call it we get a borrow error because the
@@ -226,13 +227,13 @@ impl GhciStdout {
     async fn get_status_from_compile_output(
         &mut self,
         mut lines: Lines,
-    ) -> miette::Result<Option<Result<(), ()>>> {
+    ) -> miette::Result<Option<CompilationResult>> {
         if let Some(line) = lines.pop() {
             if compilation_finished_re().is_match(&line) {
                 let result = if line.starts_with("Ok") {
-                    Ok(())
+                    CompilationResult::Ok
                 } else {
-                    Err(())
+                    CompilationResult::Err
                 };
 
                 let (sender, receiver) = oneshot::channel();

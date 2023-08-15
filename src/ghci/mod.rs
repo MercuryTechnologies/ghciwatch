@@ -312,7 +312,7 @@ impl Ghci {
             );
             for path in add {
                 let add_result = this.lock().await.add_module(path).await?;
-                if let Some(Err(())) = add_result {
+                if let Some(CompilationResult::Err) = add_result {
                     compilation_failed = false;
                 }
             }
@@ -331,7 +331,7 @@ impl Ghci {
                 .await
                 .into_diagnostic()?;
             let reload_result = receiver.await.into_diagnostic()?;
-            if let Some(Err(())) = reload_result {
+            if let Some(CompilationResult::Err) = reload_result {
                 compilation_failed = false;
             }
         }
@@ -412,7 +412,7 @@ impl Ghci {
     pub async fn add_module(
         &mut self,
         path: Utf8PathBuf,
-    ) -> miette::Result<Option<Result<(), ()>>> {
+    ) -> miette::Result<Option<CompilationResult>> {
         let (sender, receiver) = oneshot::channel();
         self.stdin_channel
             .send(StdinEvent::AddModule(path.clone(), sender))
@@ -480,4 +480,13 @@ fn format_bulleted_list(items: &[impl Display]) -> String {
     } else {
         format!("• {}", items.iter().join("\n• "))
     }
+}
+
+/// The result of compiling modules in `ghci`.
+#[derive(Debug, Clone, Copy)]
+pub enum CompilationResult {
+    /// All the modules compiled successfully.
+    Ok,
+    /// Some modules failed to compile/load.
+    Err,
 }

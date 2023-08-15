@@ -17,6 +17,7 @@ use crate::sync_sentinel::SyncSentinel;
 use super::show_modules::ModuleSet;
 use super::stderr::StderrEvent;
 use super::stdout::StdoutEvent;
+use super::CompilationResult;
 use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
@@ -30,14 +31,14 @@ pub enum StdinEvent {
         setup_commands: Vec<String>,
     },
     /// Reload the `ghci` session with `:reload`.
-    Reload(oneshot::Sender<Option<Result<(), ()>>>),
+    Reload(oneshot::Sender<Option<CompilationResult>>),
     /// Run the user-provided test command, if any.
     Test {
         sender: oneshot::Sender<()>,
         test_command: Option<String>,
     },
     /// Add a module to the `ghci` session by path with `:add`.
-    AddModule(Utf8PathBuf, oneshot::Sender<Option<Result<(), ()>>>),
+    AddModule(Utf8PathBuf, oneshot::Sender<Option<CompilationResult>>),
     /// Sync the `ghci` session's input/output.
     Sync(SyncSentinel),
     /// Show the currently loaded modules with `:show modules`.
@@ -130,7 +131,7 @@ impl GhciStdin {
     async fn write_line_sender(
         &mut self,
         line: &str,
-        sender: oneshot::Sender<Option<Result<(), ()>>>,
+        sender: oneshot::Sender<Option<CompilationResult>>,
     ) -> miette::Result<()> {
         self.stdin
             .write_all(line.as_bytes())
@@ -168,7 +169,7 @@ impl GhciStdin {
     #[instrument(skip_all, level = "debug")]
     async fn reload(
         &mut self,
-        sender: oneshot::Sender<Option<Result<(), ()>>>,
+        sender: oneshot::Sender<Option<CompilationResult>>,
     ) -> miette::Result<()> {
         self.set_mode(Mode::Compiling).await?;
         self.write_line_sender(":reload\n", sender).await?;
@@ -199,7 +200,7 @@ impl GhciStdin {
     async fn add_module(
         &mut self,
         path: Utf8PathBuf,
-        sender: oneshot::Sender<Option<Result<(), ()>>>,
+        sender: oneshot::Sender<Option<CompilationResult>>,
     ) -> miette::Result<()> {
         self.set_mode(Mode::Compiling).await?;
 
