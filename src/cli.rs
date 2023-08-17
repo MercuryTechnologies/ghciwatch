@@ -23,16 +23,16 @@ pub struct Opts {
 
     /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
     /// run after reloads.
-    #[arg(long)]
+    #[arg(long, value_name = "GHCI_COMMAND")]
     pub test: Option<String>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
-    #[arg(long)]
+    #[arg(long, value_name = "GHCI_COMMAND")]
     pub setup: Vec<String>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
-    #[arg(long)]
+    #[arg(long, value_name = "PATH")]
     pub errors: Option<Utf8PathBuf>,
 
     /// Options to modify file watching.
@@ -42,6 +42,10 @@ pub struct Opts {
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
+
+    /// Run in server mode.
+    #[command(flatten)]
+    pub server: ServerOpts,
 }
 
 /// Options for watching files.
