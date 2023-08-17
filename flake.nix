@@ -49,7 +49,7 @@
         final: prev: {
           ghcid-ng = final.rustPlatform.buildRustPackage {
             pname = "ghcid-ng";
-            version = "0.1.1"; # LOAD-BEARING COMMENT. See: `.github/workflows/version.yaml`
+            version = "0.2.0"; # LOAD-BEARING COMMENT. See: `.github/workflows/version.yaml`
 
             cargoLock = {
               lockFile = ./Cargo.lock;
