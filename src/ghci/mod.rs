@@ -303,7 +303,7 @@ impl Ghci {
         }
 
         let needs_add_or_reload = !add.is_empty() || !needs_reload.is_empty();
-        let mut compilation_failed = needs_add_or_reload;
+        let mut compilation_failed = false;
 
         if !add.is_empty() {
             tracing::info!(
@@ -313,7 +313,7 @@ impl Ghci {
             for path in add {
                 let add_result = this.lock().await.add_module(path).await?;
                 if let Some(CompilationResult::Err) = add_result {
-                    compilation_failed = false;
+                    compilation_failed = true;
                 }
             }
         }
@@ -332,7 +332,7 @@ impl Ghci {
                 .into_diagnostic()?;
             let reload_result = receiver.await.into_diagnostic()?;
             if let Some(CompilationResult::Err) = reload_result {
-                compilation_failed = false;
+                compilation_failed = true;
             }
         }
 
