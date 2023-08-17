@@ -127,7 +127,7 @@ impl GhciStdin {
     /// stdout.
     ///
     /// The `line` should contain the trailing newline.
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn write_line_sender(
         &mut self,
         line: &str,
@@ -144,7 +144,7 @@ impl GhciStdin {
         Ok(())
     }
 
-    #[instrument(skip_all, level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn initialize(
         &mut self,
         sender: oneshot::Sender<()>,
@@ -196,7 +196,7 @@ impl GhciStdin {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn add_module(
         &mut self,
         path: Utf8PathBuf,
@@ -235,7 +235,7 @@ impl GhciStdin {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
         self.set_mode(Mode::Internal).await?;
 

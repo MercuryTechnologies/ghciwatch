@@ -159,7 +159,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
         self.mode = mode;
 
@@ -183,7 +183,7 @@ impl GhciStderr {
         let _ = sender.send(());
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn set_compilation_summary(&mut self, sender: oneshot::Sender<()>, summary: String) {
         if summary != self.compilation_summary {
             self.compilation_summary = summary;

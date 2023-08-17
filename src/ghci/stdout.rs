@@ -213,7 +213,7 @@ impl GhciStdout {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self, sender), level = "debug")]
     async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
         self.mode = mode;
         let _ = sender.send(());
@@ -231,8 +231,10 @@ impl GhciStdout {
         if let Some(line) = lines.pop() {
             if compilation_finished_re().is_match(&line) {
                 let result = if line.starts_with("Ok") {
+                    tracing::debug!("Compilation succeeded");
                     CompilationResult::Ok
                 } else {
+                    tracing::debug!("Compilation failed");
                     CompilationResult::Err
                 };
 
@@ -247,6 +249,8 @@ impl GhciStdout {
                 receiver.await.into_diagnostic()?;
 
                 return Ok(Some(result));
+            } else {
+                tracing::debug!("Didn't parse 'modules loaded' line");
             }
         }
 
