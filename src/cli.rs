@@ -18,11 +18,15 @@ pub struct Opts {
     #[arg(long)]
     pub command: Option<String>,
 
-    /// A shell command which runs tests. If given, this command will be run after reloads.
-    ///
-    /// May contain quoted arguments which will be parsed in a `sh`-like manner.
+    /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
+    /// run after reloads.
     #[arg(long)]
     pub test: Option<String>,
+
+    /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
+    /// the command-line arguments for tests.
+    #[arg(long)]
+    pub setup: Vec<String>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
     #[arg(long)]
