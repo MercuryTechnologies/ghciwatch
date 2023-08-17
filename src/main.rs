@@ -10,11 +10,13 @@ use clap::Parser;
 use ghcid_ng::cli;
 use ghcid_ng::command;
 use ghcid_ng::ghci::Ghci;
+use ghcid_ng::runner::Runner;
 use ghcid_ng::tracing;
 use ghcid_ng::watcher::Watcher;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use tap::Tap;
+use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
 #[tokio::main]
@@ -37,19 +39,30 @@ async fn main() -> miette::Result<()> {
     let ghci = Ghci::new(ghci_command, opts.errors.clone(), opts.setup, opts.test)
         .await
         .wrap_err("Failed to start `ghci`")?;
+
+    let (runner_sender, runner_receiver) = mpsc::channel(16); // TODO: Capacity?
+
     let watcher = Watcher::new(
-        ghci,
+        runner_sender.clone(),
         &opts.watch.paths,
         opts.watch.debounce,
         opts.watch.poll,
     )
     .wrap_err("Failed to start file watcher")?;
 
-    watcher
-        .handle
+    let runner = Runner::new(
+        runner_sender,
+        runner_receiver,
+        ghci,
+        watcher,
+        opts.server.socket.as_deref(),
+    )?;
+
+    runner
+        .run()
         .await
         .into_diagnostic()?
-        .wrap_err("File watcher failed")?;
+        .wrap_err("Runner failed")?;
 
     Ok(())
 }

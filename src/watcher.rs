@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
+use miette::IntoDiagnostic;
 use tokio::runtime::Handle;
+use tokio::sync::mpsc;
 use tokio::task::block_in_place;
 use tokio::task::JoinHandle;
 use tracing::instrument;
@@ -20,10 +22,11 @@ use watchexec::Watchexec;
 use watchexec_signals::Signal;
 
 use crate::event_filter::file_events_from_action;
-use crate::ghci::Ghci;
+use crate::runner::RunnerEvent;
 
 /// A [`watchexec`] watcher which waits for file changes and sends reload events to the contained
 /// `ghci` session.
+#[derive(Debug)]
 pub struct Watcher {
     /// The inner `Watchexec` struct.
     ///
@@ -31,14 +34,12 @@ pub struct Watcher {
     /// drops the watcher tasks too.
     #[allow(dead_code)]
     inner: Arc<Watchexec>,
-    /// A handle to wait on the file watcher task.
-    pub handle: JoinHandle<Result<(), watchexec::error::CriticalError>>,
 }
 
 impl Watcher {
     /// Create a new [`Watcher`] from a [`Ghci`] session.
     pub fn new(
-        ghci: Ghci,
+        sender: mpsc::Sender<RunnerEvent>,
         watch: &[Utf8PathBuf],
         debounce: Duration,
         poll: Option<Duration>,
@@ -46,7 +47,7 @@ impl Watcher {
         let mut init_config = InitConfig::default();
         init_config.on_error(PrintDebug(std::io::stderr()));
 
-        let action_handler = ActionHandler { ghci };
+        let action_handler = ActionHandler { sender };
 
         let mut runtime_config = RuntimeConfig::default();
         runtime_config
@@ -60,17 +61,19 @@ impl Watcher {
 
         let watcher = Watchexec::new(init_config, runtime_config.clone())?;
 
-        let watcher_handle = watcher.main();
+        Ok(Self { inner: watcher })
+    }
 
-        Ok(Self {
-            inner: watcher,
-            handle: watcher_handle,
-        })
+    /// Run this watcher and wait for it to exit.
+    ///
+    /// Panics if called twice.
+    pub fn run(&self) -> JoinHandle<Result<(), watchexec::error::CriticalError>> {
+        self.inner.main()
     }
 }
 
 struct ActionHandler {
-    ghci: Ghci,
+    sender: mpsc::Sender<RunnerEvent>,
 }
 
 impl ActionHandler {
@@ -92,7 +95,10 @@ impl ActionHandler {
 
         let events = file_events_from_action(&action)?;
         if !events.is_empty() {
-            self.ghci.reload(events).await?;
+            self.sender
+                .send(RunnerEvent::FileChange { events })
+                .await
+                .into_diagnostic()?;
         }
 
         Ok(())

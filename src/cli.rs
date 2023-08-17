@@ -28,6 +28,8 @@ pub struct Opts {
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
+    ///
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub setup: Vec<String>,
 

@@ -78,7 +78,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    pub async fn run_inner(&mut self) -> miette::Result<()> {
+    async fn run_inner(&mut self) -> miette::Result<()> {
         loop {
             // TODO: Could this cause problems where we get an event and a final stderr line is only
             // processed after we write the error log?

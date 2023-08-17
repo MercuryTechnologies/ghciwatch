@@ -81,6 +81,7 @@ pub const HASKELL_SOURCE_EXTENSIONS: [&str; 9] = [
 
 /// A filesystem event that `ghci` will need to respond to. Due to the way that `ghci` is, we need
 /// to divide these into a few different classes so that we can respond appropriately.
+#[derive(Debug)]
 pub enum FileEvent {
     /// An existing file is modified, or a new file is created.
     ///
