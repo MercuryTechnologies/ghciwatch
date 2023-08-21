@@ -270,7 +270,7 @@ impl Ghci {
                         break;
                     }
                     FileEvent::Modify(path) => {
-                        if guard.modules.contains_source_path(&path) {
+                        if guard.modules.contains_source_path(&path)? {
                             // We can `:reload` paths `ghci` already has loaded.
                             tracing::debug!(?path, "Needs reload");
                             needs_reload.push(path);
@@ -418,8 +418,7 @@ impl Ghci {
             .send(StdinEvent::AddModule(path.clone(), sender))
             .await
             .into_diagnostic()?;
-        // TODO: What if adding the new module fails?
-        self.modules.insert_source_path(path);
+        self.modules.insert_source_path(path)?;
         receiver.await.into_diagnostic()
     }
 
