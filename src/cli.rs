@@ -96,6 +96,8 @@ pub struct LoggingOpts {
     pub backtrace: RustBacktrace,
 
     /// When to log span events, which loosely correspond to tasks being run in the async runtime.
+    ///
+    /// Allows multiple values, comma-separated.
     #[arg(
         long,
         default_value = "new,close",
