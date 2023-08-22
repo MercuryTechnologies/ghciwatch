@@ -7,15 +7,17 @@ use tracing::instrument;
 use crate::json::JsonReader;
 use crate::runner::RunnerEvent;
 
-/// A `ghcid-ng` server command. These are written to a socket to allow automating and scripting
-/// `ghcid-ng`.
+/// A `ghcid-ng` server command. These are written to a port or socket to allow automating and
+/// scripting `ghcid-ng`.
 #[derive(Deserialize)]
 pub enum ServerCommand {
     /// Quit the `ghci` session and exit `ghcid-ng`.
     Exit,
 }
 
-/// Task for reading input from a socket (in the form of [`ServerCommand`]s) to control `ghcid-ng`.
+/// Task for reading input from a port/socket (in the form of [`ServerCommand`]s) to control
+/// `ghcid-ng`. This is generic over the underlying reader so it can be used with Unix Domain
+/// Sockets, TCP ports, etc.
 pub struct ServerRead<R> {
     /// The underlying reader.
     reader: JsonReader<ServerCommand, R>,

@@ -1,6 +1,5 @@
 //! The [`Runner`] struct.
 
-use camino::Utf8Path;
 use miette::miette;
 use miette::IntoDiagnostic;
 use tokio::sync::broadcast;
@@ -12,8 +11,8 @@ use tracing::instrument;
 
 use crate::event_filter::FileEvent;
 use crate::ghci::Ghci;
-use crate::socket::ServerNotification;
-use crate::socket::SocketConnector;
+use crate::server::Server;
+use crate::server::ServerNotification;
 use crate::watcher::Watcher;
 
 /// An event sent to a [`Runner`].
@@ -32,7 +31,7 @@ pub enum RunnerEvent {
 /// The `ghcid-ng` runner, responsible for orchestrating a `ghci` session.
 ///
 /// This runner coordinates between file events from a [`crate::watcher::Watcher`]
-/// and (if `ghcid-ng` is running in server mode) server commands from a socket.
+/// and (if `ghcid-ng` is running in server mode) server commands from a port/socket.
 ///
 /// The basic idea is that whereas [`Ghci`] manages a `ghci` session (coordinating its inputs and
 /// outputs into discrete actions as described by its methods), this struct manages the [`Ghci`]
@@ -46,26 +45,28 @@ pub struct Runner {
     watcher: Watcher,
     receiver: mpsc::Receiver<RunnerEvent>,
     notification_sender: Option<broadcast::Sender<ServerNotification>>,
-    /// Socket connector handle. We need to keep this around or the task will be dropped and
+    /// Server handle. We need to keep this around or the task will be dropped and
     /// cancelled.
     #[allow(dead_code)]
-    socket_connector: Option<JoinHandle<miette::Result<()>>>,
+    server: Option<JoinHandle<miette::Result<()>>>,
 }
 
 impl Runner {
     /// Construct a new runner orchestrating the given session with the given file watcher.
-    pub fn new(
+    pub async fn new(
         sender: mpsc::Sender<RunnerEvent>,
         receiver: mpsc::Receiver<RunnerEvent>,
         ghci: Ghci,
         watcher: Watcher,
-        socket: Option<&Utf8Path>,
+        listen_port: Option<u16>,
     ) -> miette::Result<Self> {
-        let (socket_connector, notification_sender) = match socket {
-            Some(path) => {
+        let (server, notification_sender) = match listen_port {
+            Some(port) => {
                 let (notification_sender, notification_receiver) = broadcast::channel(8);
                 let handle = task::spawn(
-                    SocketConnector::new(path, sender.clone(), notification_receiver)?.run(),
+                    Server::new(port, sender.clone(), notification_receiver)
+                        .await?
+                        .run(),
                 );
                 (Some(handle), Some(notification_sender))
             }
@@ -77,7 +78,7 @@ impl Runner {
             ghci,
             watcher,
             notification_sender,
-            socket_connector,
+            server,
         })
     }
 

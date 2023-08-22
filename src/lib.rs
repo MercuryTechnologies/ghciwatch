@@ -23,7 +23,7 @@ pub mod incremental_reader;
 pub mod json;
 pub mod lines;
 pub mod runner;
-pub mod socket;
+pub mod server;
 pub mod sync_sentinel;
 pub mod textwrap;
 pub mod tracing;

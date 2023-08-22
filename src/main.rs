@@ -55,8 +55,9 @@ async fn main() -> miette::Result<()> {
         runner_receiver,
         ghci,
         watcher,
-        opts.server.socket.as_deref(),
-    )?;
+        opts.server.listen,
+    )
+    .await?;
 
     runner
         .run()

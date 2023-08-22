@@ -113,6 +113,18 @@ pub struct LoggingOpts {
     pub trace_spans: Vec<FmtSpan>,
 }
 
+/// Options to run in server mode.
+#[derive(Debug, Clone, clap::Args)]
+#[clap(next_help_heading = "Server options")]
+pub struct ServerOpts {
+    /// Start in server mode, binding to the given TCP port.
+    ///
+    /// The port can be used to send commands to `ghcid-ng` and to receive event notifications
+    /// back in turn. The communication protocol is unstable for now.
+    #[arg(long, value_name = "PORT")]
+    pub listen: Option<u16>,
+}
+
 impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.

@@ -5,8 +5,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast;
 use tracing::instrument;
 
-/// A `ghcid-ng` server notification. `ghcid-ng` writes these to a socket to inform clients of
-/// actions and events from `ghcid-ng`.
+/// A `ghcid-ng` server notification. `ghcid-ng` writes these to a port or socket to inform clients
+/// of actions and events from `ghcid-ng`.
 #[derive(Debug, Clone, Serialize)]
 pub enum ServerNotification {
     /// The server is reloading the `ghci` session.
@@ -15,7 +15,9 @@ pub enum ServerNotification {
     Exit,
 }
 
-/// Task for writing notifications and events to a socket (in the form of [`ServerNotification`]s).
+/// Task for writing notifications and events to a port or socket (in the form of
+/// [`ServerNotification`]s). This is generic over the underlying writer so it will work with
+/// Unix Domain Sockets, TCP ports, etc.
 pub struct ServerWrite<W> {
     /// The underlying writer.
     writer: W,
@@ -32,7 +34,7 @@ where
         Self { writer, receiver }
     }
 
-    /// Run this task, writing events to the socket as they're received.
+    /// Run this task, writing events to the wrapped port as they're received.
     #[instrument(skip_all, name = "server-read", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
         loop {
