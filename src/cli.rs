@@ -3,8 +3,11 @@
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
+use clap::builder::ValueParserFactory;
 use clap::Parser;
+use tracing_subscriber::fmt::format::FmtSpan;
 
+use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
@@ -91,6 +94,27 @@ pub struct LoggingOpts {
     /// How to display backtraces in error messages.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
     pub backtrace: RustBacktrace,
+
+    /// When to log span events, which loosely correspond to tasks being run in the async runtime.
+    #[arg(
+        long,
+        default_value = "new,close",
+        value_delimiter = ',',
+        value_parser = FmtSpanParserFactory::value_parser()
+    )]
+    pub trace_spans: Vec<FmtSpan>,
+}
+
+/// Options to run in server mode.
+#[derive(Debug, Clone, clap::Args)]
+#[clap(next_help_heading = "Server options")]
+pub struct ServerOpts {
+    /// Start in server mode, binding to the given socket path.
+    ///
+    /// The socket can be used to send commands to `ghcid-ng` and to receive event notifications
+    /// back in turn. The communication protocol is unstable for now.
+    #[arg(long, value_name = "PATH")]
+    pub socket: Option<Utf8PathBuf>,
 }
 
 impl Opts {
