@@ -4,6 +4,7 @@ use std::str::FromStr;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::miette;
+use miette::Context;
 use miette::IntoDiagnostic;
 
 use crate::event_filter::HASKELL_SOURCE_EXTENSIONS;
@@ -129,13 +130,27 @@ impl ModuleSet {
     }
 
     /// Determine if a module with the given source path is contained in this module set.
-    pub fn contains_source_path(&self, path: &Utf8Path) -> bool {
-        self.map.contains(path)
+    ///
+    /// Returns `Err` if the `path` cannot be canonicalized.
+    pub fn contains_source_path(&self, path: &Utf8Path) -> miette::Result<bool> {
+        let path = path
+            .canonicalize_utf8()
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to canonicalize path: {path:?}"))?;
+
+        Ok(self.map.contains(&path))
     }
 
     /// Add a source path to this module set.
-    pub fn insert_source_path(&mut self, path: Utf8PathBuf) {
+    ///
+    /// Returns `Err` if the `path` cannot be canonicalized.
+    pub fn insert_source_path(&mut self, path: Utf8PathBuf) -> miette::Result<()> {
+        let path = path
+            .canonicalize_utf8()
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to canonicalize path: {path:?}"))?;
         self.map.insert(path);
+        Ok(())
     }
 }
 

@@ -270,7 +270,7 @@ impl Ghci {
                         break;
                     }
                     FileEvent::Modify(path) => {
-                        if guard.modules.contains_source_path(&path) {
+                        if guard.modules.contains_source_path(&path)? {
                             // We can `:reload` paths `ghci` already has loaded.
                             tracing::debug!(?path, "Needs reload");
                             needs_reload.push(path);
@@ -418,9 +418,22 @@ impl Ghci {
             .send(StdinEvent::AddModule(path.clone(), sender))
             .await
             .into_diagnostic()?;
-        // TODO: What if adding the new module fails?
-        self.modules.insert_source_path(path);
-        receiver.await.into_diagnostic()
+        let result = receiver.await.into_diagnostic()?;
+        match result {
+            None => {
+                tracing::debug!(
+                    ?path,
+                    "Added module but didn't receive a compilation result"
+                );
+            }
+            Some(CompilationResult::Err) => {
+                // Compilation failed, so we don't want to add the module to the module set.
+            }
+            Some(CompilationResult::Ok) => {
+                self.modules.insert_source_path(path)?;
+            }
+        }
+        Ok(result)
     }
 
     /// Stop this `ghci` session and cancel the async tasks associated with it.
