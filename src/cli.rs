@@ -121,6 +121,8 @@ pub struct ServerOpts {
     ///
     /// The port can be used to send commands to `ghcid-ng` and to receive event notifications
     /// back in turn. The communication protocol is unstable for now.
+    ///
+    /// I recommend the use of port 4424.
     #[arg(long, value_name = "PORT")]
     pub listen: Option<u16>,
 }

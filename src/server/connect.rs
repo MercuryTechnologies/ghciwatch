@@ -1,5 +1,11 @@
+use std::future::Future;
 use std::net::Ipv4Addr;
+use std::net::SocketAddrV4;
 
+use hyper::service::make_service_fn;
+use hyper::service::service_fn;
+use hyper::Body;
+use hyper::Response;
 use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::net::TcpListener;
@@ -17,10 +23,9 @@ use super::ServerNotification;
 /// Wraps a [`TcpListener`] and creates reader tasks corresponding to connections to a
 /// port.
 pub struct Server {
-    listener: TcpListener,
     sender: mpsc::Sender<RunnerEvent>,
     receiver: broadcast::Receiver<ServerNotification>,
-    connections: JoinSet<miette::Result<()>>,
+    http_server: Box<dyn Future<Output = Result<(), hyper::Error>> + Send + Unpin>,
 }
 
 impl Server {
@@ -30,48 +35,34 @@ impl Server {
         sender: mpsc::Sender<RunnerEvent>,
         receiver: broadcast::Receiver<ServerNotification>,
     ) -> miette::Result<Self> {
-        Ok(Self {
-            listener: TcpListener::bind((Ipv4Addr::LOCALHOST, port))
-                .await
+        let make_svc = make_service_fn(|_addr_stream| async {
+            Ok::<_, hyper::Error>(service_fn(|_req| async {
+                Ok::<_, hyper::Error>(Response::new(Body::from("Hello World")))
+            }))
+        });
+
+        let http_server =
+            hyper::Server::try_bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())
                 .into_diagnostic()
-                .wrap_err_with(|| format!("Failed to bind TCP port {port}"))?,
+                .wrap_err_with(|| format!("Failed to bind TCP port {port}"))?
+                .serve(make_svc);
+
+        Ok(Self {
+            http_server: Box::new(http_server),
             sender,
             receiver,
-            connections: JoinSet::new(),
         })
     }
 
     /// Run the server.
     #[instrument(skip_all, name = "server", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
-        match self.run_inner().await {
+        match self.http_server.await {
             Ok(()) => {}
             Err(err) => {
                 tracing::error!("{err:?}");
             }
         }
-
-        Ok(())
-    }
-
-    async fn run_inner(&mut self) -> miette::Result<()> {
-        let (stream, address) = self
-            .listener
-            .accept()
-            .await
-            .into_diagnostic()
-            .wrap_err("Failed to accept a TCP connection")?;
-
-        tracing::debug!(?address, "Accepted a TCP connection");
-
-        let (read_half, write_half) = stream.into_split();
-
-        self.connections
-            .spawn(ServerRead::new(read_half, self.sender.clone()).run());
-        // TODO: Resubscribing here might drop data. Should we empty the queue before this and
-        // reinsert the values after resubscribing?
-        self.connections
-            .spawn(ServerWrite::new(write_half, self.receiver.resubscribe()).run());
 
         Ok(())
     }
