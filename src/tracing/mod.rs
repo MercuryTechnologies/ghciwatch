@@ -11,14 +11,18 @@ use tracing_subscriber::Layer;
 mod format;
 
 /// Initialize the logging framework.
-pub fn install_tracing(filter_directives: &str) -> miette::Result<()> {
+pub fn install_tracing(filter_directives: &str, trace_spans: &[FmtSpan]) -> miette::Result<()> {
     let env_filter = EnvFilter::try_new(filter_directives)
         .or_else(|_| EnvFilter::try_from_default_env())
         .or_else(|_| EnvFilter::try_new("info"))
         .into_diagnostic()?;
 
     let fmt_layer = fmt::layer()
-        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        .with_span_events(
+            trace_spans
+                .iter()
+                .fold(FmtSpan::NONE, |result, item| result | item.clone()),
+        )
         .fmt_fields(format::SpanFieldFormatter::default())
         .event_format(format::EventFormatter::default())
         .with_filter(env_filter);
