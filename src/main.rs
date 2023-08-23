@@ -21,7 +21,7 @@ use tokio::sync::Mutex;
 async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let opts = cli::Opts::parse().tap_mut(|opts| opts.init());
-    tracing::install_tracing(&opts.logging.tracing_filter)?;
+    tracing::install_tracing(&opts.logging.tracing_filter, &opts.logging.trace_spans)?;
 
     ::tracing::warn!(
         "This is a prerelease alpha version of `ghcid-ng`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."
