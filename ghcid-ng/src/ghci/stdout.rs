@@ -1,8 +1,6 @@
 use std::sync::OnceLock;
 
 use aho_corasick::AhoCorasick;
-use backoff::backoff::Backoff;
-use backoff::ExponentialBackoff;
 use miette::Context;
 use miette::IntoDiagnostic;
 use regex::Regex;
@@ -23,31 +21,11 @@ use super::stderr::StderrEvent;
 use super::CompilationResult;
 use super::Mode;
 
-/// An event sent to a `ghci` session's stdout channel.
-#[derive(Debug)]
-pub enum StdoutEvent {
-    /// Wait for `ghci` startup indicators, then wait for the initial prompt.
-    Initialize(oneshot::Sender<()>),
-    /// Wait for a regular `ghci` prompt.
-    Prompt(oneshot::Sender<Option<CompilationResult>>),
-    /// Wait for a sync marker.
-    Sync(SyncSentinel),
-    /// Parse `:show modules` output.
-    ShowModules(oneshot::Sender<ModuleSet>),
-    /// Set the session's mode.
-    Mode {
-        mode: Mode,
-        sender: oneshot::Sender<()>,
-    },
-}
-
 pub struct GhciStdout {
     /// Reader for parsing and forwarding the underlying stdout stream.
     pub reader: IncrementalReader<ChildStdout, Stdout>,
     /// Channel for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
-    /// Channel for communicating with this task.
-    pub receiver: mpsc::Receiver<StdoutEvent>,
     /// Prompt patterns to match. Constructing these `AhoCorasick` automatons is costly so we store
     /// them in the task state.
     pub prompt_patterns: AhoCorasick,
@@ -58,54 +36,8 @@ pub struct GhciStdout {
 }
 
 impl GhciStdout {
-    #[instrument(skip_all, name = "stdout", level = "debug")]
-    pub async fn run(mut self) -> miette::Result<()> {
-        let mut backoff = ExponentialBackoff::default();
-        while let Some(duration) = backoff.next_backoff() {
-            match self.run_inner().await {
-                Ok(()) => {
-                    // MPSC channel closed, probably a graceful shutdown?
-                    tracing::debug!("Channel closed");
-                    break;
-                }
-                Err(err) => {
-                    tracing::error!("{err:?}");
-                }
-            }
-
-            tracing::debug!("Waiting {duration:?} before retrying");
-            tokio::time::sleep(duration).await;
-        }
-
-        Ok(())
-    }
-
-    async fn run_inner(&mut self) -> miette::Result<()> {
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                StdoutEvent::Initialize(sender) => {
-                    self.initialize(sender).await?;
-                }
-                StdoutEvent::Sync(sentinel) => {
-                    self.sync(sentinel).await?;
-                }
-                StdoutEvent::Prompt(sender) => {
-                    self.prompt(sender, None).await?;
-                }
-                StdoutEvent::ShowModules(sender) => {
-                    self.show_modules(sender).await?;
-                }
-                StdoutEvent::Mode { mode, sender } => {
-                    self.set_mode(sender, mode).await;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     #[instrument(skip_all, level = "debug")]
-    async fn initialize(&mut self, when_ready: oneshot::Sender<()>) -> miette::Result<()> {
+    pub async fn initialize(&mut self, when_ready: oneshot::Sender<()>) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -131,7 +63,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn prompt(
+    pub async fn prompt(
         &mut self,
         sender: oneshot::Sender<Option<CompilationResult>>,
         // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
@@ -176,7 +108,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
+    pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         // Read until the sync marker...
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
         let lines = self
@@ -203,7 +135,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
+    pub async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
         let lines = self
             .reader
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
@@ -214,7 +146,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
+    pub async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
         self.mode = mode;
         let _ = sender.send(());
     }

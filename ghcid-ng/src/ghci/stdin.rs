@@ -12,9 +12,9 @@ use tracing::instrument;
 use crate::haskell_show::HaskellShow;
 use crate::sync_sentinel::SyncSentinel;
 
+use crate::ghci::GhciStdout;
 use super::show_modules::ModuleSet;
 use super::stderr::StderrEvent;
-use super::stdout::StdoutEvent;
 use super::CompilationResult;
 use super::Mode;
 use super::IO_MODULE_NAME;
@@ -24,7 +24,7 @@ pub struct GhciStdin {
     /// Inner stdin writer.
     pub stdin: ChildStdin,
     /// Channel sender for communicating with the stdout task.
-    pub stdout_sender: mpsc::Sender<StdoutEvent>,
+    pub stdout: GhciStdout,
     /// Channel sender for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
 }
@@ -55,10 +55,7 @@ impl GhciStdin {
             .write_all(line.as_bytes())
             .await
             .into_diagnostic()?;
-        self.stdout_sender
-            .send(StdoutEvent::Prompt(sender))
-            .await
-            .into_diagnostic()?;
+        self.stdout.prompt(sender, None).await?;
         Ok(())
     }
 
@@ -145,10 +142,7 @@ impl GhciStdin {
             .await
             .into_diagnostic()?;
 
-        self.stdout_sender
-            .send(StdoutEvent::Sync(sentinel))
-            .await
-            .into_diagnostic()?;
+        self.stdout.sync(sentinel).await?;
 
         Ok(())
     }
@@ -162,23 +156,17 @@ impl GhciStdin {
             .await
             .into_diagnostic()?;
 
-        self.stdout_sender
-            .send(StdoutEvent::ShowModules(sender))
-            .await
-            .into_diagnostic()?;
+        self.stdout.show_modules(sender).await?;
         Ok(())
     }
 
     #[instrument(skip(self), level = "debug")]
-    pub async fn set_mode(&self, mode: Mode) -> miette::Result<()> {
+    pub async fn set_mode(&mut self, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 
         {
             let (sender, receiver) = oneshot::channel();
-            self.stdout_sender
-                .send(StdoutEvent::Mode { mode, sender })
-                .await
-                .into_diagnostic()?;
+            self.stdout.set_mode(sender, mode).await;
             set.spawn(receiver);
         }
 
