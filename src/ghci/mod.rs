@@ -64,8 +64,6 @@ pub struct Ghci {
     stdout: JoinHandle<miette::Result<()>>,
     /// The handle for the stderr reader task.
     stderr: JoinHandle<miette::Result<()>>,
-    /// The handle for the stdin interaction task.
-    stdin: JoinHandle<miette::Result<()>>,
     ghci_stdin: GhciStdin,
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
@@ -127,7 +125,6 @@ impl Ghci {
         // then create weak pointers to it and swap out the tasks.
         let stdout_handle = task::spawn(async { Ok(()) });
         let stderr_handle = task::spawn(async { Ok(()) });
-        let stdin_handle = task::spawn(async { Ok(()) });
 
         let ghci_stdin =
               GhciStdin {
@@ -141,7 +138,6 @@ impl Ghci {
             process: child,
             stdout: stdout_handle,
             stderr: stderr_handle,
-            stdin: stdin_handle,
             ghci_stdin,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
@@ -396,7 +392,6 @@ impl Ghci {
         // I'd need to add events for it.
         self.stdout.abort();
         self.stderr.abort();
-        self.stdin.abort();
 
         // Kill the old `ghci` process.
         // TODO: Worth trying `SIGINT` or closing stdin here?
