@@ -1,7 +1,5 @@
 use std::time::Instant;
 
-use backoff::backoff::Backoff;
-use backoff::ExponentialBackoff;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
@@ -22,29 +20,6 @@ use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
 
-/// An event sent to a `ghci` session's stdin channel.
-#[derive(Debug)]
-pub enum StdinEvent {
-    /// Initialize the `ghci` session; sets the initial imports, changes the prompt, etc.
-    Initialize {
-        sender: oneshot::Sender<()>,
-        setup_commands: Vec<String>,
-    },
-    /// Reload the `ghci` session with `:reload`.
-    Reload(oneshot::Sender<Option<CompilationResult>>),
-    /// Run the user-provided test command, if any.
-    Test {
-        sender: oneshot::Sender<()>,
-        test_command: Option<String>,
-    },
-    /// Add a module to the `ghci` session by path with `:add`.
-    AddModule(Utf8PathBuf, oneshot::Sender<Option<CompilationResult>>),
-    /// Sync the `ghci` session's input/output.
-    Sync(SyncSentinel),
-    /// Show the currently loaded modules with `:show modules`.
-    ShowModules(oneshot::Sender<ModuleSet>),
-}
-
 pub struct GhciStdin {
     /// Inner stdin writer.
     pub stdin: ChildStdin,
@@ -52,71 +27,14 @@ pub struct GhciStdin {
     pub stdout_sender: mpsc::Sender<StdoutEvent>,
     /// Channel sender for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
-    /// Channel receiver for communicating with this task.
-    pub receiver: mpsc::Receiver<StdinEvent>,
 }
 
 impl GhciStdin {
-    #[instrument(skip_all, name = "stdin", level = "debug")]
-    pub async fn run(mut self) -> miette::Result<()> {
-        let mut backoff = ExponentialBackoff::default();
-        while let Some(duration) = backoff.next_backoff() {
-            match self.run_inner().await {
-                Ok(()) => {
-                    // MPSC channel closed, probably a graceful shutdown?
-                    tracing::debug!("Channel closed");
-                    break;
-                }
-                Err(err) => {
-                    tracing::error!("{err:?}");
-                }
-            }
-
-            tracing::debug!("Waiting {duration:?} before retrying");
-            tokio::time::sleep(duration).await;
-        }
-
-        Ok(())
-    }
-
-    pub async fn run_inner(&mut self) -> miette::Result<()> {
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                StdinEvent::Initialize {
-                    sender,
-                    setup_commands,
-                } => {
-                    self.initialize(sender, setup_commands).await?;
-                }
-                StdinEvent::Reload(sender) => {
-                    self.reload(sender).await?;
-                }
-                StdinEvent::Test {
-                    sender,
-                    test_command,
-                } => {
-                    self.test(sender, test_command).await?;
-                }
-                StdinEvent::AddModule(path, sender) => {
-                    self.add_module(path, sender).await?;
-                }
-                StdinEvent::Sync(sentinel) => {
-                    self.sync(sentinel).await?;
-                }
-                StdinEvent::ShowModules(sender) => {
-                    self.show_modules(sender).await?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Write a line on `stdin` and wait for a prompt on stdout.
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self), level = "debug")]
-    async fn write_line(&mut self, line: &str) -> miette::Result<()> {
+    pub async fn write_line(&mut self, line: &str) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
         self.write_line_sender(line, sender).await?;
         receiver.await.into_diagnostic()?;
@@ -128,7 +46,7 @@ impl GhciStdin {
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self, sender), level = "debug")]
-    async fn write_line_sender(
+    pub async fn write_line_sender(
         &mut self,
         line: &str,
         sender: oneshot::Sender<Option<CompilationResult>>,
@@ -145,7 +63,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn initialize(
+    pub async fn initialize(
         &mut self,
         sender: oneshot::Sender<()>,
         setup_commands: Vec<String>,
@@ -167,7 +85,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn reload(
+    pub async fn reload(
         &mut self,
         sender: oneshot::Sender<Option<CompilationResult>>,
     ) -> miette::Result<()> {
@@ -177,7 +95,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip_all, level = "debug")]
-    async fn test(
+    pub async fn test(
         &mut self,
         sender: oneshot::Sender<()>,
         test_command: Option<String>,
@@ -197,7 +115,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn add_module(
+    pub async fn add_module(
         &mut self,
         path: Utf8PathBuf,
         sender: oneshot::Sender<Option<CompilationResult>>,
@@ -217,7 +135,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
+    pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         self.set_mode(Mode::Internal).await?;
 
         self.stdin
@@ -236,7 +154,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
+    pub async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
         self.set_mode(Mode::Internal).await?;
 
         self.stdin
@@ -252,7 +170,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn set_mode(&self, mode: Mode) -> miette::Result<()> {
+    pub async fn set_mode(&self, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 
         {
