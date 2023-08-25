@@ -284,7 +284,7 @@ impl Ghci {
 
         if !add.is_empty() {
             tracing::info!(
-                "Adding new modules to `ghci`:\n{}",
+                "Adding new modules to ghci:\n{}",
                 format_bulleted_list(&add)
             );
             for path in add {
@@ -297,7 +297,7 @@ impl Ghci {
 
         if !needs_reload.is_empty() {
             tracing::info!(
-                "Reloading `ghci` due to changed modules:\n{}",
+                "Reloading ghci due to changed modules:\n{}",
                 format_bulleted_list(&needs_reload)
             );
             let (sender, receiver) = oneshot::channel();
