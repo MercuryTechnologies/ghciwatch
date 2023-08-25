@@ -134,7 +134,6 @@ impl Ghci {
 
         let stdin = GhciStdin {
             stdin,
-            stdout,
             stderr_sender: stderr_sender.clone(),
         };
 
@@ -186,7 +185,7 @@ impl Ghci {
             let span = tracing::debug_span!("Start-of-session initialization");
             let _enter = span.enter();
             let (sender, receiver) = oneshot::channel();
-            ret.stdin.initialize(sender, setup_commands).await?;
+            ret.stdin.initialize(&mut ret.stdout, sender, setup_commands).await?;
             receiver.await.into_diagnostic()?;
         }
 
@@ -290,7 +289,7 @@ impl Ghci {
                 format_bulleted_list(&needs_reload)
             );
             let (sender, receiver) = oneshot::channel();
-            self.stdin.reload(sender).await?;
+            self.stdin.reload(&mut self.stdout, sender).await?;
             let reload_result = receiver.await.into_diagnostic()?;
             if let Some(CompilationResult::Err) = reload_result {
                 compilation_failed = true;
@@ -303,7 +302,7 @@ impl Ghci {
             } else {
                 // If we loaded or reloaded any modules, we should run tests.
                 let (sender, receiver) = oneshot::channel();
-                self.stdin.test(sender, self.test_command.clone()).await?;
+                self.stdin.test(&mut self.stdout, sender, self.test_command.clone()).await?;
                 receiver.await.into_diagnostic()?;
             }
         }
@@ -318,7 +317,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn sync(&mut self) -> miette::Result<()> {
         let (sentinel, receiver) = SyncSentinel::new(&self.sync_count);
-        self.stdin.sync(sentinel).await?;
+        self.stdin.sync(&mut self.stdout, sentinel).await?;
         receiver.await.into_diagnostic()?;
         Ok(())
     }
@@ -327,7 +326,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin.test(sender, self.test_command.clone()).await?;
+        self.stdin.test(&mut self.stdout, sender, self.test_command.clone()).await?;
         receiver.await.into_diagnostic()?;
         Ok(())
     }
@@ -336,7 +335,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn refresh_modules(&mut self) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin.show_modules(sender).await?;
+        self.stdin.show_modules(&mut self.stdout, sender).await?;
         let map = receiver.await.into_diagnostic()?;
         self.modules = map;
         tracing::debug!(
@@ -355,7 +354,7 @@ impl Ghci {
         path: Utf8PathBuf,
     ) -> miette::Result<Option<CompilationResult>> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin.add_module(path.clone(), sender).await?;
+        self.stdin.add_module(&mut self.stdout, path.clone(), sender).await?;
         let result = receiver.await.into_diagnostic()?;
         match result {
             None => {
