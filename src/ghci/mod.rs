@@ -26,7 +26,6 @@ use tracing::instrument;
 
 mod stdin;
 use stdin::GhciStdin;
-use stdin::StdinEvent;
 
 mod stdout;
 use stdout::GhciStdout;
@@ -62,13 +61,10 @@ pub struct Ghci {
     /// The running `ghci` process.
     process: Child,
     /// The handle for the stdout reader task.
-    stdout: JoinHandle<miette::Result<()>>,
+    stdout_handle: JoinHandle<miette::Result<()>>,
     /// The handle for the stderr reader task.
-    stderr: JoinHandle<miette::Result<()>>,
-    /// The handle for the stdin interaction task.
-    stdin: JoinHandle<miette::Result<()>>,
-    /// A channel for sending events to interact with the stdin task.
-    stdin_channel: mpsc::Sender<StdinEvent>,
+    stderr_handle: JoinHandle<miette::Result<()>>,
+    stdin: GhciStdin,
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
     sync_count: AtomicUsize,
@@ -121,7 +117,6 @@ impl Ghci {
         let stderr = child.stderr.take().unwrap();
 
         // TODO: Is this a good capacity? Maybe it should just be 1.
-        let (stdin_sender, stdin_receiver) = mpsc::channel(8);
         let (stdout_sender, stdout_receiver) = mpsc::channel(8);
         let (stderr_sender, stderr_receiver) = mpsc::channel(8);
 
@@ -130,15 +125,20 @@ impl Ghci {
         // then create weak pointers to it and swap out the tasks.
         let stdout_handle = task::spawn(async { Ok(()) });
         let stderr_handle = task::spawn(async { Ok(()) });
-        let stdin_handle = task::spawn(async { Ok(()) });
+
+        let stdin =
+              GhciStdin {
+                stdin,
+                stdout_sender: stdout_sender.clone(),
+                stderr_sender: stderr_sender.clone(),
+              };
 
         let mut ret = Ghci {
             command: command_arc,
             process: child,
-            stdout: stdout_handle,
-            stderr: stderr_handle,
-            stdin: stdin_handle,
-            stdin_channel: stdin_sender.clone(),
+            stdout_handle,
+            stderr_handle,
+            stdin,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
             error_path: error_path.clone(),
@@ -146,7 +146,7 @@ impl Ghci {
             test_command,
         };
 
-        // Three tasks for my three beautiful streams.
+        // Two tasks for my two beautiful streams.
         let stdout = task::spawn(
             GhciStdout {
                 reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
@@ -173,21 +173,11 @@ impl Ghci {
             }
             .run(),
         );
-        let stdin = task::spawn(
-            GhciStdin {
-                stdin,
-                stdout_sender: stdout_sender.clone(),
-                stderr_sender: stderr_sender.clone(),
-                receiver: stdin_receiver,
-            }
-            .run(),
-        );
 
         // Now, replace the `JoinHandle`s with the actual values.
         {
-            ret.stdout = stdout;
-            ret.stderr = stderr;
-            ret.stdin = stdin;
+            ret.stdout_handle = stdout;
+            ret.stderr_handle = stderr;
         };
 
         // Wait for the stdout job to start up.
@@ -207,13 +197,7 @@ impl Ghci {
             let span = tracing::debug_span!("Start-of-session initialization");
             let _enter = span.enter();
             let (sender, receiver) = oneshot::channel();
-            stdin_sender
-                .send(StdinEvent::Initialize {
-                    sender,
-                    setup_commands,
-                })
-                .await
-                .into_diagnostic()?;
+            ret.stdin.initialize(sender, setup_commands).await?;
             receiver.await.into_diagnostic()?;
         }
 
@@ -317,10 +301,7 @@ impl Ghci {
                 format_bulleted_list(&needs_reload)
             );
             let (sender, receiver) = oneshot::channel();
-            self.stdin_channel
-                .send(StdinEvent::Reload(sender))
-                .await
-                .into_diagnostic()?;
+            self.stdin.reload(sender).await?;
             let reload_result = receiver.await.into_diagnostic()?;
             if let Some(CompilationResult::Err) = reload_result {
                 compilation_failed = true;
@@ -333,13 +314,7 @@ impl Ghci {
             } else {
                 // If we loaded or reloaded any modules, we should run tests.
                 let (sender, receiver) = oneshot::channel();
-                self.stdin_channel
-                    .send(StdinEvent::Test {
-                        sender,
-                        test_command: self.test_command.clone(),
-                    })
-                    .await
-                    .into_diagnostic()?;
+                self.stdin.test(sender, self.test_command.clone()).await?;
                 receiver.await.into_diagnostic()?;
             }
         }
@@ -352,27 +327,18 @@ impl Ghci {
     /// Sync the input and output streams of this `ghci` session. This will block until all input
     /// written to the `ghci` process's stdin has been read and processed.
     #[instrument(skip_all, level = "debug")]
-    pub async fn sync(&self) -> miette::Result<()> {
+    pub async fn sync(&mut self) -> miette::Result<()> {
         let (sentinel, receiver) = SyncSentinel::new(&self.sync_count);
-        self.stdin_channel
-            .send(StdinEvent::Sync(sentinel))
-            .await
-            .into_diagnostic()?;
+        self.stdin.sync(sentinel).await?;
         receiver.await.into_diagnostic()?;
         Ok(())
     }
 
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
-    pub async fn test(&self) -> miette::Result<()> {
+    pub async fn test(&mut self) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin_channel
-            .send(StdinEvent::Test {
-                sender,
-                test_command: self.test_command.clone(),
-            })
-            .await
-            .into_diagnostic()?;
+        self.stdin.test(sender, self.test_command.clone()).await?;
         receiver.await.into_diagnostic()?;
         Ok(())
     }
@@ -381,10 +347,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn refresh_modules(&mut self) -> miette::Result<()> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin_channel
-            .send(StdinEvent::ShowModules(sender))
-            .await
-            .into_diagnostic()?;
+        self.stdin.show_modules(sender).await?;
         let map = receiver.await.into_diagnostic()?;
         self.modules = map;
         tracing::debug!(
@@ -403,10 +366,7 @@ impl Ghci {
         path: Utf8PathBuf,
     ) -> miette::Result<Option<CompilationResult>> {
         let (sender, receiver) = oneshot::channel();
-        self.stdin_channel
-            .send(StdinEvent::AddModule(path.clone(), sender))
-            .await
-            .into_diagnostic()?;
+        self.stdin.add_module(path.clone(), sender).await?;
         let result = receiver.await.into_diagnostic()?;
         match result {
             None => {
@@ -430,9 +390,8 @@ impl Ghci {
     async fn stop(&mut self) -> miette::Result<()> {
         // TODO: Worth canceling the `mpsc::Receiver`s in the tasks here?
         // I'd need to add events for it.
-        self.stdout.abort();
-        self.stderr.abort();
-        self.stdin.abort();
+        self.stdout_handle.abort();
+        self.stderr_handle.abort();
 
         // Kill the old `ghci` process.
         // TODO: Worth trying `SIGINT` or closing stdin here?
