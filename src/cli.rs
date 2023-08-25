@@ -83,8 +83,12 @@ pub struct LoggingOpts {
     #[allow(rustdoc::bare_urls)]
     /// Tracing filter.
     ///
-    /// Can be any of "error", "warn", "info", "debug", or
-    /// "trace". Supports more granular filtering, as well.
+    /// Can be any of "error", "warn", "info", "debug", or "trace". Supports more granular
+    /// filtering, as well.
+    ///
+    /// The grammar is: `target[span{field=value}]=level`, where `target` is a module path, `span`
+    /// is a span name, and `level` is one of the levels listed above.
+    ///
     /// See: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
     ///
     /// A nice value is "ghcid_ng=debug".
@@ -105,6 +109,10 @@ pub struct LoggingOpts {
         value_parser = FmtSpanParserFactory::value_parser()
     )]
     pub trace_spans: Vec<FmtSpan>,
+
+    /// Path to write JSON logs to.
+    #[arg(long, value_name = "PATH")]
+    pub log_json: Option<Utf8PathBuf>,
 }
 
 impl Opts {
