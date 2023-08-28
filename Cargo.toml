@@ -3,6 +3,7 @@
 members = [
     "ghcid-ng",
     "test-harness",
+    "test-harness-macro",
 ]
 
 resolver = "2"
