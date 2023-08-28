@@ -34,5 +34,23 @@ jobs:
         run: |
           nix --version
 
+      - name: Wait for garnix to build
+        uses: lewagon/wait-on-check-action@v1.3.1
+        if: runner.os == 'Linux'
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'package default [x86_64-linux]'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+      - name: Wait for garnix to build
+        uses: lewagon/wait-on-check-action@v1.3.1
+        if: runner.os == 'macOS'
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'package default [aarch64-darwin]'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
       - name: Check Nix flake
         run: nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs
