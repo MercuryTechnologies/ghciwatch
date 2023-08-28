@@ -18,13 +18,6 @@ pub struct FakeReader {
 }
 
 impl FakeReader {
-    /// Construct a `FakeReader` from an iterator of bytes.
-    pub fn with_chunks(chunks: impl IntoIterator<Item = impl Into<Vec<u8>>>) -> Self {
-        Self {
-            chunks: chunks.into_iter().map(|chunk| chunk.into()).collect(),
-        }
-    }
-
     /// Construct a `FakeReader` from an iterator of strings.
     pub fn with_str_chunks(chunks: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         Self {
@@ -33,18 +26,6 @@ impl FakeReader {
                 .map(|chunk| chunk.as_ref().bytes().collect())
                 .collect(),
         }
-    }
-
-    /// Add a string chunk to the end of this reader.
-    pub fn push_str_chunk(&mut self, chunk: impl AsRef<str>) -> &mut Self {
-        self.chunks.push_back(chunk.as_ref().bytes().collect());
-        self
-    }
-
-    /// Add a bytes chunk to the end of this reader.
-    pub fn push_chunk(&mut self, chunk: impl Into<Vec<u8>>) -> &mut Self {
-        self.chunks.push_back(chunk.into());
-        self
     }
 }
 

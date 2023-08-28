@@ -3,6 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs";
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.flake-compat.follows = "flake-compat";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
     flake-utils.url = "github:numtide/flake-utils";
     flake-compat = {
       url = "github:edolstra/flake-compat";
@@ -13,68 +23,82 @@
   outputs = {
     self,
     nixpkgs,
+    crane,
     flake-utils,
+    advisory-db,
     flake-compat,
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [self.overlays.default];
         };
-      in {
-        packages = rec {
-          ghcid-ng = pkgs.ghcid-ng;
-          default = ghcid-ng;
-        };
-        checks = self.packages.${system};
+        inherit (pkgs) lib;
 
-        # for debugging
-        # inherit pkgs;
+        craneLib = crane.lib.${system};
 
-        devShells.default = pkgs.ghcid-ng.overrideAttrs (
-          old: {
-            # Make rust-analyzer work
-            RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+        src = craneLib.cleanCargoSource ./.;
 
-            # Any dev tools you use in excess of the rust ones
-            nativeBuildInputs =
-              old.nativeBuildInputs;
-          }
-        );
-      }
-    )
-    // {
-      overlays.default = (
-        final: prev: {
-          ghcid-ng = final.rustPlatform.buildRustPackage {
-            pname = "ghcid-ng";
-            version = "0.3.0"; # LOAD-BEARING COMMENT. See: `.github/workflows/version.yaml`
+        commonArgs' =
+          (craneLib.crateNameFromCargoToml {cargoToml = ./Cargo.toml;})
+          // {
+            inherit src;
 
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
-
-            src = ./.;
-
-            # Tools on the builder machine needed to build; e.g. pkg-config
-            nativeBuildInputs = [
-              final.rustfmt
-              final.clippy
+            buildInputs = lib.optionals pkgs.stdenv.isDarwin [
+              # Additional darwin specific inputs can be set here
+              pkgs.libiconv
+              pkgs.darwin.apple_sdk.frameworks.CoreServices
             ];
-
-            # Native libs
-            buildInputs =
-              final.lib.optionals
-              final.stdenv.isDarwin
-              [final.darwin.apple_sdk.frameworks.CoreServices];
-
-            postCheck = ''
-              cargo fmt --check && echo "\`cargo fmt\` is OK"
-              cargo clippy -- --deny warnings && echo "\`cargo clippy\` is OK"
-            '';
           };
-        }
-      );
-    };
+
+        # Build *just* the cargo dependencies, so we can reuse
+        # all of that work (e.g. via cachix) when running in CI
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs';
+
+        commonArgs =
+          commonArgs'
+          // {
+            inherit cargoArtifacts;
+          };
+
+        # Build the actual crate itself, reusing the dependency
+        # artifacts from above.
+        ghcid-ng = craneLib.buildPackage (commonArgs
+          // {
+            # Don't run tests; we'll do that in a separate derivation.
+            # This will allow people to install and depend on `ghcid-ng`
+            # without downloading a half dozen different versions of GHC.
+            doCheck = false;
+          });
+      in {
+        checks = {
+          ghcid-ng-tests = craneLib.cargoTest commonArgs;
+          ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
+            // {
+              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            });
+          ghcid-ng-doc = craneLib.cargoDoc commonArgs;
+          ghcid-ng-fmt = craneLib.cargoFmt commonArgs;
+          ghcid-ng-audit = craneLib.cargoAudit (commonArgs
+            // {
+              inherit advisory-db;
+            });
+        };
+
+        packages.default = ghcid-ng;
+        apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
+
+        devShells.default = pkgs.mkShell {
+          inputsFrom = builtins.attrValues self.checks.${system};
+
+          # Make rust-analyzer work
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+
+          # Any dev tools you use in excess of the rust ones
+          nativeBuildInputs = [
+            pkgs.rust-analyzer
+          ];
+        };
+      }
+    );
 }
