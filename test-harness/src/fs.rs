@@ -40,7 +40,7 @@ pub async fn append(path: impl AsRef<Path>, data: impl Display) -> miette::Resul
 
 /// Wait for a path to be created.
 ///
-/// This should generaly be run under a [`tokio::time::timeout`].
+/// This should generally be run under a [`tokio::time::timeout`].
 pub async fn wait_for_path(path: &Path) {
     let mut backoff = ExponentialBackoff {
         max_interval: Duration::from_secs(1),
