@@ -12,13 +12,13 @@ use tracing::instrument;
 use crate::haskell_show::HaskellShow;
 use crate::sync_sentinel::SyncSentinel;
 
-use crate::ghci::GhciStdout;
 use super::show_modules::ModuleSet;
 use super::stderr::StderrEvent;
 use super::CompilationResult;
 use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
+use crate::ghci::GhciStdout;
 
 pub struct GhciStdin {
     /// Inner stdin writer.
@@ -32,7 +32,11 @@ impl GhciStdin {
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn write_line(&mut self, stdout: &mut GhciStdout, line: &str) -> miette::Result<Option<CompilationResult>> {
+    pub async fn write_line(
+        &mut self,
+        stdout: &mut GhciStdout,
+        line: &str,
+    ) -> miette::Result<Option<CompilationResult>> {
         self.stdin
             .write_all(line.as_bytes())
             .await
@@ -47,11 +51,15 @@ impl GhciStdin {
         setup_commands: Vec<String>,
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
-        self.write_line(stdout, &format!(":set prompt {PROMPT}\n")).await?;
+        self.write_line(stdout, &format!(":set prompt {PROMPT}\n"))
+            .await?;
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
             .await?;
-        self.write_line(stdout, &format!("import qualified System.IO as {IO_MODULE_NAME}\n"))
-            .await?;
+        self.write_line(
+            stdout,
+            &format!("import qualified System.IO as {IO_MODULE_NAME}\n"),
+        )
+        .await?;
 
         for command in setup_commands {
             tracing::debug!(?command, "Running user intialization command");
@@ -81,7 +89,8 @@ impl GhciStdin {
             tracing::debug!(command = ?test_command, "Running user test command");
             tracing::info!("Running tests");
             let start_time = Instant::now();
-            self.write_line(stdout, &format!("{test_command}\n")).await?;
+            self.write_line(stdout, &format!("{test_command}\n"))
+                .await?;
             tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
         }
 
@@ -107,7 +116,11 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn sync(&mut self, stdout: &mut GhciStdout, sentinel: SyncSentinel) -> miette::Result<()> {
+    pub async fn sync(
+        &mut self,
+        stdout: &mut GhciStdout,
+        sentinel: SyncSentinel,
+    ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
 
         self.stdin

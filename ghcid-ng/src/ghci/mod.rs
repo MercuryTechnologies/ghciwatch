@@ -122,14 +122,13 @@ impl Ghci {
         // then create weak pointers to it and swap out the tasks.
         let stderr_handle = task::spawn(async { Ok(()) });
 
-        let stdout =
-              GhciStdout {
-                reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
-                stderr_sender: stderr_sender.clone(),
-                buffer: vec![0; LINE_BUFFER_CAPACITY],
-                prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
-                mode: Mode::Compiling,
-              };
+        let stdout = GhciStdout {
+            reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
+            stderr_sender: stderr_sender.clone(),
+            buffer: vec![0; LINE_BUFFER_CAPACITY],
+            prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
+            mode: Mode::Compiling,
+        };
 
         let stdin = GhciStdin {
             stdin,
@@ -181,7 +180,9 @@ impl Ghci {
         {
             let span = tracing::debug_span!("Start-of-session initialization");
             let _enter = span.enter();
-            ret.stdin.initialize(&mut ret.stdout, setup_commands).await?;
+            ret.stdin
+                .initialize(&mut ret.stdout, setup_commands)
+                .await?;
         }
 
         {
@@ -294,7 +295,9 @@ impl Ghci {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
                 // If we loaded or reloaded any modules, we should run tests.
-                self.stdin.test(&mut self.stdout, self.test_command.clone()).await?;
+                self.stdin
+                    .test(&mut self.stdout, self.test_command.clone())
+                    .await?;
             }
         }
 
@@ -316,7 +319,9 @@ impl Ghci {
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
-        self.stdin.test(&mut self.stdout, self.test_command.clone()).await?;
+        self.stdin
+            .test(&mut self.stdout, self.test_command.clone())
+            .await?;
         Ok(())
     }
 
@@ -340,7 +345,10 @@ impl Ghci {
         &mut self,
         path: Utf8PathBuf,
     ) -> miette::Result<Option<CompilationResult>> {
-        let result = self.stdin.add_module(&mut self.stdout, path.clone()).await?;
+        let result = self
+            .stdin
+            .add_module(&mut self.stdout, path.clone())
+            .await?;
         match result {
             None => {
                 tracing::debug!(
