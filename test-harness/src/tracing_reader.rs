@@ -22,6 +22,8 @@ pub struct TracingReader {
 }
 
 impl TracingReader {
+    /// Create a new [`TracingReader`], sending log events to the given `sender` after they're
+    /// written to the given `path`.
     pub async fn new(sender: mpsc::Sender<Event>, path: impl AsRef<Path>) -> miette::Result<Self> {
         let path = path.as_ref();
 
@@ -35,6 +37,7 @@ impl TracingReader {
         Ok(Self { sender, lines })
     }
 
+    /// Run this task.
     #[instrument(skip(self), name = "json-reader", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
         loop {

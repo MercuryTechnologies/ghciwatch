@@ -6,15 +6,23 @@ use miette::IntoDiagnostic;
 use serde::Deserialize;
 use tracing::Level;
 
+/// A [`tracing`] log event, deserialized from JSON log output.
 #[derive(Deserialize, Debug)]
 #[serde(try_from = "JsonEvent")]
 pub struct Event {
+    /// The event timestamp.
     pub timestamp: String,
+    /// The level the event was logged at.
     pub level: Level,
+    /// The log message. May be a span lifecycle event like `new` or `close`.
     pub message: String,
+    /// The event fields; extra data attached to this event.
     pub fields: HashMap<String, serde_json::Value>,
+    /// The target, usually the module where the event was logged from.
     pub target: String,
+    /// The span the event was logged in, if any.
     pub span: Option<Span>,
+    /// Spans the event is nested in, beyond the first `span`.
     pub spans: Vec<Span>,
 }
 
@@ -71,9 +79,12 @@ struct JsonEvent {
     spans: Vec<Span>,
 }
 
+/// A span (a region containing log events and other spans).
 #[derive(Deserialize, Debug)]
 pub struct Span {
+    /// The span's name.
     pub name: String,
+    /// The span's fields; extra data attached to this span.
     #[serde(flatten)]
     pub rest: HashMap<String, serde_json::Value>,
 }
