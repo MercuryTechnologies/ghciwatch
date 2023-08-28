@@ -1744,6 +1744,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-harness"
+version = "0.1.0"
+dependencies = [
+ "backoff",
+ "miette",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

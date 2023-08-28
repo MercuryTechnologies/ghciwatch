@@ -1,0 +1,12 @@
+[package]
+name = "test-harness"
+version = "0.1.0"
+edition = "2021"
+description = "Test harness for ghcid-ng"
+publish = false
+
+[dependencies]
+backoff = { version = "0.4.0", default-features = false }
+miette = { version = "5.9.0", features = ["fancy"] }
+tokio = { version = "1.28.2", features = ["full", "tracing"] }
+tracing = "0.1.37"
