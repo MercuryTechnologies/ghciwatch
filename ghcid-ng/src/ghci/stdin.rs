@@ -92,6 +92,8 @@ impl GhciStdin {
             self.write_line(stdout, &format!("{test_command}\n"))
                 .await?;
             tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
+        } else {
+            tracing::debug!("No test command provided, not running tests");
         }
 
         Ok(())
