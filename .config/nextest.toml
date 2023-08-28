@@ -1,0 +1,18 @@
+[test-groups]
+# Run integration tests serially.
+# We only apply this setting in the `ci` profile; the CI builders are small
+# enough that running multiple integration tests at the same time actually
+# makes the entire test suite complete slower.
+serial-integration = { max-threads = 1 }
+
+[profile.ci]
+# Print out output for failing tests as soon as they fail, and also at the end
+# of the run (for easy scrollability).
+failure-output = "immediate-final"
+# Do not cancel the test run on the first failure.
+fail-fast = false
+
+[[profile.ci.overrides]]
+filter = 'package(ghcid-ng) and kind(test)'
+platform = 'cfg(linux)'
+test-group = 'serial-integration'

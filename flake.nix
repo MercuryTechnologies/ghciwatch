@@ -39,7 +39,7 @@
         pkgs = import nixpkgs {
           inherit system;
         };
-        inherit (pkgs) lib;
+        inherit (pkgs) lib stdenv;
 
         # GHC versions to include in the environment for integration tests.
         # Keep this in sync with `./test-harness/src/ghc_version.rs`.
@@ -75,7 +75,7 @@
           // {
             inherit src;
 
-            buildInputs = lib.optionals pkgs.stdenv.isDarwin [
+            buildInputs = lib.optionals stdenv.isDarwin [
               # Additional darwin specific inputs can be set here
               pkgs.libiconv
               pkgs.darwin.apple_sdk.frameworks.CoreServices
@@ -110,9 +110,11 @@
           });
       in {
         checks = {
-          ghcid-ng-tests = craneLib.cargoTest (commonArgs
+          ghcid-ng-tests = craneLib.cargoNextest (commonArgs
             // {
               buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
+              NEXTEST_PROFILE = "ci";
+              NEXTEST_HIDE_PROGRESS_BAR = "true";
             });
           ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
             // {
@@ -141,6 +143,7 @@
           # Any dev tools you use in excess of the rust ones
           nativeBuildInputs = [
             pkgs.rust-analyzer
+            pkgs.cargo-nextest
           ];
         };
       }
