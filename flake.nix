@@ -40,7 +40,7 @@
         src = craneLib.cleanCargoSource ./.;
 
         commonArgs' =
-          (craneLib.crateNameFromCargoToml {cargoToml = ./Cargo.toml;})
+          (craneLib.crateNameFromCargoToml {cargoToml = ./ghcid-ng/Cargo.toml;})
           // {
             inherit src;
 
@@ -49,6 +49,10 @@
               pkgs.libiconv
               pkgs.darwin.apple_sdk.frameworks.CoreServices
             ];
+
+            cargoBuildCommand = "cargoWithProfile build --all";
+            cargoCheckExtraArgs = "--all";
+            cargoTestExtraArgs = "--all";
           };
 
         # Build *just* the cargo dependencies, so we can reuse
