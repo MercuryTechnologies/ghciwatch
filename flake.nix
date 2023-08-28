@@ -72,8 +72,6 @@
           });
       in {
         checks = {
-          inherit ghcid-ng;
-
           ghcid-ng-tests = craneLib.cargoTest commonArgs;
           ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
             // {
