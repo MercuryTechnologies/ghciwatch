@@ -2,7 +2,9 @@
 # See: https://garnix.io/docs/yaml_config
 builds:
   include:
-    - packages.x86_64-linux.default
     - devShells.x86_64-linux.default
-    - packages.aarch64-darwin.default
     - devShells.aarch64-darwin.default
+    - packages.x86_64-linux.default
+    - packages.aarch64-darwin.default
+    - 'checks.x86_64-linux.*'
+    - 'checks.aarch64-darwin.*'
