@@ -13,6 +13,7 @@ use tokio::process::Command;
 use crate::tracing_reader::TracingReader;
 use crate::Event;
 use crate::IntoMatcher;
+use crate::Matcher;
 
 /// Where to write `ghcid-ng` logs written by integration tests, relative to the temporary
 /// directory created for the test.
