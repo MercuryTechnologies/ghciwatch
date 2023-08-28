@@ -41,6 +41,19 @@
         };
         inherit (pkgs) lib;
 
+        # GHC versions to provide development environments for.
+        # Keep this synced with `./test-harness-macro/src/lib.rs`.
+        ghcVersions = [
+          "ghc90"
+          "ghc92"
+          "ghc94"
+          "ghc96"
+        ];
+
+        ghcBuildInputs =
+          [pkgs.haskellPackages.cabal-install]
+          ++ builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
+
         craneLib = crane.lib.${system};
 
         src = lib.cleanSourceWith {
@@ -90,7 +103,10 @@
           });
       in {
         checks = {
-          ghcid-ng-tests = craneLib.cargoTest commonArgs;
+          ghcid-ng-tests = craneLib.cargoTest (commonArgs
+            // {
+              buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
+            });
           ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
             // {
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -113,9 +129,11 @@
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           # Any dev tools you use in excess of the rust ones
-          nativeBuildInputs = [
-            pkgs.rust-analyzer
-          ];
+          nativeBuildInputs =
+            [
+              pkgs.rust-analyzer
+            ]
+            ++ ghcBuildInputs;
         };
       }
     );
