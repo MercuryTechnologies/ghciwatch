@@ -181,6 +181,12 @@ impl GhciStdout {
 }
 
 fn compilation_finished_re() -> &'static Regex {
+    // There's special cases for 0-6 modules!
+    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/ghc/GHCi/UI.hs#L2286-L2287
+    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L1429-L1453
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^(?:Ok|Failed), [0-9]+ modules loaded.$").unwrap())
+    RE.get_or_init(|| {
+        Regex::new(r"^(?:Ok|Failed), (?:no|one|two|three|four|five|six|[0-9]+) modules? loaded.$")
+            .unwrap()
+    })
 }
