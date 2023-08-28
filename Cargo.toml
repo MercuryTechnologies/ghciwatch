@@ -2,6 +2,7 @@
 
 members = [
     "ghcid-ng",
+    "test-harness",
 ]
 
 resolver = "2"
