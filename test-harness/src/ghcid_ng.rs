@@ -171,16 +171,13 @@ async fn write_cabal_config(home: &Path) -> miette::Result<()> {
 /// This is a nice check that the given GHC version is present in the environment, to fail tests
 /// early without waiting for `ghcid-ng` to fail.
 async fn check_ghc_version(home: &Path, ghc_version: &str) -> miette::Result<()> {
-    if Command::new(format!("ghc-{ghc_version}"))
+    let _output = Command::new(format!("ghc-{ghc_version}"))
         .env("HOME", home)
-        .status()
+        .output()
         .await
         .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to find GHC {ghc_version}"))?
-        .success()
-    {
-        Ok(())
-    } else {
-        Err(miette!("Could not execute `ghc-{ghc_version} --version`. Are you running the integration tests in the `nix develop` shell?"))
-    }
+        .wrap_err_with(|| format!("Failed to find GHC {ghc_version}"))?;
+    // `ghc --version` returns a nonzero status code. As long as we could actually execute it, it's
+    // OK if it failed.
+    Ok(())
 }
