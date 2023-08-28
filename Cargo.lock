@@ -1743,6 +1743,7 @@ dependencies = [
  "backoff",
  "itertools",
  "miette",
+ "regex",
  "serde",
  "serde_json",
  "tokio",
