@@ -42,15 +42,11 @@
           // {
             inherit src;
 
-            buildInputs =
-              [
-                pkgs.nix
-              ]
-              ++ lib.optionals pkgs.stdenv.isDarwin [
-                # Additional darwin specific inputs can be set here
-                pkgs.libiconv
-                pkgs.darwin.apple_sdk.frameworks.CoreServices
-              ];
+            buildInputs = lib.optionals pkgs.stdenv.isDarwin [
+              # Additional darwin specific inputs can be set here
+              pkgs.libiconv
+              pkgs.darwin.apple_sdk.frameworks.CoreServices
+            ];
           };
 
         # Build *just* the cargo dependencies, so we can reuse
