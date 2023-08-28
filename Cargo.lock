@@ -1750,6 +1750,7 @@ dependencies = [
  "backoff",
  "miette",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
