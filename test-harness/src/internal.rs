@@ -59,8 +59,13 @@ pub fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 /// functions.
 pub fn cleanup_tempdir() {
     TEMPDIR.with(|path| {
-        std::fs::remove_dir_all(path.borrow().as_deref().expect("`TEMPDIR` is not set"))
-            .expect("Failed to clean up `TEMPDIR`");
+        let borrowed_path = path.borrow();
+        let path = borrowed_path.as_deref().expect("`TEMPDIR` is not set");
+        if let Err(err) = std::fs::remove_dir_all(path) {
+            // Run `find` on the directory so we can see what's in it?
+            let _status = std::process::Command::new("find").arg(path).status();
+            panic!("Failed to remove TEMPDIR: {path:?}\n{err}");
+        }
     });
 }
 
