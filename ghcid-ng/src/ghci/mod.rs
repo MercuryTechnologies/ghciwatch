@@ -18,7 +18,6 @@ use tokio::io::BufReader;
 use tokio::process::Child;
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio::task;
 use tokio::task::JoinHandle;
@@ -175,18 +174,14 @@ impl Ghci {
         {
             let span = tracing::debug_span!("Stdout startup");
             let _enter = span.enter();
-            let (sender, receiver) = oneshot::channel();
-            ret.stdout.initialize(sender).await?;
-            receiver.await.into_diagnostic()?;
+            ret.stdout.initialize().await?;
         }
 
         // Perform start-of-session initialization.
         {
             let span = tracing::debug_span!("Start-of-session initialization");
             let _enter = span.enter();
-            let (sender, receiver) = oneshot::channel();
-            ret.stdin.initialize(&mut ret.stdout, sender, setup_commands).await?;
-            receiver.await.into_diagnostic()?;
+            ret.stdin.initialize(&mut ret.stdout, setup_commands).await?;
         }
 
         {
@@ -288,9 +283,7 @@ impl Ghci {
                 "Reloading ghci due to changed modules:\n{}",
                 format_bulleted_list(&needs_reload)
             );
-            let (sender, receiver) = oneshot::channel();
-            self.stdin.reload(&mut self.stdout, sender).await?;
-            let reload_result = receiver.await.into_diagnostic()?;
+            let reload_result = self.stdin.reload(&mut self.stdout).await?;
             if let Some(CompilationResult::Err) = reload_result {
                 compilation_failed = true;
             }
@@ -301,9 +294,7 @@ impl Ghci {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
                 // If we loaded or reloaded any modules, we should run tests.
-                let (sender, receiver) = oneshot::channel();
-                self.stdin.test(&mut self.stdout, sender, self.test_command.clone()).await?;
-                receiver.await.into_diagnostic()?;
+                self.stdin.test(&mut self.stdout, self.test_command.clone()).await?;
             }
         }
 
@@ -325,18 +316,14 @@ impl Ghci {
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
-        let (sender, receiver) = oneshot::channel();
-        self.stdin.test(&mut self.stdout, sender, self.test_command.clone()).await?;
-        receiver.await.into_diagnostic()?;
+        self.stdin.test(&mut self.stdout, self.test_command.clone()).await?;
         Ok(())
     }
 
     /// Refresh the listing of loaded modules by parsing the `:show modules` output.
     #[instrument(skip_all, level = "debug")]
     pub async fn refresh_modules(&mut self) -> miette::Result<()> {
-        let (sender, receiver) = oneshot::channel();
-        self.stdin.show_modules(&mut self.stdout, sender).await?;
-        let map = receiver.await.into_diagnostic()?;
+        let map = self.stdin.show_modules(&mut self.stdout).await?;
         self.modules = map;
         tracing::debug!(
             "Parsed loaded modules, {} modules loaded",
@@ -353,9 +340,7 @@ impl Ghci {
         &mut self,
         path: Utf8PathBuf,
     ) -> miette::Result<Option<CompilationResult>> {
-        let (sender, receiver) = oneshot::channel();
-        self.stdin.add_module(&mut self.stdout, path.clone(), sender).await?;
-        let result = receiver.await.into_diagnostic()?;
+        let result = self.stdin.add_module(&mut self.stdout, path.clone()).await?;
         match result {
             None => {
                 tracing::debug!(

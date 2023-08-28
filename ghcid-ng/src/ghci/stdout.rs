@@ -37,7 +37,7 @@ pub struct GhciStdout {
 
 impl GhciStdout {
     #[instrument(skip_all, level = "debug")]
-    pub async fn initialize(&mut self, when_ready: oneshot::Sender<()>) -> miette::Result<()> {
+    pub async fn initialize(&mut self) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -52,12 +52,8 @@ impl GhciStdout {
 
         // We know that we'll get _one_ `ghci> ` prompt on startup.
         let init_prompt_patterns = AhoCorasick::from_anchored_patterns(["ghci> "]);
-        let (sender, receiver) = oneshot::channel();
-        self.prompt(sender, Some(&init_prompt_patterns)).await?;
-        receiver.await.into_diagnostic()?;
+        self.prompt(Some(&init_prompt_patterns)).await?;
         tracing::debug!("Saw initial `ghci> ` prompt");
-
-        let _ = when_ready.send(());
 
         Ok(())
     }
@@ -65,14 +61,13 @@ impl GhciStdout {
     #[instrument(skip_all, level = "debug")]
     pub async fn prompt(
         &mut self,
-        sender: oneshot::Sender<Option<CompilationResult>>,
         // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
         // pass in a different value. This method takes an `&mut self` reference, so if we try to
         // pass in `&self.prompt_patterns` when we call it we get a borrow error because the
         // compiler doesn't know we don't mess with `self.prompt_patterns` in here. So we use
         // `None` to represent that case and handle the default inline.
         prompt_patterns: Option<&AhoCorasick>,
-    ) -> miette::Result<()> {
+    ) -> miette::Result<Option<CompilationResult>> {
         let prompt_patterns = prompt_patterns.unwrap_or(&self.prompt_patterns);
         let lines = self
             .reader
@@ -102,9 +97,7 @@ impl GhciStdout {
             receiver.await.into_diagnostic()?;
         }
 
-        let _ = sender.send(result);
-
-        Ok(())
+        Ok(result)
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -135,20 +128,17 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn show_modules(&mut self, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
+    pub async fn show_modules(&mut self) -> miette::Result<ModuleSet> {
         let lines = self
             .reader
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
-        let map = ModuleSet::from_lines(&lines)?;
-        let _ = sender.send(map);
-        Ok(())
+        ModuleSet::from_lines(&lines)
     }
 
-    #[instrument(skip(self, sender), level = "debug")]
-    pub async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
+    #[instrument(skip(self), level = "debug")]
+    pub async fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
-        let _ = sender.send(());
     }
 
     /// Get the compilation status from a chunk of lines. The compilation status is on the last

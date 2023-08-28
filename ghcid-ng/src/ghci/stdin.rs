@@ -32,37 +32,18 @@ impl GhciStdin {
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn write_line(&mut self, stdout: &mut GhciStdout, line: &str) -> miette::Result<()> {
-        let (sender, receiver) = oneshot::channel();
-        self.write_line_sender(stdout, line, sender).await?;
-        receiver.await.into_diagnostic()?;
-        Ok(())
-    }
-
-    /// Write a line on `stdin` and send an event to the given `sender` when a prompt is seen on
-    /// stdout.
-    ///
-    /// The `line` should contain the trailing newline.
-    #[instrument(skip(self, stdout, sender), level = "debug")]
-    pub async fn write_line_sender(
-        &mut self,
-        stdout: &mut GhciStdout,
-        line: &str,
-        sender: oneshot::Sender<Option<CompilationResult>>,
-    ) -> miette::Result<()> {
+    pub async fn write_line(&mut self, stdout: &mut GhciStdout, line: &str) -> miette::Result<Option<CompilationResult>> {
         self.stdin
             .write_all(line.as_bytes())
             .await
             .into_diagnostic()?;
-        stdout.prompt(sender, None).await?;
-        Ok(())
+        stdout.prompt(None).await
     }
 
-    #[instrument(skip(self, stdout, sender), level = "debug")]
+    #[instrument(skip(self, stdout), level = "debug")]
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
-        sender: oneshot::Sender<()>,
         setup_commands: Vec<String>,
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
@@ -77,7 +58,6 @@ impl GhciStdin {
             self.write_line(stdout, &format!("{command}\n")).await?;
         }
 
-        let _ = sender.send(());
         Ok(())
     }
 
@@ -85,18 +65,15 @@ impl GhciStdin {
     pub async fn reload(
         &mut self,
         stdout: &mut GhciStdout,
-        sender: oneshot::Sender<Option<CompilationResult>>,
-    ) -> miette::Result<()> {
+    ) -> miette::Result<Option<CompilationResult>> {
         self.set_mode(stdout, Mode::Compiling).await?;
-        self.write_line_sender(stdout, ":reload\n", sender).await?;
-        Ok(())
+        self.write_line(stdout, ":reload\n").await
     }
 
     #[instrument(skip_all, level = "debug")]
     pub async fn test(
         &mut self,
         stdout: &mut GhciStdout,
-        sender: oneshot::Sender<()>,
         test_command: Option<String>,
     ) -> miette::Result<()> {
         if let Some(test_command) = test_command {
@@ -108,18 +85,15 @@ impl GhciStdin {
             tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
         }
 
-        let _ = sender.send(());
-
         Ok(())
     }
 
-    #[instrument(skip(self, stdout, sender), level = "debug")]
+    #[instrument(skip(self, stdout), level = "debug")]
     pub async fn add_module(
         &mut self,
         stdout: &mut GhciStdout,
         path: Utf8PathBuf,
-        sender: oneshot::Sender<Option<CompilationResult>>,
-    ) -> miette::Result<()> {
+    ) -> miette::Result<Option<CompilationResult>> {
         self.set_mode(stdout, Mode::Compiling).await?;
 
         // We use `:add` because `:load` unloads all previously loaded modules:
@@ -129,9 +103,7 @@ impl GhciStdin {
         // > to unload all the currently loaded modules and bindings.
         //
         // https://downloads.haskell.org/ghc/latest/docs/users_guide/ghci.html#ghci-cmd-:load
-        self.write_line_sender(stdout, &format!(":add {path}\n"), sender)
-            .await?;
-        Ok(())
+        self.write_line(stdout, &format!(":add {path}\n")).await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
@@ -150,8 +122,8 @@ impl GhciStdin {
         Ok(())
     }
 
-    #[instrument(skip(self, stdout, sender), level = "debug")]
-    pub async fn show_modules(&mut self, stdout: &mut GhciStdout, sender: oneshot::Sender<ModuleSet>) -> miette::Result<()> {
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn show_modules(&mut self, stdout: &mut GhciStdout) -> miette::Result<ModuleSet> {
         self.set_mode(stdout, Mode::Internal).await?;
 
         self.stdin
@@ -159,19 +131,14 @@ impl GhciStdin {
             .await
             .into_diagnostic()?;
 
-        stdout.show_modules(sender).await?;
-        Ok(())
+        stdout.show_modules().await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 
-        {
-            let (sender, receiver) = oneshot::channel();
-            stdout.set_mode(sender, mode).await;
-            set.spawn(receiver);
-        }
+        stdout.set_mode(mode).await;
 
         {
             let (sender, receiver) = oneshot::channel();
