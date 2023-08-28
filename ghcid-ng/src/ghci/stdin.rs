@@ -138,7 +138,7 @@ impl GhciStdin {
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 
-        stdout.set_mode(mode).await;
+        stdout.set_mode(mode);
 
         {
             let (sender, receiver) = oneshot::channel();

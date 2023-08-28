@@ -137,7 +137,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip(self), level = "debug")]
-    pub async fn set_mode(&mut self, mode: Mode) {
+    pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
 
