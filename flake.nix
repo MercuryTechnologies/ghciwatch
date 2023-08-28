@@ -37,7 +37,15 @@
 
         craneLib = crane.lib.${system};
 
-        src = craneLib.cleanCargoSource ./.;
+        src = lib.cleanSourceWith {
+          src = craneLib.path ./.;
+          filter = let
+            # Keep test project data, needed for the build.
+            testDataFilter = path: _type: lib.hasInfix "tests/data" path;
+          in
+            path: type:
+              (testDataFilter path type) || (craneLib.filterCargoSources path type);
+        };
 
         commonArgs' =
           (craneLib.crateNameFromCargoToml {cargoToml = ./ghcid-ng/Cargo.toml;})
