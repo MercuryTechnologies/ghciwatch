@@ -126,12 +126,11 @@ impl Ghci {
         let stdout_handle = task::spawn(async { Ok(()) });
         let stderr_handle = task::spawn(async { Ok(()) });
 
-        let stdin =
-              GhciStdin {
-                stdin,
-                stdout_sender: stdout_sender.clone(),
-                stderr_sender: stderr_sender.clone(),
-              };
+        let stdin = GhciStdin {
+            stdin,
+            stdout_sender: stdout_sender.clone(),
+            stderr_sender: stderr_sender.clone(),
+        };
 
         let mut ret = Ghci {
             command: command_arc,
