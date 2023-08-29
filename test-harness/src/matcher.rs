@@ -59,7 +59,7 @@ impl Matcher {
     ///
     /// Note that this requires the module name to match exactly; child modules will not be
     /// matched.
-    pub fn from_module(mut self, module: &str) -> Self {
+    pub fn in_module(mut self, module: &str) -> Self {
         self.target = Some(module.to_owned());
         self
     }
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_matcher_spans_and_target() {
         let matcher = Matcher::span_close()
-            .from_module("ghcid_ng::ghci")
+            .in_module("ghcid_ng::ghci")
             .in_spans(["reload", "on_action"]);
         let event = Event {
             timestamp: "2023-08-25T22:14:30.993920Z".to_owned(),
