@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn test_matcher_message() {
         let matcher = r"ghci started in \d+\.\d+s".into_matcher().unwrap();
-        assert!(matcher.matches(&Event {
+        let mut event = Event {
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
             level: Level::INFO,
             message: "ghci started in 2.44s".to_owned(),
@@ -134,13 +134,21 @@ mod tests {
             target: "ghcid_ng::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
-                rest: Default::default()
+                rest: Default::default(),
             }),
             spans: vec![Span {
                 name: "ghci".to_owned(),
-                rest: Default::default()
-            },]
-        }));
+                rest: Default::default(),
+            }],
+        };
+        assert!(matcher.matches(&event));
+        event.message = "ghci started in 123.4s".to_owned();
+        assert!(matcher.matches(&event));
+        event.message = "ghci started in 0.45689s".to_owned();
+        assert!(matcher.matches(&event));
+
+        event.message = "ghci started in two seconds".to_owned();
+        assert!(!matcher.matches(&event));
     }
 
     #[test]
@@ -148,7 +156,7 @@ mod tests {
         let matcher = Matcher::span_close()
             .from_module("ghcid_ng::ghci")
             .in_spans(["reload", "on_action"]);
-        assert!(matcher.matches(&Event {
+        let event = Event {
             timestamp: "2023-08-25T22:14:30.993920Z".to_owned(),
             level: Level::DEBUG,
             message: "close".to_owned(),
@@ -156,12 +164,43 @@ mod tests {
             target: "ghcid_ng::ghci".to_owned(),
             span: Some(Span {
                 name: "reload".to_owned(),
-                rest: Default::default()
+                rest: Default::default(),
             }),
             spans: vec![Span {
                 name: "on_action".to_owned(),
-                rest: Default::default()
-            },]
+                rest: Default::default(),
+            }],
+        };
+        assert!(matcher.matches(&event));
+
+        // Different message.
+        assert!(!matcher.matches(&Event {
+            message: "new".to_owned(),
+            ..event.clone()
+        }));
+
+        // Missing span.
+        assert!(!matcher.matches(&Event {
+            span: None,
+            ..event.clone()
+        }));
+
+        // Missing parent span.
+        assert!(!matcher.matches(&Event {
+            spans: vec![],
+            ..event.clone()
+        }));
+
+        // Different target (nested).
+        assert!(!matcher.matches(&Event {
+            target: "ghcid_ng::ghci::stderr".to_owned(),
+            ..event.clone()
+        }));
+
+        // Different target (parent).
+        assert!(!matcher.matches(&Event {
+            target: "ghcid_ng".to_owned(),
+            ..event.clone()
         }));
     }
 }

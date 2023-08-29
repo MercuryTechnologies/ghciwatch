@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tracing::Level;
 
 /// A [`tracing`] log event, deserialized from JSON log output.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(try_from = "JsonEvent")]
 pub struct Event {
     /// The event timestamp.
@@ -80,7 +80,7 @@ struct JsonEvent {
 }
 
 /// A span (a region containing log events and other spans).
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Span {
     /// The span's name.
     pub name: String,
