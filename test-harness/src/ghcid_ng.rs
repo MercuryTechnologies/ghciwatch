@@ -9,9 +9,6 @@ use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::process::Child;
 use tokio::process::Command;
-use tokio::sync::mpsc;
-use tokio::task;
-use tokio::task::JoinHandle;
 
 use crate::tracing_reader::TracingReader;
 use crate::Event;
@@ -31,10 +28,8 @@ pub struct GhcidNg {
     /// The `ghcid-ng` child process.
     #[allow(dead_code)]
     child: Child,
-    #[allow(dead_code)]
-    tracing_reader_handle: JoinHandle<miette::Result<()>>,
     /// A stream of tracing events from `ghcid-ng`.
-    log_receiver: mpsc::Receiver<Event>,
+    tracing_reader: TracingReader,
 }
 
 impl GhcidNg {
@@ -101,16 +96,12 @@ impl GhcidNg {
                 format!("`ghcid-ng` didn't create log path {log_path:?} fast enough")
             })?;
 
-        let (sender, receiver) = mpsc::channel(128);
-
-        let tracing_reader_handle =
-            task::spawn(TracingReader::new(sender, log_path.clone()).await?.run());
+        let tracing_reader = TracingReader::new(log_path.clone()).await?;
 
         Ok(Self {
             cwd,
             child,
-            log_receiver: receiver,
-            tracing_reader_handle,
+            tracing_reader,
         })
     }
 
@@ -125,18 +116,24 @@ impl GhcidNg {
         let matcher = matcher.into_matcher()?;
 
         match tokio::time::timeout(timeout_duration, async {
-            while let Some(event) = self.log_receiver.recv().await {
-                println!("{event}");
-                if matcher.matches(&event) {
-                    return Some(event);
+            loop {
+                match self.tracing_reader.next_event().await {
+                    Err(err) => {
+                        return Err(err);
+                    }
+                    Ok(event) => {
+                        println!("{event}");
+                        if matcher.matches(&event) {
+                            return Ok(event);
+                        }
+                    }
                 }
             }
-            None
         })
         .await
         {
-            Ok(Some(event)) => Ok(event),
-            Ok(None) => Err(miette!("Log task exited")),
+            Ok(Ok(event)) => Ok(event),
+            Ok(Err(err)) => Err(err),
             Err(_) => Err(miette!("Waiting for a log message timed out")),
         }
     }
