@@ -7,6 +7,9 @@ publish = false
 
 [dependencies]
 backoff = { version = "0.4.0", default-features = false }
+itertools = "0.11.0"
 miette = { version = "5.9.0", features = ["fancy"] }
+serde = { version = "1.0.186", features = ["derive"] }
+serde_json = "1.0.105"
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
 tracing = "0.1.37"
