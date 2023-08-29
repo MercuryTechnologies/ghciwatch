@@ -1,3 +1,5 @@
+//! Filesystem utilities for writing integration tests for `ghcid-ng`.
+
 use std::fmt::Display;
 use std::path::Path;
 use std::time::Duration;

@@ -14,11 +14,6 @@ thread_local! {
     /// `tokio` current-thread runtime, this is unique per-test.
     pub static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
 
-    /// Directory to put failed test logs in. The `#[test]` attribute sets this at the start of the
-    /// test to the value of the compile-time environment variable `$CARGO_TARGET_TMPDIR`.
-    /// See: <https://doc.rust-lang.org/cargo/reference/environment-variables.html>
-    pub static CARGO_TARGET_TMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
-
     /// The GHC version to use for this test. This should be a string like `ghc962`.
     /// This is used to open a corresponding (e.g.) `nix develop .#ghc962` shell to run `ghcid-ng`
     /// in.
@@ -30,11 +25,11 @@ thread_local! {
     pub static IN_CUSTOM_TEST_HARNESS: AtomicBool = const { AtomicBool::new(false) };
 }
 
-/// Save the test logs in `TEMPDIR` to `CARGO_TARGET_TMPDIR`.
+/// Save the test logs in `TEMPDIR` to `cargo_target_tmpdir`.
 ///
 /// This is called when a `#[test]`-annotated function panics, to persist the logs for further
 /// analysis.
-pub fn save_test_logs(test_name: String) {
+pub fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
     let log_path: PathBuf = TEMPDIR.with(|tempdir| {
         tempdir
             .borrow()
@@ -42,14 +37,9 @@ pub fn save_test_logs(test_name: String) {
             .map(|path| path.join(crate::ghcid_ng::LOG_FILENAME))
             .expect("`test_harness::TEMPDIR` is not set")
     });
-    let persist_to = CARGO_TARGET_TMPDIR.with(|dir| {
-        dir.borrow()
-            .clone()
-            .expect("`CARGO_TARGET_TMPDIR` is not set")
-    });
 
     let test_name = test_name.replace("::", "-");
-    let persist_log_path = persist_to.join(format!("{test_name}.json"));
+    let persist_log_path = cargo_target_tmpdir.join(format!("{test_name}.json"));
     if persist_log_path.exists() {
         // Cargo doesn't manage `CARGO_TARGET_TMPDIR` for us, so we remove output from old tests
         // ourself.

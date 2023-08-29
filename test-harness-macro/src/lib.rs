@@ -10,11 +10,18 @@ use syn::Block;
 use syn::Ident;
 use syn::ItemFn;
 
+/// Runs a test asynchronously in the `tokio` current-thread runtime with `tracing` enabled.
+///
+/// One test is generated for each GHC version listed in the `$GHC_VERSIONS` environment variable
+/// at compile-time.
+///
+/// This is designed to be used with [`test_harness::GhcidNg`].
 #[proc_macro_attribute]
 pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse annotated function
     let mut function: ItemFn = parse(item).expect("Could not parse item as function");
 
+    // Add attributes to run the test in the `tokio` current-thread runtime and enable tracing.
     function.attrs.extend(
         parse::<Attributes>(
             quote! {
@@ -62,14 +69,19 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
     let test_name = format!("{test_name_base}_{ghc_version_ident}");
     function.sig.ident = Ident::new(&test_name, function.sig.ident.span());
 
+    // Wrap the test code in startup/cleanup code.
+    //
+    // Before the user test code, we set the thread-local storage to test-local data so that when
+    // we construct a `test_harness::GhcidNg` it can use the correct GHC version.
+    //
+    // Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
+    //
+    // Finally, we clean up the temporary directory `GhcidNg` created.
     let new_body = parse::<Block>(
         quote! {
             {
                 ::test_harness::internal::IN_CUSTOM_TEST_HARNESS.with(|value| {
                     value.store(true, ::std::sync::atomic::Ordering::SeqCst);
-                });
-                ::test_harness::internal::CARGO_TARGET_TMPDIR.with(|tmpdir| {
-                    *tmpdir.borrow_mut() = Some(::std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")));
                 });
                 ::test_harness::internal::GHC_VERSION.with(|tmpdir| {
                     *tmpdir.borrow_mut() = #ghc_version.to_owned();
@@ -81,7 +93,8 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
                     Err(err) => {
                         // Copy out temp files
                         ::test_harness::internal::save_test_logs(
-                            format!("{}::{}", module_path!(), #test_name)
+                            format!("{}::{}", module_path!(), #test_name),
+                            ::std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
                         );
                         ::test_harness::internal::cleanup_tempdir();
 
