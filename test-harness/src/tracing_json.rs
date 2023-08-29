@@ -89,6 +89,16 @@ pub struct Span {
     pub rest: HashMap<String, serde_json::Value>,
 }
 
+impl Span {
+    #[cfg(test)]
+    pub fn new(name: impl Display) -> Self {
+        Self {
+            name: name.to_string(),
+            rest: Default::default(),
+        }
+    }
+}
+
 impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.name, display_map(&self.rest))

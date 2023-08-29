@@ -48,6 +48,9 @@ impl Matcher {
     /// require that events be emitted from a span `a` directly nested in a span
     /// `b` directly nested in a span `c`.
     ///
+    /// All listed spans must be present in the correct order, but do not otherwise need to be
+    /// "anchored" or uninterrupted.
+    ///
     /// Note that this will overwrite any previously-set spans.
     pub fn in_spans(mut self, spans: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         self.spans = spans.into_iter().map(|s| s.as_ref().to_owned()).collect();
@@ -73,15 +76,21 @@ impl Matcher {
         if !self.spans.is_empty() {
             let mut spans = event.spans();
             for expected_name in &self.spans {
-                match spans.next() {
-                    Some(actual_span) => {
-                        if &actual_span.name != expected_name {
+                loop {
+                    match spans.next() {
+                        Some(span) => {
+                            if &span.name == expected_name {
+                                // Found this expected span, move on to the next one.
+                                break;
+                            }
+                            // Otherwise, this span isn't the expected one, but the next span might
+                            // be.
+                        }
+                        None => {
+                            // We still expect to see another span, but there's no spans left in
+                            // the event.
                             return false;
                         }
-                    }
-                    None => {
-                        // We expected another span but the event doesn't have one.
-                        return false;
                     }
                 }
             }
@@ -162,16 +171,24 @@ mod tests {
             message: "close".to_owned(),
             fields: Default::default(),
             target: "ghcid_ng::ghci".to_owned(),
-            span: Some(Span {
-                name: "reload".to_owned(),
-                rest: Default::default(),
-            }),
-            spans: vec![Span {
-                name: "on_action".to_owned(),
-                rest: Default::default(),
-            }],
+            span: Some(Span::new("reload")),
+            spans: vec![Span::new("on_action")],
         };
         assert!(matcher.matches(&event));
+
+        // Other spans between the expected ones.
+        assert!(matcher.matches(&Event {
+            span: Some(Span::new("puppy")),
+            spans: vec![
+                Span::new("doggy"),
+                Span::new("reload"), // <- expected
+                Span::new("something"),
+                Span::new("dog"),
+                Span::new("on_action"), // <- expected
+                Span::new("root"),
+            ],
+            ..event.clone()
+        }));
 
         // Different message.
         assert!(!matcher.matches(&Event {
