@@ -41,8 +41,7 @@
         };
         inherit (pkgs) lib;
 
-        # GHC versions to provide development environments for.
-        # Keep this synced with `./test-harness-macro/src/lib.rs`.
+        # GHC versions to include in the environment for integration tests.
         ghcVersions = [
           "ghc90"
           "ghc92"
@@ -53,6 +52,14 @@
         ghcBuildInputs =
           [pkgs.haskellPackages.cabal-install]
           ++ builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
+
+        fullGhcVersions = builtins.map (drv: drv.version) (
+          builtins.filter (
+            drv:
+              drv.pname == "ghc"
+          )
+          ghcBuildInputs
+        );
 
         craneLib = crane.lib.${system};
 
@@ -76,6 +83,9 @@
               pkgs.libiconv
               pkgs.darwin.apple_sdk.frameworks.CoreServices
             ];
+
+            # Provide GHC versions to use to the integration test suite.
+            GHC_VERSIONS = fullGhcVersions;
 
             cargoBuildCommand = "cargoWithProfile build --all";
             cargoCheckExtraArgs = "--all";
@@ -127,6 +137,9 @@
 
           # Make rust-analyzer work
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+
+          # Provide GHC versions to use to the integration test suite.
+          GHC_VERSIONS = fullGhcVersions;
 
           # Any dev tools you use in excess of the rust ones
           nativeBuildInputs =

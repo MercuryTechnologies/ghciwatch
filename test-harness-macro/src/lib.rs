@@ -10,11 +10,6 @@ use syn::Block;
 use syn::Ident;
 use syn::ItemFn;
 
-/// GHC versions to run each test under.
-///
-/// Keep this synced with `../../flake.nix`.
-const GHC_VERSIONS: [&str; 4] = ["9.0.2", "9.2.8", "9.4.6", "9.6.2"];
-
 #[proc_macro_attribute]
 pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse annotated function
@@ -33,9 +28,16 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .0,
     );
 
+    let ghc_versions = match option_env!("GHC_VERSIONS") {
+        None => {
+            panic!("`$GHC_VERSIONS` should be set to a list of GHC versions to run tests under, separated by spaces, like `9.0.2 9.2.8 9.4.6 9.6.2`.");
+        }
+        Some(versions) => versions.split_ascii_whitespace().collect::<Vec<_>>(),
+    };
+
     // Generate functions for each GHC version we want to test.
     let mut ret = TokenStream::new();
-    for ghc_version in GHC_VERSIONS {
+    for ghc_version in ghc_versions {
         ret.extend::<TokenStream>(
             make_test_fn(function.clone(), ghc_version)
                 .to_token_stream()
