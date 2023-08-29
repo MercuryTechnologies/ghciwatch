@@ -22,8 +22,11 @@ pub struct TracingReader {
 }
 
 impl TracingReader {
-    /// Create a new [`TracingReader`], sending log events to the given `sender` after they're
-    /// written to the given `path`.
+    /// Create a new [`TracingReader`].
+    ///
+    /// This watches for data to be read from the given `path`. When a line is written to `path`
+    /// (by `ghcid-ng`), the `TracingReader` will deserialize the line from JSON into an [`Event`]
+    /// and send it to the given `sender` for another task to receive.
     pub async fn new(sender: mpsc::Sender<Event>, path: impl AsRef<Path>) -> miette::Result<Self> {
         let path = path.as_ref();
 
