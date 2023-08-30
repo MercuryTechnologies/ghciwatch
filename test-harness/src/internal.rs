@@ -4,10 +4,15 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
+use std::time::Duration;
 
 use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
+use nix::sys::signal;
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
+use tokio::process::Child;
 
 thread_local! {
     /// The temporary directory where `ghcid-ng` is run. Note that because tests are run with the
@@ -18,6 +23,11 @@ thread_local! {
     /// This is used to open a corresponding (e.g.) `nix develop .#ghc962` shell to run `ghcid-ng`
     /// in.
     pub static GHC_VERSION: RefCell<String> = RefCell::new(String::new());
+
+    /// The GHC process for this test.
+    ///
+    /// This is set so that we can make sure to kill it when the test ends.
+    pub static GHC_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
 
     /// Is this thread running in the custom test harness?
     /// If `GhcidNg::new` was used outside of our custom test harness, the temporary directory
@@ -55,18 +65,51 @@ pub fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
     }
 }
 
-/// Remove the [`TEMPDIR`] from the filesystem. This is called at the end of `#[test]`-annotated
-/// functions.
-pub fn cleanup_tempdir() {
-    TEMPDIR.with(|path| {
-        let borrowed_path = path.borrow();
-        let path = borrowed_path.as_deref().expect("`TEMPDIR` is not set");
-        if let Err(err) = std::fs::remove_dir_all(path) {
-            // Run `find` on the directory so we can see what's in it?
-            let _status = std::process::Command::new("find").arg(path).status();
-            panic!("Failed to remove TEMPDIR: {path:?}\n{err}");
+/// Perform end-of-test cleanup.
+///
+/// 1. Remove the [`TEMPDIR`] from the filesystem.
+pub async fn cleanup() {
+    let path = TEMPDIR.with(|path| path.take());
+    match path {
+        None => {
+            panic!("`TEMPDIR` is not set");
         }
-    });
+        Some(path) => {
+            if let Err(err) = tokio::fs::remove_dir_all(&path).await {
+                // Run `find` on the directory so we can see what's in it?
+                let _status = tokio::process::Command::new("find")
+                    .arg(&path)
+                    .status()
+                    .await;
+                panic!("Failed to remove TEMPDIR: {path:?}\n{err}");
+            }
+        }
+    }
+
+    let child = GHC_PROCESS.with(|child| child.take());
+    match child {
+        None => {
+            panic!("`GHC_PROCESS` is not set");
+        }
+        Some(mut child) => {
+            send_signal(&child, Signal::SIGINT).expect("Failed to send SIGINT to `ghcid-ng`");
+            match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+                Err(_) => {
+                    tracing::info!("ghcid-ng didn't exit in time, killing");
+                    child
+                        .kill()
+                        .await
+                        .expect("Failed to kill `ghcid-ng` after test completion");
+                }
+                Ok(Ok(status)) => {
+                    tracing::info!(?status, "ghcid-ng exited");
+                }
+                Ok(Err(err)) => {
+                    tracing::error!("Waiting for ghcid-ng to exit failed: {err}");
+                }
+            }
+        }
+    }
 }
 
 /// Fail if [`IN_CUSTOM_TEST_HARNESS`] has not been set.
@@ -111,4 +154,37 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
 
     // Now we can persist the tempdir to disk, knowing the test harness will clean it up later.
     Ok(tempdir.into_path())
+}
+
+/// Set [`GHC_PROCESS`] to the given [`Child`].
+///
+/// Fails if [`GHC_PROCESS`] is already set.
+pub(crate) fn set_ghc_process(child: Child) -> miette::Result<()> {
+    GHC_PROCESS.with(|maybe_child| {
+        if maybe_child.borrow().is_some() {
+            return Err(miette!(
+                "`GhcidNg` can only be constructed once per `#[test_harness::test]` function"
+            ));
+        }
+
+        *maybe_child.borrow_mut() = Some(child);
+
+        Ok(())
+    })
+}
+
+/// Send a signal to a child process.
+pub fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
+    signal::kill(
+        Pid::from_raw(
+            child
+                .id()
+                .ok_or_else(|| miette!("Command has no pid, likely because it has already exited"))?
+                .try_into()
+                .into_diagnostic()
+                .wrap_err("Failed to convert pid type")?,
+        ),
+        signal,
+    )
+    .into_diagnostic()
 }

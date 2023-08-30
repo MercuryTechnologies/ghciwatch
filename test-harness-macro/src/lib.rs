@@ -96,7 +96,7 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
                             format!("{}::{}", module_path!(), #test_name),
                             ::std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
                         );
-                        ::test_harness::internal::cleanup_tempdir();
+                        ::test_harness::internal::cleanup().await;
 
                         if err.is_panic() {
                             ::std::panic::resume_unwind(err.into_panic());
@@ -105,7 +105,7 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
                         }
                     }
                     Ok(()) => {
-                        ::test_harness::internal::cleanup_tempdir();
+                        ::test_harness::internal::cleanup().await;
                     }
                 };
             }

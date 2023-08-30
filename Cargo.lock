@@ -1750,6 +1750,7 @@ dependencies = [
  "fs_extra",
  "itertools",
  "miette",
+ "nix",
  "regex",
  "serde",
  "serde_json",

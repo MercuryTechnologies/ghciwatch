@@ -7,7 +7,6 @@ use std::time::Duration;
 use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
-use tokio::process::Child;
 use tokio::process::Command;
 
 use crate::tracing_reader::TracingReader;
@@ -26,9 +25,6 @@ pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
 pub struct GhcidNg {
     /// The current working directory of the `ghcid-ng` session.
     cwd: PathBuf,
-    /// The `ghcid-ng` child process.
-    #[allow(dead_code)]
-    child: Child,
     /// A stream of tracing events from `ghcid-ng`.
     tracing_reader: TracingReader,
 }
@@ -95,6 +91,8 @@ impl GhcidNg {
             .into_diagnostic()
             .wrap_err("Failed to start `ghcid-ng`")?;
 
+        crate::internal::set_ghc_process(child)?;
+
         // Wait for `ghcid-ng` to create the `log_path`
         tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path))
             .await
@@ -107,7 +105,6 @@ impl GhcidNg {
 
         Ok(Self {
             cwd,
-            child,
             tracing_reader,
         })
     }
