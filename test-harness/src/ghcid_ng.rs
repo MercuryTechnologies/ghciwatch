@@ -149,7 +149,7 @@ impl GhcidNg {
 
     /// Wait until `ghcid-ng` completes its initial load and is ready to receive file events.
     pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
-        self.get_log(r"ghci started in \d+\.\d+m?s")
+        self.get_log_with_timeout(r"ghci started in \d+\.\d+m?s", Duration::from_secs(60))
             .await
             .wrap_err("ghcid-ng didn't start in time")?;
         // Only _after_ `ghci` starts up do we initialize the file watcher.
