@@ -85,7 +85,6 @@ impl GhcidNg {
             .stdout(Stdio::piped())
             .kill_on_drop(true);
 
-        #[cfg(target_os = "macos")]
         command.args(["--poll", "1000ms"]);
 
         let child = command
