@@ -129,6 +129,7 @@
         };
 
         packages = {
+          inherit ghcid-ng;
           default = ghcid-ng;
           ghcid-ng-tests = self.checks.${system}.ghcid-ng-tests;
         };
@@ -145,6 +146,7 @@
 
           # Any dev tools you use in excess of the rust ones
           nativeBuildInputs = [
+            pkgs.rustc
             pkgs.rust-analyzer
             pkgs.cargo-nextest
           ];
