@@ -128,7 +128,10 @@
             });
         };
 
-        packages.default = ghcid-ng;
+        packages = {
+          default = ghcid-ng;
+          ghcid-ng-tests = self.checks.${system}.ghcid-ng-tests;
+        };
         apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
 
         devShells.default = pkgs.mkShell {
