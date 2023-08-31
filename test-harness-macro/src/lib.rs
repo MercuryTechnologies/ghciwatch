@@ -14,8 +14,6 @@ use syn::ItemFn;
 ///
 /// One test is generated for each GHC version listed in the `$GHC_VERSIONS` environment variable
 /// at compile-time.
-///
-/// This is designed to be used with [`test_harness::GhcidNg`].
 #[proc_macro_attribute]
 pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse annotated function

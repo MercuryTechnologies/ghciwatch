@@ -13,6 +13,8 @@ pub mod fs;
 
 pub mod internal;
 
+/// Marks a function as an `async` test for use with a [`GhcidNg`] session.
+///
 pub use test_harness_macro::test;
 
 mod ghcid_ng;
