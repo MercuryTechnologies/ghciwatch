@@ -42,7 +42,6 @@ impl GhcidNg {
         project_directory: impl AsRef<Path>,
         args: impl IntoIterator<Item = impl AsRef<OsStr>>,
     ) -> miette::Result<Self> {
-        crate::internal::ensure_in_custom_test_harness()?;
         let ghc_version = crate::internal::get_ghc_version()?;
         let tempdir = crate::internal::set_tempdir()?;
         write_cabal_config(&tempdir).await?;

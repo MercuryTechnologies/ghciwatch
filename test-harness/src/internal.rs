@@ -2,8 +2,6 @@
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::SeqCst;
 use std::time::Duration;
 
 use miette::miette;
@@ -17,7 +15,7 @@ use tokio::process::Child;
 thread_local! {
     /// The temporary directory where `ghcid-ng` is run. Note that because tests are run with the
     /// `tokio` current-thread runtime, this is unique per-test.
-    pub static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
+    pub(crate) static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
 
     /// The GHC version to use for this test. This should be a string like `ghc962`.
     /// This is used to open a corresponding (e.g.) `nix develop .#ghc962` shell to run `ghcid-ng`
@@ -27,12 +25,7 @@ thread_local! {
     /// The GHC process for this test.
     ///
     /// This is set so that we can make sure to kill it when the test ends.
-    pub static GHC_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
-
-    /// Is this thread running in the custom test harness?
-    /// If `GhcidNg::new` was used outside of our custom test harness, the temporary directory
-    /// wouldn't be cleaned up -- this lets us detect that case and error to avoid it.
-    pub static IN_CUSTOM_TEST_HARNESS: AtomicBool = const { AtomicBool::new(false) };
+    pub(crate) static GHC_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
 }
 
 /// Save the test logs in `TEMPDIR` to `cargo_target_tmpdir`.
@@ -112,22 +105,12 @@ pub async fn cleanup() {
     }
 }
 
-/// Fail if [`IN_CUSTOM_TEST_HARNESS`] has not been set.
-pub(crate) fn ensure_in_custom_test_harness() -> miette::Result<()> {
-    if IN_CUSTOM_TEST_HARNESS.with(|value| value.load(SeqCst)) {
-        Ok(())
-    } else {
-        Err(miette!(
-            "`GhcidNg` can only be used in `#[test_harness::test]` functions"
-        ))
-    }
-}
-
 /// Get the GHC version as given by [`GHC_VERSION`].
 pub(crate) fn get_ghc_version() -> miette::Result<String> {
     let ghc_version = GHC_VERSION.with(|version| version.borrow().to_owned());
     if ghc_version.is_empty() {
-        Err(miette!("`GHC_VERSION` should be set"))
+        Err(miette!("`GHC_VERSION` is not set"))
+            .wrap_err("`GhcidNg` can only be used in `#[test_harness::test]` functions")
     } else {
         Ok(ghc_version)
     }
@@ -174,7 +157,7 @@ pub(crate) fn set_ghc_process(child: Child) -> miette::Result<()> {
 }
 
 /// Send a signal to a child process.
-pub fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
+fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
     signal::kill(
         Pid::from_raw(
             child

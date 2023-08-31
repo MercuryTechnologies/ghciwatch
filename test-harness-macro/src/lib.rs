@@ -80,9 +80,6 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
     let new_body = parse::<Block>(
         quote! {
             {
-                ::test_harness::internal::IN_CUSTOM_TEST_HARNESS.with(|value| {
-                    value.store(true, ::std::sync::atomic::Ordering::SeqCst);
-                });
                 ::test_harness::internal::GHC_VERSION.with(|tmpdir| {
                     *tmpdir.borrow_mut() = #ghc_version.to_owned();
                 });
