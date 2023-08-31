@@ -3,6 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
+use std::time::Instant;
 
 use miette::miette;
 use miette::Context;
@@ -23,6 +24,8 @@ pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
 /// This handles copying a directory of files to a temporary directory, starting a `ghcid-ng`
 /// session, and asynchronously reading a stream of log events from its JSON log output.
 pub struct GhcidNg {
+    /// The time when this session was fully started.
+    start_instant: Instant,
     /// The current working directory of the `ghcid-ng` session.
     cwd: PathBuf,
     /// A stream of tracing events from `ghcid-ng`.
@@ -101,8 +104,10 @@ impl GhcidNg {
             })?;
 
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
+        let start_instant = Instant::now();
 
         Ok(Self {
+            start_instant,
             cwd,
             tracing_reader,
         })
@@ -125,7 +130,8 @@ impl GhcidNg {
                         return Err(err);
                     }
                     Ok(event) => {
-                        println!("{event}");
+                        let elapsed = self.start_instant.elapsed();
+                        println!("{elapsed:.2?} {event}");
                         if matcher.matches(&event) {
                             return Ok(event);
                         }
@@ -137,7 +143,9 @@ impl GhcidNg {
         {
             Ok(Ok(event)) => Ok(event),
             Ok(Err(err)) => Err(err),
-            Err(_) => Err(miette!("Waiting for a log message timed out")),
+            Err(_) => Err(miette!(
+                "Waiting for a log message timed out after {timeout_duration:.2?}"
+            )),
         }
     }
 
