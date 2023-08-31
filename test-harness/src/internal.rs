@@ -60,7 +60,8 @@ pub fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 
 /// Perform end-of-test cleanup.
 ///
-/// 1. Remove the [`TEMPDIR`] from the filesystem.
+/// 1. Kill the [`GHC_PROCESS`].
+/// 2. Remove the [`TEMPDIR`] from the filesystem.
 pub async fn cleanup() {
     let child = GHC_PROCESS.with(|child| child.take());
     match child {
