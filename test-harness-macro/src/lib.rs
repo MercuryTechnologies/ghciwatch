@@ -29,7 +29,7 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             .into(),
         )
-        .expect("Could not parse quoted attributes #[tokio::test] and #[tracing_test::traced_test]")
+        .expect("Could not parse quoted attributes")
         .0,
     );
 
