@@ -62,23 +62,6 @@ pub fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 ///
 /// 1. Remove the [`TEMPDIR`] from the filesystem.
 pub async fn cleanup() {
-    let path = TEMPDIR.with(|path| path.take());
-    match path {
-        None => {
-            panic!("`TEMPDIR` is not set");
-        }
-        Some(path) => {
-            if let Err(err) = tokio::fs::remove_dir_all(&path).await {
-                // Run `find` on the directory so we can see what's in it?
-                let _status = tokio::process::Command::new("find")
-                    .arg(&path)
-                    .status()
-                    .await;
-                panic!("Failed to remove TEMPDIR: {path:?}\n{err}");
-            }
-        }
-    }
-
     let child = GHC_PROCESS.with(|child| child.take());
     match child {
         None => {
@@ -99,6 +82,33 @@ pub async fn cleanup() {
                 }
                 Ok(Err(err)) => {
                     tracing::error!("Waiting for ghcid-ng to exit failed: {err}");
+                }
+            }
+        }
+    }
+
+    let path = TEMPDIR.with(|path| path.take());
+    match path {
+        None => {
+            panic!("`TEMPDIR` is not set");
+        }
+        Some(path) => {
+            if let Err(err) = tokio::fs::remove_dir_all(&path).await {
+                // Run `find` on the directory so we can see what's in it?
+                let _status = tokio::process::Command::new("find")
+                    .arg(&path)
+                    .status()
+                    .await;
+                // Try an `rm -rf` for good luck :)
+                let _status = tokio::process::Command::new("rm")
+                    .arg("-rf")
+                    .arg(&path)
+                    .status()
+                    .await;
+                if path.exists() {
+                    tracing::error!("Failed to remove TEMPDIR: {path:?}\n{err}");
+                } else {
+                    tracing::warn!("Failed to remove TEMPDIR with `remove_dir_all`, but `rm -rf` worked: {path:?}\n{err}");
                 }
             }
         }
