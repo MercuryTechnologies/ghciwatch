@@ -68,41 +68,17 @@ fn make_test_fn(mut function: ItemFn, ghc_version: &str) -> ItemFn {
     function.sig.ident = Ident::new(&test_name, function.sig.ident.span());
 
     // Wrap the test code in startup/cleanup code.
-    //
-    // Before the user test code, we set the thread-local storage to test-local data so that when
-    // we construct a `test_harness::GhcidNg` it can use the correct GHC version.
-    //
-    // Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
-    //
-    // Finally, we clean up the temporary directory `GhcidNg` created.
     let new_body = parse::<Block>(
         quote! {
             {
-                ::test_harness::internal::GHC_VERSION.with(|tmpdir| {
-                    *tmpdir.borrow_mut() = #ghc_version.to_owned();
-                });
-
-                match ::tokio::task::spawn(async {
-                    #(#stmts);*
-                }).await {
-                    Err(err) => {
-                        // Copy out temp files
-                        ::test_harness::internal::save_test_logs(
-                            format!("{}::{}", module_path!(), #test_name),
-                            ::std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-                        );
-                        ::test_harness::internal::cleanup().await;
-
-                        if err.is_panic() {
-                            ::std::panic::resume_unwind(err.into_panic());
-                        } else {
-                            panic!("Test cancelled? {err:?}");
-                        }
-                    }
-                    Ok(()) => {
-                        ::test_harness::internal::cleanup().await;
-                    }
-                };
+                ::test_harness::internal::wrap_test(
+                    async {
+                        #(#stmts);*
+                    },
+                    #ghc_version,
+                    #test_name,
+                    env!("CARGO_TARGET_TMPDIR"),
+                ).await;
             }
         }
         .into(),
