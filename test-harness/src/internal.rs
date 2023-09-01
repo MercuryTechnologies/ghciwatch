@@ -147,9 +147,9 @@ async fn cleanup() {
                     .status()
                     .await;
                 if path.exists() {
-                    tracing::error!("Failed to remove TEMPDIR: {path:?}\n{err}");
+                    panic!("Failed to remove TEMPDIR: {path:?}\n{err}");
                 } else {
-                    tracing::warn!("Failed to remove TEMPDIR with `remove_dir_all`, but `rm -rf` worked: {path:?}\n{err}");
+                    panic!("Failed to remove TEMPDIR with `remove_dir_all`, but `rm -rf` worked: {path:?}\n{err}");
                 }
             }
         }
