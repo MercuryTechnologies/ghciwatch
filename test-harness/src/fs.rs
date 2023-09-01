@@ -17,17 +17,24 @@ use tokio::io::AsyncWriteExt;
 #[tracing::instrument]
 pub async fn touch(path: impl AsRef<Path> + Debug) -> miette::Result<()> {
     let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        create_dir(parent).await?;
+    if path.exists() {
+        // I've had trouble with the pure-`open` approach getting detected, so let's actually
+        // write the file's contents again.
+        let contents = read(path).await?;
+        write(path, contents).await
+    } else {
+        if let Some(parent) = path.parent() {
+            create_dir(parent).await?;
+        }
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(path)
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to touch {path:?}"))
+            .map(|_| ())
     }
-    OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(path)
-        .await
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to touch {path:?}"))
-        .map(|_| ())
 }
 
 /// Write some data to a path, replacing its previous contents.
