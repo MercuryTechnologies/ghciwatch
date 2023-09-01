@@ -19,8 +19,7 @@ thread_local! {
     pub(crate) static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
 
     /// The GHC version to use for this test. This should be a string like `ghc962`.
-    /// This is used to open a corresponding (e.g.) `nix develop .#ghc962` shell to run `ghcid-ng`
-    /// in.
+    /// This is used to select the correct GHC version to run.
     pub(crate) static GHC_VERSION: RefCell<String> = RefCell::new(String::new());
 
     /// The GHC process for this test.
