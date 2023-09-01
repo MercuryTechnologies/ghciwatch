@@ -41,6 +41,22 @@
         };
         inherit (pkgs) lib;
 
+        # GHC versions to include in the environment for integration tests.
+        ghcVersions = [
+          "ghc90"
+          "ghc92"
+          "ghc94"
+          "ghc96"
+        ];
+
+        ghcPackages = builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
+
+        ghcBuildInputs =
+          [pkgs.haskellPackages.cabal-install]
+          ++ ghcPackages;
+
+        GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
+
         craneLib = crane.lib.${system};
 
         src = lib.cleanSourceWith {
@@ -63,6 +79,9 @@
               pkgs.libiconv
               pkgs.darwin.apple_sdk.frameworks.CoreServices
             ];
+
+            # Provide GHC versions to use to the integration test suite.
+            inherit GHC_VERSIONS;
 
             cargoBuildCommand = "cargoWithProfile build --all";
             cargoCheckExtraArgs = "--all";
@@ -90,7 +109,10 @@
           });
       in {
         checks = {
-          ghcid-ng-tests = craneLib.cargoTest commonArgs;
+          ghcid-ng-tests = craneLib.cargoTest (commonArgs
+            // {
+              buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
+            });
           ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
             // {
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -111,6 +133,9 @@
 
           # Make rust-analyzer work
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+
+          # Provide GHC versions to use to the integration test suite.
+          inherit GHC_VERSIONS;
 
           # Any dev tools you use in excess of the rust ones
           nativeBuildInputs = [

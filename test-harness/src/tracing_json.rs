@@ -23,13 +23,33 @@ pub struct Event {
     /// The span the event was logged in, if any.
     pub span: Option<Span>,
     /// Spans the event is nested in, beyond the first `span`.
+    ///
+    /// These are listed from the outside in (root to leaf).
     pub spans: Vec<Span>,
 }
 
 impl Event {
-    /// Get an iterator over this event's spans, from the inside out.
+    /// Get an iterator over this event's spans, from the outside in (root to leaf).
     pub fn spans(&self) -> impl Iterator<Item = &Span> {
-        self.span.iter().chain(self.spans.iter())
+        self.spans.iter().chain({
+            // The `new`, `exit`, and `close` span lifecycle events aren't emitted from inside the
+            // relevant span, so the span isn't listed in `spans`. Instead, the relevant span is in
+            // the `span` field.
+            //
+            // In all other cases, the `span` field is identical to the last entry of the `spans`
+            // field.
+            //
+            // Note that this will false-positive if there are any events with these strings as the
+            // message, but that's fine.
+            //
+            // We could (and perhaps should) patch `tracing-subscriber` for this, or better yet
+            // write our own JSON `tracing` exporter, but this is fine for now.
+            if ["new", "exit", "close"].contains(&self.message.as_str()) {
+                self.span.iter()
+            } else {
+                None.iter()
+            }
+        })
     }
 }
 

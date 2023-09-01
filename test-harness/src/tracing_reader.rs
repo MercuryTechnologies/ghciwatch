@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::time::Duration;
 
@@ -38,7 +36,10 @@ impl TracingReader {
         Ok(Self { lines })
     }
 
-    async fn next_event(&mut self) -> miette::Result<Event> {
+    /// Read the next event from the contained file.
+    ///
+    /// This will block indefinitely until a line is written to the contained file.
+    pub async fn next_event(&mut self) -> miette::Result<Event> {
         let mut backoff = ExponentialBackoff {
             max_elapsed_time: None,
             max_interval: Duration::from_secs(1),

@@ -44,9 +44,8 @@ impl Matcher {
 
     /// Require that matching events be in spans with the given names.
     ///
-    /// Spans are listed from the inside out; that is, a call to `in_spans(["a", "b", "c"])` will
-    /// require that events be emitted from a span `a` directly nested in a span
-    /// `b` directly nested in a span `c`.
+    /// Spans are listed from the outside in; that is, a call to `in_spans(["a", "b", "c"])` will
+    /// require that events be emitted from a span `c` nested in a span `b` nested in a span `a`.
     ///
     /// All listed spans must be present in the correct order, but do not otherwise need to be
     /// "anchored" or uninterrupted.
@@ -164,7 +163,7 @@ mod tests {
     fn test_matcher_spans_and_target() {
         let matcher = Matcher::span_close()
             .in_module("ghcid_ng::ghci")
-            .in_spans(["reload", "on_action"]);
+            .in_spans(["on_action", "reload"]);
         let event = Event {
             timestamp: "2023-08-25T22:14:30.993920Z".to_owned(),
             level: Level::DEBUG,
@@ -172,7 +171,7 @@ mod tests {
             fields: Default::default(),
             target: "ghcid_ng::ghci".to_owned(),
             span: Some(Span::new("reload")),
-            spans: vec![Span::new("on_action")],
+            spans: vec![Span::new("on_action"), Span::new("reload")],
         };
         assert!(matcher.matches(&event));
 
@@ -180,12 +179,13 @@ mod tests {
         assert!(matcher.matches(&Event {
             span: Some(Span::new("puppy")),
             spans: vec![
-                Span::new("doggy"),
-                Span::new("reload"), // <- expected
-                Span::new("something"),
-                Span::new("dog"),
-                Span::new("on_action"), // <- expected
                 Span::new("root"),
+                Span::new("on_action"), // <- expected
+                Span::new("dog"),
+                Span::new("something"),
+                Span::new("reload"), // <- expected
+                Span::new("doggy"),
+                Span::new("puppy"),
             ],
             ..event.clone()
         }));
@@ -196,8 +196,8 @@ mod tests {
             ..event.clone()
         }));
 
-        // Missing span.
-        assert!(!matcher.matches(&Event {
+        // The `span` field is irrelevant for log events.
+        assert!(matcher.matches(&Event {
             span: None,
             ..event.clone()
         }));

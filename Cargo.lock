@@ -432,6 +432,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1741,14 +1747,33 @@ name = "test-harness"
 version = "0.1.0"
 dependencies = [
  "backoff",
+ "fs_extra",
  "itertools",
  "miette",
+ "nix",
  "regex",
  "serde",
  "serde_json",
+ "tempfile",
+ "test-harness-macro",
+ "test_bin",
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "test-harness-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "test_bin"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e7a7de15468c6e65dd7db81cf3822c1ec94c71b2a3c1a976ea8e4696c91115c"
 
 [[package]]
 name = "textwrap"
