@@ -55,7 +55,7 @@
           [pkgs.haskellPackages.cabal-install]
           ++ ghcPackages;
 
-        fullGhcVersions = builtins.map (drv: drv.version) ghcPackages;
+        GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
 
         craneLib = crane.lib.${system};
 
@@ -81,7 +81,7 @@
             ];
 
             # Provide GHC versions to use to the integration test suite.
-            GHC_VERSIONS = fullGhcVersions;
+            inherit GHC_VERSIONS;
 
             cargoBuildCommand = "cargoWithProfile build --all";
             cargoCheckExtraArgs = "--all";
@@ -135,7 +135,7 @@
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           # Provide GHC versions to use to the integration test suite.
-          GHC_VERSIONS = fullGhcVersions;
+          inherit GHC_VERSIONS;
 
           # Any dev tools you use in excess of the rust ones
           nativeBuildInputs =
