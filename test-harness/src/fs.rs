@@ -15,7 +15,7 @@ use tokio::io::AsyncWriteExt;
 
 /// Touch a path.
 #[tracing::instrument]
-pub async fn touch(path: impl AsRef<Path> + Debug + Debug) -> miette::Result<()> {
+pub async fn touch(path: impl AsRef<Path> + Debug) -> miette::Result<()> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
         create_dir(parent).await?;
