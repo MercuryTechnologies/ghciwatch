@@ -1,12 +1,9 @@
-use std::time::Duration;
-
 use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
 use test_harness::GhcidNg;
 use test_harness::Matcher;
-use tokio::time::sleep;
 
 /// Test that `ghcid-ng` can start up `ghci` and load a session.
 #[test]
@@ -57,8 +54,6 @@ async fn can_load_new_module() {
         .wait_until_ready()
         .await
         .expect("ghcid-ng loads ghci");
-    // Load-bearing sleep.
-    sleep(Duration::from_secs(1)).await;
     fs::write(
         session.path("src/My/Module.hs"),
         indoc!(
@@ -112,9 +107,6 @@ async fn can_reload_after_error() {
         .await
         .unwrap();
 
-    // Load-bearing sleep? If this isn't here, the write doesn't get detected about half of the
-    // time.
-    sleep(Duration::from_secs(1)).await;
     fs::replace(&new_module, "myIdent = \"Uh oh!\"", "myIdent = ()")
         .await
         .unwrap();

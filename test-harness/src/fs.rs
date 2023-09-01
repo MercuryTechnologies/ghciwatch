@@ -37,6 +37,11 @@ pub async fn write(path: impl AsRef<Path> + Debug, data: impl AsRef<[u8]>) -> mi
     if let Some(parent) = path.parent() {
         create_dir(parent).await?;
     }
+
+    // Load-bearing sleep! If this is removed, some writes aren't detected some of the time.
+    // Comment it out and run `cargo nextest run` in a loop to see what I mean.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
     tokio::fs::write(path, data)
         .await
         .into_diagnostic()
