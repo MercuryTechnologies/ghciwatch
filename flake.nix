@@ -138,11 +138,9 @@
           inherit GHC_VERSIONS;
 
           # Any dev tools you use in excess of the rust ones
-          nativeBuildInputs =
-            [
-              pkgs.rust-analyzer
-            ]
-            ++ ghcBuildInputs;
+          nativeBuildInputs = [
+            pkgs.rust-analyzer
+          ];
         };
       }
     );
