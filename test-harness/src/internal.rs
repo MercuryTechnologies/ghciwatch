@@ -142,7 +142,7 @@ async fn cleanup() {
                     .await;
                 // Try an `rm -rf` for good luck :)
                 let _status = tokio::process::Command::new("rm")
-                    .arg("-rf")
+                    .args(["-rf", "--"])
                     .arg(&path)
                     .status()
                     .await;
