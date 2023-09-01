@@ -82,24 +82,24 @@ async fn can_write_error_log_compilation_errors() {
             Failed, three modules loaded.
 
             src/My/Module.hs:3:11: error:
-                • Couldn't match type ‘[Char]’ with ‘()’
+                * Couldn't match type `[Char]' with `()'
                   Expected: ()
                     Actual: String
-                • In the expression: "Uh oh!"
-                  In an equation for ‘myIdent’: myIdent = "Uh oh!"
+                * In the expression: "Uh oh!"
+                  In an equation for `myIdent': myIdent = "Uh oh!"
               |
             3 | myIdent = "Uh oh!"
               |           ^^^^^^^^
-            "#]],
+        "#]],
         Ghc96 => expect![[r#"
             Failed, three modules loaded.
 
             src/My/Module.hs:3:11: error: [GHC-83865]
-                • Couldn't match type ‘[Char]’ with ‘()’
+                * Couldn't match type `[Char]' with `()'
                   Expected: ()
                     Actual: String
-                • In the expression: "Uh oh!"
-                  In an equation for ‘myIdent’: myIdent = "Uh oh!"
+                * In the expression: "Uh oh!"
+                  In an equation for `myIdent': myIdent = "Uh oh!"
               |
             3 | myIdent = "Uh oh!"
               |           ^^^^^^^^

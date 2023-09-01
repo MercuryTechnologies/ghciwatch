@@ -86,6 +86,11 @@ impl GhcidNg {
             .args(args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
+            // GHC will quote things with Unicode quotes unless we set this variable.
+            // Very cute.
+            // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085
+            // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L728-L740
+            .env("GHC_NO_UNICODE", "1")
             .stdin(Stdio::piped())
             .stderr(Stdio::piped())
             .stdout(Stdio::piped())
