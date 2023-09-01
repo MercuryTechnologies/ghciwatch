@@ -49,17 +49,13 @@
           "ghc96"
         ];
 
+        ghcPackages = builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
+
         ghcBuildInputs =
           [pkgs.haskellPackages.cabal-install]
-          ++ builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
+          ++ ghcPackages;
 
-        fullGhcVersions = builtins.map (drv: drv.version) (
-          builtins.filter (
-            drv:
-              drv.pname == "ghc"
-          )
-          ghcBuildInputs
-        );
+        fullGhcVersions = builtins.map (drv: drv.version) ghcPackages;
 
         craneLib = crane.lib.${system};
 
