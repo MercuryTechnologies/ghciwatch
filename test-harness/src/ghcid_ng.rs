@@ -75,7 +75,9 @@ impl GhcidNg {
             .arg(&log_path)
             .args([
                 "--command",
-                &format!("cabal --offline v2-repl --with-compiler ghc-{full_ghc_version}"),
+                &format!(
+                    "cabal --offline v2-repl --with-compiler ghc-{full_ghc_version} lib:test-dev"
+                ),
                 "--tracing-filter",
                 "ghcid_ng::watcher=trace,ghcid_ng=debug,watchexec=debug,watchexec::fs=trace",
                 "--trace-spans",

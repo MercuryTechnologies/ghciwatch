@@ -23,7 +23,21 @@ test-suite my-simple-package-test
     default-language: Haskell2010
     type: exitcode-stdio-1.0
     hs-source-dirs: test
-    main-is: Main.hs
+    main-is: TestMain.hs
     build-depends:
         base,
         my-simple-package
+
+library test-dev
+    import: warnings
+    default-language: Haskell2010
+    type: exitcode-stdio-1.0
+    hs-source-dirs:
+        src
+        test
+    build-depends:
+        base
+    exposed-modules:
+        MyLib,
+        MyModule,
+        TestMain
