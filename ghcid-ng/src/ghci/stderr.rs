@@ -139,6 +139,7 @@ impl GhciStderr {
                     .write_all(self.compilation_summary.as_bytes())
                     .await
                     .into_diagnostic()?;
+                writer.write_all(b"\n").await.into_diagnostic()?;
             }
 
             for (mode, buffer) in &self.buffers {
