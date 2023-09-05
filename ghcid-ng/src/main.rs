@@ -19,11 +19,7 @@ use tap::Tap;
 async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let opts = cli::Opts::parse().tap_mut(|opts| opts.init());
-    tracing::install_tracing(
-        &opts.logging.tracing_filter,
-        &opts.logging.trace_spans,
-        opts.logging.log_json.as_deref(),
-    )?;
+    tracing::TracingOpts::from_cli(&opts).install()?;
 
     ::tracing::warn!(
         "This is a prerelease alpha version of `ghcid-ng`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."
