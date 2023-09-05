@@ -135,8 +135,8 @@
         };
         apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
 
-        devShells.default = pkgs.mkShell {
-          inputsFrom = builtins.attrValues self.checks.${system};
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
 
           # Make rust-analyzer work
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
@@ -144,11 +144,9 @@
           # Provide GHC versions to use to the integration test suite.
           inherit GHC_VERSIONS;
 
-          # Any dev tools you use in excess of the rust ones
-          nativeBuildInputs = [
-            pkgs.rustc
+          # Extra development tools (cargo and rustc are included by default).
+          packages = [
             pkgs.rust-analyzer
-            pkgs.cargo-nextest
           ];
         };
       }
