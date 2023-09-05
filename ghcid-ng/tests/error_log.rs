@@ -26,7 +26,6 @@ async fn can_write_error_log() {
         Ok, three modules loaded.
         Warning: No remote package servers have been specified. Usually you would have
         one specified in the config file.
-        Warning: simple.cabal:34:5: Unknown field: "type"
     "#]]
     .assert_eq(&error_contents);
 }
