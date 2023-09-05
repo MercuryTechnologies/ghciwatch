@@ -27,9 +27,18 @@ async fn can_reload() {
         .wait_until_ready()
         .await
         .expect("ghcid-ng loads ghci");
-    fs::append(session.path("src/MyLib.hs"), "\n\nhello = 1 :: Integer\n")
-        .await
-        .unwrap();
+    fs::append(
+        session.path("src/MyLib.hs"),
+        indoc!(
+            "
+
+            hello = 1 :: Integer
+
+            "
+        ),
+    )
+    .await
+    .unwrap();
     session
         .wait_until_reload()
         .await
