@@ -62,6 +62,8 @@ pub struct GhciOpts {
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
     pub error_path: Option<Utf8PathBuf>,
+    /// Shell commands to run before starting or restarting `ghci`.
+    pub before_startup_shell: Vec<ClonableCommand>,
     /// `ghci` commands to run after starting or restarting `ghci`.
     pub after_startup_ghci: Vec<String>,
     /// `ghci` command which runs tests.
@@ -84,6 +86,7 @@ impl GhciOpts {
         Ok(Self {
             command,
             error_path: opts.errors.clone(),
+            before_startup_shell: opts.before_startup_shell.clone(),
             after_startup_ghci: opts.after_startup_ghci.clone(),
             test_ghci: opts.test_ghci.clone(),
         })
