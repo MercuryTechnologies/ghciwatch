@@ -35,6 +35,7 @@ use show_modules::ModuleSet;
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
+use crate::command;
 use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
@@ -126,6 +127,25 @@ impl Ghci {
     #[instrument(skip_all, level = "debug", name = "ghci")]
     pub async fn new(opts: GhciOpts) -> miette::Result<Self> {
         let start_instant = Instant::now();
+
+        {
+            let span = tracing::debug_span!("before_startup_shell");
+            let _enter = span.enter();
+            for command in &opts.before_startup_shell {
+                let program = &command.program;
+                let mut command = command.as_tokio();
+                let command_formatted = command::format(&command);
+                tracing::info!("$ {command_formatted}");
+                let status = command.status().await.into_diagnostic().wrap_err_with(|| {
+                    format!("Failed to execute `{}`", command::format(&command))
+                })?;
+                if status.success() {
+                    tracing::debug!("{program:?} exited successfully: {status}");
+                } else {
+                    tracing::error!("{program:?} failed: {status}");
+                }
+            }
+        }
 
         let mut child = {
             let mut command = opts.command.as_tokio();
