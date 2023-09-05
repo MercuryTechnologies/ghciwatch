@@ -105,7 +105,8 @@ impl ClonableStdio {
 /// Like [`std::process::Command`], but it implements [`Clone`].
 #[derive(Debug, Clone)]
 pub struct ClonableCommand {
-    program: OsString,
+    /// The program to be executed.
+    pub program: OsString,
     args: Vec<OsString>,
     current_dir: Option<PathBuf>,
     stdin: Option<ClonableStdio>,
