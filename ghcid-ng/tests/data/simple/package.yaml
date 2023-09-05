@@ -1,0 +1,52 @@
+---
+verbatim:
+  cabal-version: 3.0
+name: my-simple-package
+version: 0.1.0.0
+author: Rebecca Turner <rebeccat@mercury.com>
+
+ghc-options: -Wall
+
+dependencies:
+  - base
+
+flags:
+  local-dev:
+    description: Turn on development settings, like auto-reload templates.
+    manual: true
+    default: false
+
+library:
+  source-dirs: src
+
+tests:
+  test:
+    main: Main.hs
+    source-dirs:
+      - test-main
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
+    when:
+    - condition: flag(local-dev)
+      then:
+        dependencies:
+        - test-dev
+      else:
+        dependencies:
+        - my-simple-package
+        - test-lib
+
+internal-libraries:
+  test-lib:
+    source-dirs:
+      - test
+
+  test-dev:
+    source-dirs:
+      - test
+      - src
+    when:
+    - condition: flag(local-dev)
+      then:
+        buildable: true
+      else:
+        buildable: false

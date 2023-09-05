@@ -53,7 +53,10 @@
         ghcPackages = builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
 
         ghcBuildInputs =
-          [pkgs.haskellPackages.cabal-install]
+          [
+            pkgs.haskellPackages.cabal-install
+            pkgs.hpack
+          ]
           ++ ghcPackages;
 
         GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
@@ -126,6 +129,34 @@
             // {
               inherit advisory-db;
             });
+
+          # Check that the Haskell project used for integration tests is OK.
+          haskell-project-for-integration-tests = stdenv.mkDerivation {
+            name = "haskell-project-for-integration-tests";
+
+            src = ./ghcid-ng/tests/data/simple;
+
+            nativeBuildInputs = ghcBuildInputs;
+
+            inherit GHC_VERSIONS;
+
+            phases = ["unpackPhase" "buildPhase" "installPhase"];
+
+            buildPhase = ''
+              # Need an empty `.cabal/config` or `cabal` errors trying to use the network.
+              mkdir .cabal
+              touch .cabal/config
+              export HOME=$(pwd)
+
+              for VERSION in $GHC_VERSIONS; do
+                make test GHC="ghc-$VERSION"
+              done
+            '';
+
+            installPhase = ''
+              touch $out
+            '';
+          };
         };
 
         packages = {
