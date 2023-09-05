@@ -33,7 +33,7 @@ pub struct Opts {
     ///
     /// This can be used to regenerate `.cabal` files with `hpack`.
     #[arg(long, value_name = "SHELL_COMMAND")]
-    pub before_startup_shell: Vec<String>,
+    pub before_startup_shell: Vec<ClonableCommand>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
