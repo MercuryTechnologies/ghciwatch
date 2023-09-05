@@ -5,7 +5,6 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::process::Stdio;
 use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
@@ -16,9 +15,7 @@ use miette::WrapErr;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Child;
-use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
 use tokio::task;
 use tokio::task::JoinHandle;
 use tracing::instrument;
@@ -37,6 +34,9 @@ use show_modules::ModuleSet;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
+use crate::cli::Opts;
+use crate::command;
+use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
 use crate::sync_sentinel::SyncSentinel;
@@ -50,12 +50,52 @@ pub const PROMPT: &str = "###~GHCID-NG-PROMPT~###";
 /// `GHCID_NG_IO_INTERNAL__` that's on you.
 pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 
+/// Options for constructing a [`Ghci`]. This is like a lazier builder interface, mostly provided
+/// because Rust tragically lacks named arguments.
+///
+/// Some of the other `*Opts` structs include borrowed data from the [`Opts`] struct, but this one
+/// is fully owned; ultimately, this is because the [`watchexec::config::RuntimeConfig::on_action`]
+/// takes an owned value. If we ever move to using something like the `notify` crate directly, we
+/// could consider making this struct borrowed.
+#[derive(Debug, Clone)]
+pub struct GhciOpts {
+    /// The command used to start the underyling `ghci` session.
+    pub command: ClonableCommand,
+    /// A path to write `ghci` errors to.
+    pub error_path: Option<Utf8PathBuf>,
+    /// Shell commands to run before starting or restarting `ghci`.
+    pub before_startup_shell: Vec<String>,
+    /// `ghci` commands to run after starting or restarting `ghci`.
+    pub after_startup_ghci: Vec<String>,
+    /// `ghci` command which runs tests.
+    pub test_ghci: Option<String>,
+}
+
+impl GhciOpts {
+    /// Construct options for [`Ghci`] from parsed command-line interface arguments as [`Opts`].
+    ///
+    /// This extracts the bits of an [`Opts`] struct relevant to the [`Ghci`] session without
+    /// cloning or taking ownership of the entire thing.
+    pub fn from_cli(opts: &Opts) -> miette::Result<Self> {
+        // TODO: implement fancier default command
+        // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
+        let command = command::from_string(opts.command.as_deref().unwrap_or("cabal repl"))
+            .wrap_err("Failed to split `--command` value into arguments")?;
+
+        Ok(Self {
+            command,
+            error_path: opts.errors.clone(),
+            after_startup_ghci: opts.after_startup_ghci.clone(),
+            test_ghci: opts.test_ghci.clone(),
+        })
+    }
+}
+
 /// A `ghci` session.
 pub struct Ghci {
-    /// A function which returns the command used to start this `ghci` session.
-    /// This needs to be an [`Arc`] because [`Command`] doesn't implement [`Clone`] and we need to
-    /// use this command to construct a new [`Ghci`] when we restart the `ghci` session.
-    command: Arc<Mutex<Command>>,
+    /// Options used to start this `ghci` session. We keep this around so we can reuse it when
+    /// restarting this session.
+    opts: GhciOpts,
     /// The running `ghci` process.
     process: Child,
     /// The handle for the stderr reader task.
@@ -68,12 +108,6 @@ pub struct Ghci {
     sync_count: AtomicUsize,
     /// The currently-loaded modules in this `ghci` session.
     modules: ModuleSet,
-    /// Path to write errors to, if any. Like `ghcid.txt`.
-    error_path: Option<Utf8PathBuf>,
-    /// `ghci` commands to run on startup.
-    setup_commands: Vec<String>,
-    /// `ghci` command to run tests.
-    test_command: Option<String>,
 }
 
 impl Debug for Ghci {
@@ -88,16 +122,11 @@ impl Ghci {
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(
-        command_arc: Arc<Mutex<Command>>,
-        error_path: Option<Utf8PathBuf>,
-        setup_commands: Vec<String>,
-        test_command: Option<String>,
-    ) -> miette::Result<Self> {
+    pub async fn new(opts: GhciOpts) -> miette::Result<Self> {
         let start_instant = Instant::now();
 
         let mut child = {
-            let mut command = command_arc.lock().await;
+            let mut command = opts.command.as_tokio();
 
             command
                 .stdin(Stdio::piped())
@@ -136,16 +165,13 @@ impl Ghci {
         };
 
         let mut ret = Ghci {
-            command: command_arc,
+            opts,
             process: child,
             stderr_handle,
             stdin,
             stdout,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
-            error_path: error_path.clone(),
-            setup_commands: setup_commands.clone(),
-            test_command,
         };
 
         let stderr = task::spawn(
@@ -157,7 +183,7 @@ impl Ghci {
                     (Mode::Compiling, String::with_capacity(LINE_BUFFER_CAPACITY)),
                     (Mode::Testing, String::with_capacity(LINE_BUFFER_CAPACITY)),
                 ]),
-                error_path,
+                error_path: ret.opts.error_path.clone(),
                 mode: Mode::Compiling,
                 has_unwritten_data: false,
             }
@@ -181,7 +207,7 @@ impl Ghci {
             let span = tracing::debug_span!("Start-of-session initialization");
             let _enter = span.enter();
             ret.stdin
-                .initialize(&mut ret.stdout, setup_commands)
+                .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
                 .await?;
         }
 
@@ -253,13 +279,7 @@ impl Ghci {
             );
             // TODO: Probably also need a restart hook / `.cabal` hook / similar.
             self.stop().await?;
-            let new = Self::new(
-                self.command.clone(),
-                self.error_path.clone(),
-                self.setup_commands.clone(),
-                self.test_command.clone(),
-            )
-            .await?;
+            let new = Self::new(self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
         }
 
@@ -295,9 +315,7 @@ impl Ghci {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
                 // If we loaded or reloaded any modules, we should run tests.
-                self.stdin
-                    .test(&mut self.stdout, self.test_command.clone())
-                    .await?;
+                self.test().await?;
             }
         }
 
@@ -320,7 +338,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
         self.stdin
-            .test(&mut self.stdout, self.test_command.clone())
+            .test(&mut self.stdout, self.opts.test_ghci.clone())
             .await?;
         Ok(())
     }

@@ -17,19 +17,27 @@ use crate::clap::RustBacktrace;
 pub struct Opts {
     /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
+    /// This is used to launch the underlying `ghci` session that `ghcid-ng` controls.
+    ///
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
-    #[arg(long)]
+    #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<String>,
 
     /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
     /// run after reloads.
-    #[arg(long)]
-    pub test: Option<String>,
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub test_ghci: Option<String>,
+
+    /// Shell commands to run before starting or restarting `ghci`.
+    ///
+    /// This can be used to regenerate `.cabal` files with `hpack`.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub before_startup_shell: Vec<String>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
-    #[arg(long)]
-    pub setup: Vec<String>,
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub after_startup_ghci: Vec<String>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
     #[arg(long)]
