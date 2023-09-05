@@ -10,6 +10,7 @@ use ghcid_ng::ghci::Ghci;
 use ghcid_ng::ghci::GhciOpts;
 use ghcid_ng::tracing;
 use ghcid_ng::watcher::Watcher;
+use ghcid_ng::watcher::WatcherOpts;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use tap::Tap;
@@ -31,13 +32,8 @@ async fn main() -> miette::Result<()> {
     let ghci = Ghci::new(GhciOpts::from_cli(&opts)?)
         .await
         .wrap_err("Failed to start `ghci`")?;
-    let watcher = Watcher::new(
-        ghci,
-        &opts.watch.paths,
-        opts.watch.debounce,
-        opts.watch.poll,
-    )
-    .wrap_err("Failed to start file watcher")?;
+    let watcher = Watcher::new(ghci, WatcherOpts::from_cli(&opts))
+        .wrap_err("Failed to start file watcher")?;
 
     watcher
         .handle

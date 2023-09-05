@@ -50,7 +50,7 @@ pub const PROMPT: &str = "###~GHCID-NG-PROMPT~###";
 /// `GHCID_NG_IO_INTERNAL__` that's on you.
 pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 
-/// Options for constructing a [`Ghci`]. This is like a lazier builder interface, mostly provided
+/// Options for constructing a [`Ghci`]. This is like a lower-effort builder interface, mostly provided
 /// because Rust tragically lacks named arguments.
 ///
 /// Some of the other `*Opts` structs include borrowed data from the [`Opts`] struct, but this one

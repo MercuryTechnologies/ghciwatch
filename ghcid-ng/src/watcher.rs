@@ -19,8 +19,34 @@ use watchexec::handler::PrintDebug;
 use watchexec::Watchexec;
 use watchexec_signals::Signal;
 
+use crate::cli::Opts;
 use crate::event_filter::file_events_from_action;
 use crate::ghci::Ghci;
+
+/// Options for constructing a [`Watcher`]. This is like a lower-effort builder interface, mostly
+/// provided because Rust tragically lacks named arguments.
+pub struct WatcherOpts<'opts> {
+    /// The paths to watch for changes.
+    pub watch: &'opts [Utf8PathBuf],
+    /// Debounce duration for filesystem events.
+    pub debounce: Duration,
+    /// If given, use the polling file watcher with the given duration as the poll interval.
+    pub poll: Option<Duration>,
+}
+
+impl<'opts> WatcherOpts<'opts> {
+    /// Construct options for [`Watcher`] from parsed command-line interface arguments as [`Opts`].
+    ///
+    /// This extracts the bits of an [`Opts`] struct relevant to the [`Watcher`] session without
+    /// cloning or taking ownership of the entire thing.
+    pub fn from_cli(opts: &'opts Opts) -> Self {
+        Self {
+            watch: &opts.watch.paths,
+            debounce: opts.watch.debounce,
+            poll: opts.watch.poll,
+        }
+    }
+}
 
 /// A [`watchexec`] watcher which waits for file changes and sends reload events to the contained
 /// `ghci` session.
@@ -37,12 +63,7 @@ pub struct Watcher {
 
 impl Watcher {
     /// Create a new [`Watcher`] from a [`Ghci`] session.
-    pub fn new(
-        ghci: Ghci,
-        watch: &[Utf8PathBuf],
-        debounce: Duration,
-        poll: Option<Duration>,
-    ) -> miette::Result<Self> {
+    pub fn new(ghci: Ghci, opts: WatcherOpts) -> miette::Result<Self> {
         let mut init_config = InitConfig::default();
         init_config.on_error(PrintDebug(std::io::stderr()));
 
@@ -50,11 +71,11 @@ impl Watcher {
 
         let mut runtime_config = RuntimeConfig::default();
         runtime_config
-            .pathset(watch)
-            .action_throttle(debounce)
+            .pathset(opts.watch)
+            .action_throttle(opts.debounce)
             .on_action(action_handler);
 
-        if let Some(interval) = poll {
+        if let Some(interval) = opts.poll {
             runtime_config.file_watcher(watchexec::fs::Watcher::Poll(interval));
         }
 
