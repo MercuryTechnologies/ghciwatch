@@ -248,7 +248,7 @@ impl Ghci {
 
         if !needs_restart.is_empty() {
             tracing::info!(
-                "Restarting `ghci` due to deleted/moved modules:\n{}",
+                "Restarting ghci due to deleted/moved modules:\n{}",
                 format_bulleted_list(&needs_restart)
             );
             // TODO: Probably also need a restart hook / `.cabal` hook / similar.

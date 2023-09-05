@@ -39,9 +39,10 @@
         pkgs = import nixpkgs {
           inherit system;
         };
-        inherit (pkgs) lib;
+        inherit (pkgs) lib stdenv;
 
         # GHC versions to include in the environment for integration tests.
+        # Keep this in sync with `./test-harness/src/ghc_version.rs`.
         ghcVersions = [
           "ghc90"
           "ghc92"
@@ -74,7 +75,7 @@
           // {
             inherit src;
 
-            buildInputs = lib.optionals pkgs.stdenv.isDarwin [
+            buildInputs = lib.optionals stdenv.isDarwin [
               # Additional darwin specific inputs can be set here
               pkgs.libiconv
               pkgs.darwin.apple_sdk.frameworks.CoreServices
@@ -109,9 +110,11 @@
           });
       in {
         checks = {
-          ghcid-ng-tests = craneLib.cargoTest (commonArgs
+          ghcid-ng-tests = craneLib.cargoNextest (commonArgs
             // {
               buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
+              NEXTEST_PROFILE = "ci";
+              NEXTEST_HIDE_PROGRESS_BAR = "true";
             });
           ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
             // {
@@ -125,11 +128,15 @@
             });
         };
 
-        packages.default = ghcid-ng;
+        packages = {
+          inherit ghcid-ng;
+          default = ghcid-ng;
+          ghcid-ng-tests = self.checks.${system}.ghcid-ng-tests;
+        };
         apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
 
-        devShells.default = pkgs.mkShell {
-          inputsFrom = builtins.attrValues self.checks.${system};
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
 
           # Make rust-analyzer work
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
@@ -137,8 +144,8 @@
           # Provide GHC versions to use to the integration test suite.
           inherit GHC_VERSIONS;
 
-          # Any dev tools you use in excess of the rust ones
-          nativeBuildInputs = [
+          # Extra development tools (cargo and rustc are included by default).
+          packages = [
             pkgs.rust-analyzer
           ];
         };

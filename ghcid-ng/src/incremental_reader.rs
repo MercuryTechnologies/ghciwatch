@@ -249,6 +249,7 @@ where
         }
 
         let line = std::mem::replace(&mut self.line, String::with_capacity(LINE_BUFFER_CAPACITY));
+        tracing::debug!(line, "Read line");
         self.lines.push(line);
 
         Ok(())

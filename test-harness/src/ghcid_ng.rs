@@ -12,6 +12,7 @@ use tokio::process::Command;
 
 use crate::tracing_reader::TracingReader;
 use crate::Event;
+use crate::GhcVersion;
 use crate::IntoMatcher;
 use crate::Matcher;
 
@@ -30,6 +31,8 @@ pub struct GhcidNg {
     cwd: PathBuf,
     /// A stream of tracing events from `ghcid-ng`.
     tracing_reader: TracingReader,
+    /// The major version of GHC this test is running under.
+    ghc_version: GhcVersion,
 }
 
 impl GhcidNg {
@@ -45,10 +48,11 @@ impl GhcidNg {
         project_directory: impl AsRef<Path>,
         args: impl IntoIterator<Item = impl AsRef<OsStr>>,
     ) -> miette::Result<Self> {
-        let ghc_version = crate::internal::get_ghc_version()?;
+        let full_ghc_version = crate::internal::get_ghc_version()?;
+        let ghc_version = full_ghc_version.parse()?;
         let tempdir = crate::internal::set_tempdir()?;
         write_cabal_config(&tempdir).await?;
-        check_ghc_version(&tempdir, &ghc_version).await?;
+        check_ghc_version(&tempdir, &full_ghc_version).await?;
 
         let project_directory = project_directory.as_ref();
         tracing::info!("Copying project files");
@@ -71,7 +75,9 @@ impl GhcidNg {
             .arg(&log_path)
             .args([
                 "--command",
-                &format!("cabal --offline v2-repl --with-compiler ghc-{ghc_version}"),
+                &format!(
+                    "cabal --offline v2-repl --with-compiler ghc-{full_ghc_version} lib:test-dev"
+                ),
                 "--tracing-filter",
                 "ghcid_ng::watcher=trace,ghcid_ng=debug,watchexec=debug,watchexec::fs=trace",
                 "--trace-spans",
@@ -80,6 +86,11 @@ impl GhcidNg {
             .args(args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
+            // GHC will quote things with Unicode quotes unless we set this variable.
+            // Very cute.
+            // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085
+            // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L728-L740
+            .env("GHC_NO_UNICODE", "1")
             .stdin(Stdio::piped())
             .stderr(Stdio::piped())
             .stdout(Stdio::piped())
@@ -109,6 +120,7 @@ impl GhcidNg {
             start_instant,
             cwd,
             tracing_reader,
+            ghc_version,
         })
     }
 
@@ -212,6 +224,11 @@ impl GhcidNg {
     /// Get a path relative to the project root.
     pub fn path(&self, path: impl AsRef<Path>) -> PathBuf {
         self.cwd.join(path)
+    }
+
+    /// Get the major GHC version this test is running under.
+    pub fn ghc_version(&self) -> GhcVersion {
+        self.ghc_version
     }
 }
 

@@ -90,8 +90,13 @@ impl ActionHandler {
 
         tracing::trace!(events = ?action.events, "Got events");
 
+        // TODO: On Linux, sometimes we get a "new directory" event but none of the events for
+        // files inside of it. When we get new directories, we should paw through them with
+        // `walkdir` or something to check for files.
         let events = file_events_from_action(&action)?;
-        if !events.is_empty() {
+        if events.is_empty() {
+            tracing::debug!("No relevant file events");
+        } else {
             self.ghci.reload(events).await?;
         }
 

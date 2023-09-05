@@ -5,10 +5,8 @@ use std::collections::HashMap;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use watchexec::action::Action;
-use watchexec::event::filekind::CreateKind;
 use watchexec::event::filekind::FileEventKind;
 use watchexec::event::filekind::ModifyKind;
-use watchexec::event::filekind::RemoveKind;
 use watchexec::event::Event;
 use watchexec::event::Tag;
 
@@ -139,13 +137,13 @@ pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>
                     Tag::FileEventKind(FileEventKind::Modify(ModifyKind::Name(_))) => {
                         renamed = true;
                     }
-                    Tag::FileEventKind(FileEventKind::Modify(ModifyKind::Data(_))) => {
+                    Tag::FileEventKind(FileEventKind::Modify(_)) => {
                         modified = true;
                     }
-                    Tag::FileEventKind(FileEventKind::Create(CreateKind::File)) => {
+                    Tag::FileEventKind(FileEventKind::Create(_)) => {
                         created = true;
                     }
-                    Tag::FileEventKind(FileEventKind::Remove(RemoveKind::File)) => {
+                    Tag::FileEventKind(FileEventKind::Remove(_)) => {
                         removed = true;
                     }
                     _ => {}
@@ -164,7 +162,7 @@ pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>
         // We could probably just use `modified` and ignore the `created` and `renamed` values
         // here.
 
-        if !exists && removed {
+        if !exists || removed {
             ret.push(FileEvent::Remove(path.clone()));
         } else if modified || created || renamed {
             ret.push(FileEvent::Modify(path.clone()));
