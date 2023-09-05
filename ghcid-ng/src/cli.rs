@@ -9,6 +9,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
+use crate::command::ClonableCommand;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
 #[derive(Debug, Clone, Parser)]
@@ -21,18 +22,12 @@ pub struct Opts {
     ///
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
     #[arg(long, value_name = "SHELL_COMMAND")]
-    pub command: Option<String>,
+    pub command: Option<ClonableCommand>,
 
     /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
     /// run after reloads.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub test_ghci: Option<String>,
-
-    /// Shell commands to run before starting or restarting `ghci`.
-    ///
-    /// This can be used to regenerate `.cabal` files with `hpack`.
-    #[arg(long, value_name = "SHELL_COMMAND")]
-    pub before_startup_shell: Vec<String>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.

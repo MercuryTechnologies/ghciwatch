@@ -129,6 +129,22 @@ impl Default for ClonableCommand {
 }
 
 impl ClonableCommand {
+    /// Create a new [`ClonableCommand`] from the given program name.
+    ///
+    /// See [`StdCommand::new`].
+    pub fn new(program: impl Into<OsString>) -> Self {
+        Self {
+            program: program.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Add an argument to this command. See [`StdCommand::arg`].
+    pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
+        self.args.push(arg.into());
+        self
+    }
+
     /// Create a new [`std::process::Command`] from this command's configuration.
     pub fn as_std(&self) -> StdCommand {
         let mut ret = StdCommand::new(&self.program);

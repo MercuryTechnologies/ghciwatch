@@ -35,7 +35,6 @@ use show_modules::ModuleSet;
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
-use crate::command;
 use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
@@ -63,8 +62,6 @@ pub struct GhciOpts {
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
     pub error_path: Option<Utf8PathBuf>,
-    /// Shell commands to run before starting or restarting `ghci`.
-    pub before_startup_shell: Vec<String>,
     /// `ghci` commands to run after starting or restarting `ghci`.
     pub after_startup_ghci: Vec<String>,
     /// `ghci` command which runs tests.
@@ -79,8 +76,10 @@ impl GhciOpts {
     pub fn from_cli(opts: &Opts) -> miette::Result<Self> {
         // TODO: implement fancier default command
         // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
-        let command = command::from_string(opts.command.as_deref().unwrap_or("cabal repl"))
-            .wrap_err("Failed to split `--command` value into arguments")?;
+        let command = opts
+            .command
+            .clone()
+            .unwrap_or_else(|| ClonableCommand::new("cabal").arg("repl"));
 
         Ok(Self {
             command,
