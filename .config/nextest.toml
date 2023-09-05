@@ -13,6 +13,8 @@ failure-output = "immediate-final"
 fail-fast = false
 
 [[profile.ci.overrides]]
+# `kind(test)` means integration tests in the `../ghcid-ng/tests/` directory.
+# https://nexte.st/book/filter-expressions.html#basic-predicates
 filter = 'package(ghcid-ng) and kind(test)'
 platform = 'cfg(linux)'
 test-group = 'serial-integration'
