@@ -3,7 +3,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use std::time::Instant;
 
 use miette::miette;
 use miette::Context;
@@ -25,8 +24,6 @@ pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
 /// This handles copying a directory of files to a temporary directory, starting a `ghcid-ng`
 /// session, and asynchronously reading a stream of log events from its JSON log output.
 pub struct GhcidNg {
-    /// The time when this session was fully started.
-    start_instant: Instant,
     /// The current working directory of the `ghcid-ng` session.
     cwd: PathBuf,
     /// A stream of tracing events from `ghcid-ng`.
@@ -78,10 +75,14 @@ impl GhcidNg {
                 &format!(
                     "cabal --offline --with-compiler=ghc-{full_ghc_version} -flocal-dev v2-repl lib:test-dev"
                 ),
+                "--before-startup-shell",
+                "hpack --force .",
                 "--tracing-filter",
                 "ghcid_ng::watcher=trace,ghcid_ng=debug,watchexec=debug,watchexec::fs=trace",
                 "--trace-spans",
                 "new,close",
+                "--poll",
+                "1000ms",
             ])
             .args(args)
             .current_dir(&cwd)
@@ -91,12 +92,9 @@ impl GhcidNg {
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L728-L740
             .env("GHC_NO_UNICODE", "1")
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .kill_on_drop(true);
-
-        command.args(["--poll", "1000ms"]);
 
         let child = command
             .spawn()
@@ -114,10 +112,8 @@ impl GhcidNg {
             })?;
 
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
-        let start_instant = Instant::now();
 
         Ok(Self {
-            start_instant,
             cwd,
             tracing_reader,
             ghc_version,
@@ -141,8 +137,6 @@ impl GhcidNg {
                         return Err(err);
                     }
                     Ok(event) => {
-                        let elapsed = self.start_instant.elapsed();
-                        println!("{elapsed:.2?} {event}");
                         if matcher.matches(&event) {
                             return Ok(event);
                         }

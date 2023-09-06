@@ -23,7 +23,7 @@ async fn can_write_error_log() {
         .await
         .expect("ghcid-ng writes ghcid.txt");
     expect![[r#"
-        Ok, three modules loaded.
+        Ok, four modules loaded.
         Warning: No remote package servers have been specified. Usually you would have
         one specified in the config file.
     "#]]
@@ -78,7 +78,7 @@ async fn can_write_error_log_compilation_errors() {
 
     let expected = match session.ghc_version() {
         Ghc90 | Ghc92 | Ghc94 => expect![[r#"
-            Failed, three modules loaded.
+            Failed, four modules loaded.
 
             src/My/Module.hs:3:11: error:
                 * Couldn't match type `[Char]' with `()'
@@ -91,7 +91,7 @@ async fn can_write_error_log_compilation_errors() {
               |           ^^^^^^^^
         "#]],
         Ghc96 => expect![[r#"
-            Failed, three modules loaded.
+            Failed, four modules loaded.
 
             src/My/Module.hs:3:11: error: [GHC-83865]
                 * Couldn't match type `[Char]' with `()'
@@ -130,7 +130,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghcid-ng writes ghcid.txt");
 
     expect![[r#"
-        Ok, four modules loaded.
+        Ok, five modules loaded.
     "#]]
     .assert_eq(&error_contents);
 }
