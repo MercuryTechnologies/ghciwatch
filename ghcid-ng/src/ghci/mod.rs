@@ -58,7 +58,7 @@ pub const IO_MODULE_NAME: &str = "GHCID_NG_IO_INTERNAL__";
 /// could consider making this struct borrowed.
 #[derive(Debug, Clone)]
 pub struct GhciOpts {
-    /// The command used to start the underyling `ghci` session.
+    /// The command used to start the underlying `ghci` session.
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
     pub error_path: Option<Utf8PathBuf>,
