@@ -129,12 +129,9 @@ async fn can_reload_after_error() {
 /// Test that `ghcid-ng` can restart `ghci` after a module is moved.
 #[test]
 async fn can_restart_after_module_move() {
-    let mut session = GhcidNg::new_with_args(
-        "tests/data/simple",
-        ["--before-startup-shell", "hpack --force ."],
-    )
-    .await
-    .expect("ghcid-ng starts");
+    let mut session = GhcidNg::new("tests/data/simple")
+        .await
+        .expect("ghcid-ng starts");
     session
         .wait_until_ready()
         .await

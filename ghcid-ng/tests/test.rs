@@ -41,7 +41,7 @@ async fn can_run_test_suite_on_reload() {
         .expect("ghcid-ng writes ghcid.txt");
 
     expect![[r#"
-        Ok, three modules loaded.
+        Ok, four modules loaded.
         0 tests executed, 0 failures :)
     "#]]
     .assert_eq(&error_contents);
