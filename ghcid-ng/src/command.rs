@@ -81,8 +81,8 @@ pub enum ClonableStdio {
     Piped,
 }
 
-impl From<ClonableStdio> for Stdio {
-    fn from(value: ClonableStdio) -> Self {
+impl From<&ClonableStdio> for Stdio {
+    fn from(value: &ClonableStdio) -> Self {
         match value {
             ClonableStdio::Null => Self::null(),
             ClonableStdio::Inherit => Self::inherit(),
@@ -91,14 +91,16 @@ impl From<ClonableStdio> for Stdio {
     }
 }
 
+impl From<ClonableStdio> for Stdio {
+    fn from(value: ClonableStdio) -> Self {
+        (&value).into()
+    }
+}
+
 impl ClonableStdio {
     /// Convert this value into a [`Stdio`].
     pub fn as_std(&self) -> Stdio {
-        match self {
-            ClonableStdio::Null => Stdio::null(),
-            ClonableStdio::Inherit => Stdio::inherit(),
-            ClonableStdio::Piped => Stdio::piped(),
-        }
+        self.into()
     }
 }
 
