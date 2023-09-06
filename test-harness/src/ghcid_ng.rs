@@ -190,9 +190,7 @@ impl GhcidNg {
         // _before_ the filesystem worker is started (hence it is not yet ready to notice file
         // events). Therefore, we wait for "applying changes to the watcher".
         self.get_log(
-            Matcher::message("applying changes to the watcher")
-                .expect("Compiling the regex will not fail")
-                .in_module("watchexec::fs"),
+            Matcher::message("applying changes to the watcher").in_module("watchexec::fs"),
         )
         .await
         .wrap_err("watchexec filesystem worker didn't start in time")?;
