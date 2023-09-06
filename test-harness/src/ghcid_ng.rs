@@ -1,9 +1,12 @@
 use std::ffi::OsStr;
+use std::ffi::OsString;
+use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
+use futures_util::future::BoxFuture;
 use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
@@ -19,6 +22,53 @@ use crate::Matcher;
 /// directory created for the test.
 pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
 
+/// Builder for [`GhcidNg`].
+pub struct GhcidNgBuilder {
+    project_directory: PathBuf,
+    args: Vec<OsString>,
+    #[allow(clippy::type_complexity)]
+    before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
+}
+
+impl GhcidNgBuilder {
+    /// Create a new builder for a `ghcid-ng` session with the given project directory.
+    pub fn new(project_directory: impl AsRef<Path>) -> Self {
+        Self {
+            project_directory: project_directory.as_ref().to_owned(),
+            args: Default::default(),
+            before_start: None,
+        }
+    }
+
+    /// Add an argument to the `ghcid-ng` invocation.
+    pub fn with_arg(mut self, arg: impl AsRef<OsStr>) -> Self {
+        self.args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple arguments to the `ghcid-ng` invocation.
+    pub fn with_args(mut self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
+        self.args
+            .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Add a hook to run after project files are copied to the temporary directory but before
+    /// `ghcid-ng` is started.
+    pub fn before_start<F>(mut self, before_start: impl Fn(PathBuf) -> F + Send + 'static) -> Self
+    where
+        F: Future<Output = miette::Result<()>> + Send + 'static,
+    {
+        self.before_start = Some(Box::new(move |path| Box::pin(before_start(path))));
+        self
+    }
+
+    /// Start `ghcid-ng`.
+    pub async fn start(self) -> miette::Result<GhcidNg> {
+        GhcidNg::from_builder(self).await
+    }
+}
+
 /// `ghcid-ng` session for integration testing.
 ///
 /// This handles copying a directory of files to a temporary directory, starting a `ghcid-ng`
@@ -33,35 +83,31 @@ pub struct GhcidNg {
 }
 
 impl GhcidNg {
-    /// Start a new `ghcid-ng` session in a copy of the given path.
-    pub async fn new(project_directory: impl AsRef<Path>) -> miette::Result<Self> {
-        Self::new_with_args(project_directory, std::iter::empty::<&str>()).await
-    }
-
-    /// Start a new `ghcid-ng` session in a copy of the given path.
-    ///
-    /// Also add the given arguments to the `ghcid-ng` invocation.
-    pub async fn new_with_args(
-        project_directory: impl AsRef<Path>,
-        args: impl IntoIterator<Item = impl AsRef<OsStr>>,
-    ) -> miette::Result<Self> {
+    async fn from_builder(mut builder: GhcidNgBuilder) -> miette::Result<Self> {
         let full_ghc_version = crate::internal::get_ghc_version()?;
         let ghc_version = full_ghc_version.parse()?;
         let tempdir = crate::internal::set_tempdir()?;
         write_cabal_config(&tempdir).await?;
         check_ghc_version(&tempdir, &full_ghc_version).await?;
 
-        let project_directory = project_directory.as_ref();
         tracing::info!("Copying project files");
-        fs_extra::copy_items(&[project_directory], &tempdir, &Default::default())
+        fs_extra::copy_items(&[&builder.project_directory], &tempdir, &Default::default())
             .into_diagnostic()
             .wrap_err("Failed to copy project files")?;
 
-        let project_directory_name = project_directory
-            .file_name()
-            .ok_or_else(|| miette!("Path has no directory name: {project_directory:?}"))?;
+        let project_directory_name = builder.project_directory.file_name().ok_or_else(|| {
+            miette!(
+                "Path has no directory name: {:?}",
+                builder.project_directory
+            )
+        })?;
 
         let cwd = tempdir.join(project_directory_name);
+
+        if let Some(before_start) = builder.before_start.take() {
+            let future = (before_start)(cwd.clone());
+            future.await?;
+        }
 
         let log_path = tempdir.join(LOG_FILENAME);
 
@@ -84,7 +130,7 @@ impl GhcidNg {
                 "--poll",
                 "1000ms",
             ])
-            .args(args)
+            .args(builder.args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
             // GHC will quote things with Unicode quotes unless we set this variable.
@@ -132,6 +178,11 @@ impl GhcidNg {
             tracing_reader,
             ghc_version,
         })
+    }
+
+    /// Start a new `ghcid-ng` session in a copy of the given path.
+    pub async fn new(project_directory: impl AsRef<Path>) -> miette::Result<Self> {
+        GhcidNgBuilder::new(project_directory).start().await
     }
 
     /// Wait until a matching log event is found.

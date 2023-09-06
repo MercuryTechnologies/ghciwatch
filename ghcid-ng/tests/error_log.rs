@@ -4,14 +4,16 @@ use indoc::indoc;
 use test_harness::fs;
 use test_harness::test;
 use test_harness::GhcVersion::*;
-use test_harness::GhcidNg;
+use test_harness::GhcidNgBuilder;
 use test_harness::Matcher;
 
 /// Test that `ghcid-ng --errors ...` can write the error log.
 #[test]
 async fn can_write_error_log() {
     let error_path = "ghcid.txt";
-    let mut session = GhcidNg::new_with_args("tests/data/simple", ["--errors", error_path])
+    let mut session = GhcidNgBuilder::new("tests/data/simple")
+        .with_args(["--errors", error_path])
+        .start()
         .await
         .expect("ghcid-ng starts");
     let error_path = session.path(error_path);
@@ -36,7 +38,9 @@ async fn can_write_error_log() {
 #[test]
 async fn can_write_error_log_compilation_errors() {
     let error_path = "ghcid.txt";
-    let mut session = GhcidNg::new_with_args("tests/data/simple", ["--errors", error_path])
+    let mut session = GhcidNgBuilder::new("tests/data/simple")
+        .with_args(["--errors", error_path])
+        .start()
         .await
         .expect("ghcid-ng starts");
     let error_path = session.path(error_path);

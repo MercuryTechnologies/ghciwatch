@@ -1,19 +1,18 @@
 use expect_test::expect;
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNg;
+use test_harness::GhcidNgBuilder;
 use test_harness::Matcher;
 
 /// Test that `ghcid-ng --test ...` can run a test suite.
 #[test]
 async fn can_run_test_suite_on_reload() {
     let error_path = "ghcid.txt";
-    let mut session = GhcidNg::new_with_args(
-        "tests/data/simple",
-        ["--test-ghci", "TestMain.testMain", "--errors", error_path],
-    )
-    .await
-    .expect("ghcid-ng starts");
+    let mut session = GhcidNgBuilder::new("tests/data/simple")
+        .with_args(["--test-ghci", "TestMain.testMain", "--errors", error_path])
+        .start()
+        .await
+        .expect("ghcid-ng starts");
     let error_path = session.path(error_path);
     session
         .wait_until_ready()
