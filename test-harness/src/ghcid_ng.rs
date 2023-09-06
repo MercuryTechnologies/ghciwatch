@@ -3,7 +3,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use std::time::Instant;
 
 use miette::miette;
 use miette::Context;
@@ -25,8 +24,6 @@ pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
 /// This handles copying a directory of files to a temporary directory, starting a `ghcid-ng`
 /// session, and asynchronously reading a stream of log events from its JSON log output.
 pub struct GhcidNg {
-    /// The time when this session was fully started.
-    start_instant: Instant,
     /// The current working directory of the `ghcid-ng` session.
     cwd: PathBuf,
     /// A stream of tracing events from `ghcid-ng`.
@@ -76,12 +73,16 @@ impl GhcidNg {
             .args([
                 "--command",
                 &format!(
-                    "cabal --offline v2-repl --with-compiler ghc-{full_ghc_version} lib:test-dev"
+                    "cabal --offline --with-compiler=ghc-{full_ghc_version} -flocal-dev v2-repl lib:test-dev"
                 ),
+                "--before-startup-shell",
+                "hpack --force .",
                 "--tracing-filter",
                 "ghcid_ng::watcher=trace,ghcid_ng=debug,watchexec=debug,watchexec::fs=trace",
                 "--trace-spans",
                 "new,close",
+                "--poll",
+                "1000ms",
             ])
             .args(args)
             .current_dir(&cwd)
@@ -91,33 +92,42 @@ impl GhcidNg {
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L728-L740
             .env("GHC_NO_UNICODE", "1")
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .kill_on_drop(true);
 
-        command.args(["--poll", "1000ms"]);
-
-        let child = command
+        let mut child = command
             .spawn()
             .into_diagnostic()
             .wrap_err("Failed to start `ghcid-ng`")?;
 
+        // Wait for `ghcid-ng` to create the `log_path`
+        let creates_log_path =
+            tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path));
+        tokio::select! {
+            child_result = child.wait() => {
+                return match child_result {
+                    Err(err) => {
+                        Err(err).into_diagnostic().wrap_err("ghcid-ng failed to execute")
+                    }
+                    Ok(status) => {
+                        Err(miette!("ghcid-ng exited: {status}"))
+                    }
+                }
+            }
+            log_path_result = creates_log_path => {
+                if log_path_result.is_err() {
+                    return Err(miette!("`ghcid-ng` didn't create log path {log_path:?} fast enough"));
+                }
+            }
+            else => {}
+        }
+
         crate::internal::set_ghc_process(child)?;
 
-        // Wait for `ghcid-ng` to create the `log_path`
-        tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path))
-            .await
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                format!("`ghcid-ng` didn't create log path {log_path:?} fast enough")
-            })?;
-
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
-        let start_instant = Instant::now();
 
         Ok(Self {
-            start_instant,
             cwd,
             tracing_reader,
             ghc_version,
@@ -141,8 +151,6 @@ impl GhcidNg {
                         return Err(err);
                     }
                     Ok(event) => {
-                        let elapsed = self.start_instant.elapsed();
-                        println!("{elapsed:.2?} {event}");
                         if matcher.matches(&event) {
                             return Ok(event);
                         }
@@ -190,9 +198,7 @@ impl GhcidNg {
         // _before_ the filesystem worker is started (hence it is not yet ready to notice file
         // events). Therefore, we wait for "applying changes to the watcher".
         self.get_log(
-            Matcher::message("applying changes to the watcher")
-                .expect("Compiling the regex will not fail")
-                .in_module("watchexec::fs"),
+            Matcher::message("applying changes to the watcher").in_module("watchexec::fs"),
         )
         .await
         .wrap_err("watchexec filesystem worker didn't start in time")?;

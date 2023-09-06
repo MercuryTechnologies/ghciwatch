@@ -1,6 +1,6 @@
-module TestMain (main) where
+module TestMain (testMain) where
 
 import System.IO (hPutStrLn, stderr)
 
-main :: IO ()
-main = hPutStrLn stderr "0 tests executed, 0 failures :)"
+testMain :: IO ()
+testMain = hPutStrLn stderr "0 tests executed, 0 failures :)"

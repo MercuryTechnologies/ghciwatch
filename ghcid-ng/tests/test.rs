@@ -10,7 +10,7 @@ async fn can_run_test_suite_on_reload() {
     let error_path = "ghcid.txt";
     let mut session = GhcidNg::new_with_args(
         "tests/data/simple",
-        ["--test-ghci", "TestMain.main", "--errors", error_path],
+        ["--test-ghci", "TestMain.testMain", "--errors", error_path],
     )
     .await
     .expect("ghcid-ng starts");
@@ -41,7 +41,7 @@ async fn can_run_test_suite_on_reload() {
         .expect("ghcid-ng writes ghcid.txt");
 
     expect![[r#"
-        Ok, three modules loaded.
+        Ok, four modules loaded.
         0 tests executed, 0 failures :)
     "#]]
     .assert_eq(&error_contents);

@@ -108,11 +108,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghcid-ng loads new modules");
     session
-        .get_log(
-            Matcher::message("Compilation failed")
-                .unwrap()
-                .in_spans(["reload", "add_module"]),
-        )
+        .get_log(Matcher::message("Compilation failed").in_spans(["reload", "add_module"]))
         .await
         .unwrap();
 
@@ -125,11 +121,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghcid-ng reloads on changes");
     session
-        .get_log(
-            Matcher::message("Compilation succeeded")
-                .unwrap()
-                .in_span("reload"),
-        )
+        .get_log(Matcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }
@@ -179,14 +171,17 @@ async fn can_restart_after_module_move() {
         .await
         .expect("ghcid-ng restarts ghci");
 
-    // TODO: This doesn't actually load the new module because it's not listed in the `.cabal`
-    // file.
     session
         .get_log(
-            Matcher::message("Compilation succeeded")
-                .unwrap()
-                .in_span("reload"),
+            Matcher::message("Read line")
+                .in_span("reload")
+                .with_field("line", r"Compiling My\.CoolModule"),
         )
+        .await
+        .unwrap();
+
+    session
+        .get_log(Matcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }

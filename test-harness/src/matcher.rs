@@ -1,5 +1,7 @@
-use miette::IntoDiagnostic;
+use std::collections::HashMap;
+
 use regex::Regex;
+use serde_json::Value;
 
 use crate::Event;
 
@@ -8,29 +10,33 @@ pub struct Matcher {
     message: Regex,
     target: Option<String>,
     spans: Vec<String>,
+    fields: HashMap<String, Regex>,
 }
 
 impl Matcher {
     /// Construct a query for events with messages matching the given regex.
-    pub fn message(message_regex: &str) -> miette::Result<Self> {
-        let message = Regex::new(message_regex).into_diagnostic()?;
-        Ok(Self {
+    ///
+    /// ### Panics
+    ///
+    /// If the `message_regex` fails to compile.
+    pub fn message(message_regex: &str) -> Self {
+        let message = Regex::new(message_regex).expect("Message regex failed to compile");
+        Self {
             message,
             target: None,
             spans: Vec::new(),
-        })
+            fields: HashMap::new(),
+        }
     }
 
     /// Construct a query for new span events, denoted by a `new` message.
     pub fn span_new() -> Self {
-        // This regex will never fail to parse.
-        Self::message("new").unwrap()
+        Self::message("new")
     }
 
     /// Construct a query for span close events, denoted by a `close` message.
     pub fn span_close() -> Self {
-        // This regex will never fail to parse.
-        Self::message("close").unwrap()
+        Self::message("close")
     }
 
     /// Require that matching events be in a span with the given name.
@@ -63,6 +69,20 @@ impl Matcher {
     /// matched.
     pub fn in_module(mut self, module: &str) -> Self {
         self.target = Some(module.to_owned());
+        self
+    }
+
+    /// Require that matching events contain a field with the given name and a value matching the
+    /// given regex.
+    ///
+    /// ### Panics
+    ///
+    /// If the `value_regex` fails to compile.
+    pub fn with_field(mut self, name: &str, value_regex: &str) -> Self {
+        self.fields.insert(
+            name.to_owned(),
+            Regex::new(value_regex).expect("Value regex failed to compile"),
+        );
         self
     }
 
@@ -101,6 +121,34 @@ impl Matcher {
             }
         }
 
+        for (name, value_regex) in &self.fields {
+            let value = event.fields.get(name);
+            match value {
+                None => {
+                    // We expected the field to be present.
+                    return false;
+                }
+                Some(value) => {
+                    match value {
+                        Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::Array(_)
+                        | Value::Object(_) => {
+                            // We expected the value to be a string.
+                            return false;
+                        }
+                        Value::String(value) => {
+                            if !value_regex.is_match(value) {
+                                // We expected the regex to match.
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         true
     }
 }
@@ -119,7 +167,7 @@ impl IntoMatcher for Matcher {
 
 impl IntoMatcher for &str {
     fn into_matcher(self) -> miette::Result<Matcher> {
-        Matcher::message(self)
+        Ok(Matcher::message(self))
     }
 }
 
@@ -217,6 +265,83 @@ mod tests {
         // Different target (parent).
         assert!(!matcher.matches(&Event {
             target: "ghcid_ng".to_owned(),
+            ..event.clone()
+        }));
+    }
+
+    #[test]
+    fn test_matcher_fields() {
+        let matcher = Matcher::message("").with_field("puppy", "dog+y");
+        let event = Event {
+            timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
+            level: Level::INFO,
+            message: "ghci started in 2.44s".to_owned(),
+            fields: Default::default(),
+            target: "ghcid_ng::ghci".to_owned(),
+            span: Some(Span {
+                name: "ghci".to_owned(),
+                rest: Default::default(),
+            }),
+            spans: vec![Span {
+                name: "ghci".to_owned(),
+                rest: Default::default(),
+            }],
+        };
+
+        assert!(matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::String("dogy".to_owned()))].into(),
+            ..event.clone()
+        }));
+
+        assert!(matcher.matches(&Event {
+            fields: [(
+                "puppy".to_owned(),
+                Value::String("a good dogggy!".to_owned())
+            )]
+            .into(),
+            ..event.clone()
+        }));
+
+        // Missing field.
+        assert!(!matcher.matches(&event));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Bool(false))].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Null)].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [(
+                "puppy".to_owned(),
+                Value::Number(serde_json::value::Number::from_f64(1.0).unwrap())
+            )]
+            .into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Array(Default::default()))].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Object(Default::default()))].into(),
+            ..event.clone()
+        }));
+
+        // Wrong field name.
+        assert!(!matcher.matches(&Event {
+            fields: [("pupy".to_owned(), Value::String("doggy".to_owned()))].into(),
             ..event.clone()
         }));
     }

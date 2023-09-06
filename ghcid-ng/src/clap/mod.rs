@@ -8,6 +8,7 @@ mod humantime;
 mod rust_backtrace;
 
 pub use self::humantime::DurationValueParser;
+pub use clonable_command::ClonableCommandParser;
 pub use error_message::value_validation_error;
 pub use fmt_span::FmtSpanParserFactory;
 pub use rust_backtrace::RustBacktrace;

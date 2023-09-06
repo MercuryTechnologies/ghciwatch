@@ -29,6 +29,12 @@ pub struct Opts {
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub test_ghci: Option<String>,
 
+    /// Shell commands to run before starting or restarting `ghci`.
+    ///
+    /// This can be used to regenerate `.cabal` files with `hpack`.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub before_startup_shell: Vec<ClonableCommand>,
+
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
     #[arg(long, value_name = "GHCI_COMMAND")]
