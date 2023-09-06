@@ -7,16 +7,29 @@ use test_harness::GhcidNgBuilder;
 /// This is a regression test for [#43](https://github.com/MercuryTechnologies/ghcid-ng/issues/43).
 #[test]
 async fn can_start_with_failed_modules() {
-    let _session = GhcidNgBuilder::new("tests/data/simple")
-        .before_start(|path| async move {
-            fs::replace(
-                path.join("src/MyModule.hs"),
-                "example :: String",
-                "example :: ()",
-            )
-            .await
+    let module_path = "src/MyModule.hs";
+    let mut session = GhcidNgBuilder::new("tests/data/simple")
+        .before_start(move |path| async move {
+            fs::replace(path.join(module_path), "example :: String", "example :: ()").await
         })
         .start()
         .await
         .expect("ghcid-ng starts");
+    let module_path = session.path(module_path);
+
+    session
+        .get_log("Compilation failed")
+        .await
+        .expect("ghcid-ng fails to load with errors");
+
+    session.wait_until_ready().await.expect("ghcid-ng loads");
+
+    fs::replace(&module_path, "example :: ()", "example :: String")
+        .await
+        .unwrap();
+
+    session
+        .get_log("Compilation succeeded")
+        .await
+        .expect("ghcid-ng reloads fixed modules");
 }
