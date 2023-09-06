@@ -96,20 +96,34 @@ impl GhcidNg {
             .stdout(Stdio::inherit())
             .kill_on_drop(true);
 
-        let child = command
+        let mut child = command
             .spawn()
             .into_diagnostic()
             .wrap_err("Failed to start `ghcid-ng`")?;
 
-        crate::internal::set_ghc_process(child)?;
-
         // Wait for `ghcid-ng` to create the `log_path`
-        tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path))
-            .await
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                format!("`ghcid-ng` didn't create log path {log_path:?} fast enough")
-            })?;
+        let creates_log_path =
+            tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path));
+        tokio::select! {
+            child_result = child.wait() => {
+                return match child_result {
+                    Err(err) => {
+                        Err(err).into_diagnostic().wrap_err("ghcid-ng failed to execute")
+                    }
+                    Ok(status) => {
+                        Err(miette!("ghcid-ng exited: {status}"))
+                    }
+                }
+            }
+            log_path_result = creates_log_path => {
+                if log_path_result.is_err() {
+                    return Err(miette!("`ghcid-ng` didn't create log path {log_path:?} fast enough"));
+                }
+            }
+            else => {}
+        }
+
+        crate::internal::set_ghc_process(child)?;
 
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
 
