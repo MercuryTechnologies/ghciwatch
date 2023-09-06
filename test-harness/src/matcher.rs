@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use miette::IntoDiagnostic;
 use regex::Regex;
+use serde_json::Value;
 
 use crate::Event;
 
@@ -8,6 +11,7 @@ pub struct Matcher {
     message: Regex,
     target: Option<String>,
     spans: Vec<String>,
+    fields: HashMap<String, Regex>,
 }
 
 impl Matcher {
@@ -18,6 +22,7 @@ impl Matcher {
             message,
             target: None,
             spans: Vec::new(),
+            fields: HashMap::new(),
         })
     }
 
@@ -66,6 +71,14 @@ impl Matcher {
         self
     }
 
+    /// Require that matching events contain a field with the given name and a value matching the
+    /// given regex.
+    pub fn with_field(mut self, name: &str, value_regex: &str) -> miette::Result<Self> {
+        self.fields
+            .insert(name.to_owned(), Regex::new(value_regex).into_diagnostic()?);
+        Ok(self)
+    }
+
     /// Determines if this query matches the given event.
     pub fn matches(&self, event: &Event) -> bool {
         if !self.message.is_match(&event.message) {
@@ -98,6 +111,34 @@ impl Matcher {
         if let Some(target) = &self.target {
             if target != &event.target {
                 return false;
+            }
+        }
+
+        for (name, value_regex) in &self.fields {
+            let value = event.fields.get(name);
+            match value {
+                None => {
+                    // We expected the field to be present.
+                    return false;
+                }
+                Some(value) => {
+                    match value {
+                        Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::Array(_)
+                        | Value::Object(_) => {
+                            // We expected the value to be a string.
+                            return false;
+                        }
+                        Value::String(value) => {
+                            if !value_regex.is_match(value) {
+                                // We expected the regex to match.
+                                return false;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -217,6 +258,86 @@ mod tests {
         // Different target (parent).
         assert!(!matcher.matches(&Event {
             target: "ghcid_ng".to_owned(),
+            ..event.clone()
+        }));
+    }
+
+    #[test]
+    fn test_matcher_fields() {
+        let matcher = Matcher::message("")
+            .unwrap()
+            .with_field("puppy", "dog+y")
+            .unwrap();
+        let event = Event {
+            timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
+            level: Level::INFO,
+            message: "ghci started in 2.44s".to_owned(),
+            fields: Default::default(),
+            target: "ghcid_ng::ghci".to_owned(),
+            span: Some(Span {
+                name: "ghci".to_owned(),
+                rest: Default::default(),
+            }),
+            spans: vec![Span {
+                name: "ghci".to_owned(),
+                rest: Default::default(),
+            }],
+        };
+
+        assert!(matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::String("dogy".to_owned()))].into(),
+            ..event.clone()
+        }));
+
+        assert!(matcher.matches(&Event {
+            fields: [(
+                "puppy".to_owned(),
+                Value::String("a good dogggy!".to_owned())
+            )]
+            .into(),
+            ..event.clone()
+        }));
+
+        // Missing field.
+        assert!(!matcher.matches(&event));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Bool(false))].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Null)].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [(
+                "puppy".to_owned(),
+                Value::Number(serde_json::value::Number::from_f64(1.0).unwrap())
+            )]
+            .into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Array(Default::default()))].into(),
+            ..event.clone()
+        }));
+
+        // Unsupported type.
+        assert!(!matcher.matches(&Event {
+            fields: [("puppy".to_owned(), Value::Object(Default::default()))].into(),
+            ..event.clone()
+        }));
+
+        // Wrong field name.
+        assert!(!matcher.matches(&Event {
+            fields: [("pupy".to_owned(), Value::String("doggy".to_owned()))].into(),
             ..event.clone()
         }));
     }
