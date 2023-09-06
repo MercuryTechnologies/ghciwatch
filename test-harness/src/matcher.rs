@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use miette::IntoDiagnostic;
 use regex::Regex;
 use serde_json::Value;
 
@@ -16,26 +15,28 @@ pub struct Matcher {
 
 impl Matcher {
     /// Construct a query for events with messages matching the given regex.
-    pub fn message(message_regex: &str) -> miette::Result<Self> {
-        let message = Regex::new(message_regex).into_diagnostic()?;
-        Ok(Self {
+    ///
+    /// ### Panics
+    ///
+    /// If the `message_regex` fails to compile.
+    pub fn message(message_regex: &str) -> Self {
+        let message = Regex::new(message_regex).expect("Message regex failed to compile");
+        Self {
             message,
             target: None,
             spans: Vec::new(),
             fields: HashMap::new(),
-        })
+        }
     }
 
     /// Construct a query for new span events, denoted by a `new` message.
     pub fn span_new() -> Self {
-        // This regex will never fail to parse.
-        Self::message("new").unwrap()
+        Self::message("new")
     }
 
     /// Construct a query for span close events, denoted by a `close` message.
     pub fn span_close() -> Self {
-        // This regex will never fail to parse.
-        Self::message("close").unwrap()
+        Self::message("close")
     }
 
     /// Require that matching events be in a span with the given name.
@@ -73,10 +74,16 @@ impl Matcher {
 
     /// Require that matching events contain a field with the given name and a value matching the
     /// given regex.
-    pub fn with_field(mut self, name: &str, value_regex: &str) -> miette::Result<Self> {
-        self.fields
-            .insert(name.to_owned(), Regex::new(value_regex).into_diagnostic()?);
-        Ok(self)
+    ///
+    /// ### Panics
+    ///
+    /// If the `value_regex` fails to compile.
+    pub fn with_field(mut self, name: &str, value_regex: &str) -> Self {
+        self.fields.insert(
+            name.to_owned(),
+            Regex::new(value_regex).expect("Value regex failed to compile"),
+        );
+        self
     }
 
     /// Determines if this query matches the given event.
@@ -160,7 +167,7 @@ impl IntoMatcher for Matcher {
 
 impl IntoMatcher for &str {
     fn into_matcher(self) -> miette::Result<Matcher> {
-        Matcher::message(self)
+        Ok(Matcher::message(self))
     }
 }
 
@@ -264,10 +271,7 @@ mod tests {
 
     #[test]
     fn test_matcher_fields() {
-        let matcher = Matcher::message("")
-            .unwrap()
-            .with_field("puppy", "dog+y")
-            .unwrap();
+        let matcher = Matcher::message("").with_field("puppy", "dog+y");
         let event = Event {
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
             level: Level::INFO,
