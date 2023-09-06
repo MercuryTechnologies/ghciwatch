@@ -48,7 +48,7 @@ impl GhciStdin {
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
-        setup_commands: Vec<String>,
+        setup_commands: &[String],
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt {PROMPT}\n"))
