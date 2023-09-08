@@ -119,7 +119,7 @@ impl GhcidNg {
             .args([
                 "--command",
                 &format!(
-                    "cabal --offline --with-compiler=ghc-{full_ghc_version} -flocal-dev v2-repl lib:test-dev"
+                    "cabal --offline --with-compiler=ghc-{full_ghc_version} -flocal-dev --repl-option -fdiagnostics-color=always v2-repl lib:test-dev"
                 ),
                 "--before-startup-shell",
                 "hpack --force .",
