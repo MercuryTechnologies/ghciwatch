@@ -400,19 +400,15 @@ impl Ghci {
         &mut self,
         path: &Utf8Path,
     ) -> miette::Result<Option<CompilationResult>> {
-        let messages = self.stdin.add_module(&mut self.stdout, &path).await?;
+        let messages = self.stdin.add_module(&mut self.stdout, path).await?;
 
         let result = self.process_ghc_messages(messages).await?;
 
-        match result {
-            Some(CompilationResult::Ok) => {
-                self.modules.insert_source_path(&path)?;
-            }
-            _ => {
-                // Compilation failed or otherwise didn't print a summary, so we don't want to add
-                // the module to the module set.
-            }
+        if let Some(CompilationResult::Ok) = result {
+            self.modules.insert_source_path(path)?;
         }
+        // Otherwise, compilation failed or otherwise didn't print a summary, so we don't want to
+        // add the module to the module set.
 
         Ok(result)
     }
