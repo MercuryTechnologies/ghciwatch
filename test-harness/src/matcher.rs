@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 
+use itertools::Itertools;
 use regex::Regex;
 use serde_json::Value;
 
@@ -150,6 +152,33 @@ impl Matcher {
         }
 
         true
+    }
+}
+
+impl Display for Matcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.message.as_str())?;
+
+        if let Some(target) = &self.target {
+            write!(f, " in module {target}")?;
+        }
+
+        if !self.spans.is_empty() {
+            write!(f, " in spans {}", self.spans.join(", "))?;
+        }
+
+        if !self.fields.is_empty() {
+            write!(
+                f,
+                " with fields {}",
+                self.fields
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v:?}"))
+                    .join(", ")
+            )?;
+        }
+
+        Ok(())
     }
 }
 

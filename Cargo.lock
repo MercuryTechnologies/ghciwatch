@@ -1761,6 +1761,7 @@ version = "0.1.0"
 dependencies = [
  "backoff",
  "fs_extra",
+ "futures-util",
  "itertools",
  "miette",
  "nix",
