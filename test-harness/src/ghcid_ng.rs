@@ -124,7 +124,12 @@ impl GhcidNg {
                 "--before-startup-shell",
                 "hpack --force .",
                 "--tracing-filter",
-                "ghcid_ng::watcher=trace,ghcid_ng=debug,watchexec=debug,watchexec::fs=trace",
+                &[
+                    "ghcid_ng::watcher=trace",
+                    "ghcid_ng=debug",
+                    "watchexec=debug",
+                    "watchexec::fs=trace",
+                ].join(","),
                 "--trace-spans",
                 "new,close",
                 "--poll",
