@@ -475,6 +475,16 @@ impl Ghci {
             }
         }
 
+        // Tell the stderr stream to write the error log and then finish.
+        {
+            let (sender, receiver) = oneshot::channel();
+            self.stderr
+                .send(StderrEvent::Write(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
+
         Ok(None)
     }
 }
