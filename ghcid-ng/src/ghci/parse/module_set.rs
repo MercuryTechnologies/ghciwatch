@@ -11,14 +11,14 @@ use super::Module;
 /// session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleSet {
-    map: HashSet<Utf8PathBuf>,
+    set: HashSet<Utf8PathBuf>,
 }
 
 impl ModuleSet {
     /// Parse a `ModuleSet` from a set of lines read from `ghci` stdout.
     pub fn from_lines(lines: &str) -> miette::Result<Self> {
         Ok(Self {
-            map: lines
+            set: lines
                 .lines()
                 .map(|line| {
                     line.parse::<Module>()
@@ -31,7 +31,7 @@ impl ModuleSet {
 
     /// Get the number of modules in this set.
     pub fn len(&self) -> usize {
-        self.map.len()
+        self.set.len()
     }
 
     /// Determine if this set is empty.
@@ -43,7 +43,7 @@ impl ModuleSet {
     /// Remove all entries from this set, leaving it empty.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
-        self.map.clear();
+        self.set.clear();
     }
 
     /// Determine if a module with the given source path is contained in this module set.
@@ -51,14 +51,14 @@ impl ModuleSet {
     /// Returns `Err` if the `path` cannot be canonicalized.
     #[allow(dead_code)]
     pub fn contains_source_path(&self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.map.contains(&canonicalize(path)?))
+        Ok(self.set.contains(&canonicalize(path)?))
     }
 
     /// Add a source path to this module set.
     ///
     /// Returns `Err` if the `path` cannot be canonicalized.
     pub fn insert_source_path(&mut self, path: &Utf8Path) -> miette::Result<()> {
-        self.map.insert(canonicalize(path)?);
+        self.set.insert(canonicalize(path)?);
         Ok(())
     }
 
@@ -69,7 +69,7 @@ impl ModuleSet {
     /// Returns `Err` if the `path` cannot be canonicalized.
     #[allow(dead_code)]
     pub fn remove_source_path(&mut self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.map.remove(&canonicalize(path)?))
+        Ok(self.set.remove(&canonicalize(path)?))
     }
 }
 
