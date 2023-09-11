@@ -16,7 +16,7 @@ use crate::incremental_reader::WriteBehavior;
 use crate::lines::Lines;
 use crate::sync_sentinel::SyncSentinel;
 
-use super::show_modules::ModuleSet;
+use super::parse::ModuleSet;
 use super::stderr::StderrEvent;
 use super::CompilationResult;
 use super::Mode;
@@ -133,7 +133,7 @@ impl GhciStdout {
             .reader
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
-        ModuleSet::from_lines(&lines)
+        ModuleSet::from_lines(&lines.join("\n"))
     }
 
     #[instrument(skip(self), level = "debug")]

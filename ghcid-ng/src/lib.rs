@@ -19,6 +19,7 @@ pub mod command;
 pub mod event_filter;
 pub mod ghci;
 pub mod haskell_show;
+pub mod haskell_source_file;
 pub mod incremental_reader;
 pub mod lines;
 pub mod sync_sentinel;
