@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -109,8 +110,9 @@ pub struct Ghci {
     process: Child,
     /// The handle for the stderr reader task.
     stderr_handle: JoinHandle<miette::Result<()>>,
-    /// The handle for the stdin interaction task.
+    /// The stdin writer.
     stdin: GhciStdin,
+    /// The stdout reader.
     stdout: GhciStdout,
     /// Channel for communicating with the stderr reader task.
     stderr: mpsc::Sender<StderrEvent>,
@@ -237,29 +239,18 @@ impl Ghci {
         };
 
         // Wait for the stdout job to start up.
-        {
-            let span = tracing::debug_span!("Stdout startup");
-            let _enter = span.enter();
-            ret.stdout.initialize().await?;
-        }
+        let messages = ret.stdout.initialize().await?;
+        ret.process_ghc_messages(messages).await?;
 
         // Perform start-of-session initialization.
-        {
-            let span = tracing::debug_span!("Start-of-session initialization");
-            let _enter = span.enter();
-            ret.stdin
-                .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
-                .await?;
-        }
+        ret.stdin
+            .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
+            .await?;
 
-        {
-            let span = tracing::debug_span!("Start-of-session sync");
-            let _enter = span.enter();
-            // Sync up for any prompts.
-            ret.sync().await?;
-            // Get the initial list of loaded modules.
-            ret.refresh_modules().await?;
-        }
+        // Sync up for any prompts.
+        ret.sync().await?;
+        // Get the initial list of loaded modules.
+        ret.refresh_modules().await?;
 
         tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
 
@@ -325,7 +316,6 @@ impl Ghci {
                 "Restarting ghci due to deleted/moved modules:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
-            // TODO: Probably also need a restart hook / `.cabal` hook / similar.
             self.stop().await?;
             let new = Self::new(self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
@@ -339,7 +329,7 @@ impl Ghci {
                 format_bulleted_list(&actions.needs_add)
             );
             for path in &actions.needs_add {
-                let add_result = self.add_module(path.into()).await?;
+                let add_result = self.add_module(path).await?;
                 if let Some(CompilationResult::Err) = add_result {
                     compilation_failed = true;
                 }
@@ -408,7 +398,7 @@ impl Ghci {
     #[instrument(skip(self), level = "debug")]
     pub async fn add_module(
         &mut self,
-        path: Utf8PathBuf,
+        path: &Utf8Path,
     ) -> miette::Result<Option<CompilationResult>> {
         let messages = self.stdin.add_module(&mut self.stdout, &path).await?;
 
@@ -423,6 +413,7 @@ impl Ghci {
                 // the module to the module set.
             }
         }
+
         Ok(result)
     }
 

@@ -119,7 +119,7 @@ async fn cleanup() {
                         .expect("Failed to kill `ghcid-ng` after test completion");
                 }
                 Ok(Ok(status)) => {
-                    tracing::info!(?status, "ghcid-ng exited");
+                    tracing::info!(%status, "ghcid-ng exited");
                 }
                 Ok(Err(err)) => {
                     tracing::error!("Waiting for ghcid-ng to exit failed: {err}");

@@ -119,7 +119,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self), level = "trace")]
     async fn ingest_line(&mut self, line: String) {
         // We might not have a buffer for some modes, e.g. `Internal`.
         if let Some(buffer) = self.buffers.get_mut(&self.mode) {
@@ -145,7 +145,7 @@ impl GhciStderr {
             let mut writer = BufWriter::new(file);
 
             if !self.compilation_summary.is_empty() {
-                tracing::debug!(?path, "Writing error log headline");
+                tracing::debug!(%path, "Writing error log headline");
                 writer
                     .write_all(self.compilation_summary.as_bytes())
                     .await
@@ -154,7 +154,7 @@ impl GhciStderr {
             }
 
             for (mode, buffer) in &self.buffers {
-                tracing::debug!(?path, %mode, bytes = buffer.len(), "Writing error log");
+                tracing::debug!(%path, %mode, bytes = buffer.len(), "Writing error log");
                 writer
                     .write_all(&strip_ansi_escapes::strip(buffer.as_bytes()))
                     .await
@@ -171,7 +171,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    #[instrument(skip(self, sender), level = "debug")]
+    #[instrument(skip(self, sender), level = "trace")]
     async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
         self.mode = mode;
 
