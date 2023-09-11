@@ -250,54 +250,59 @@ impl Ghci {
         Ok(ret)
     }
 
-    /// Reload this `ghci` session to include the given modified and removed paths.
-    ///
-    /// This may fully restart the `ghci` process.
-    #[instrument(skip_all, level = "debug")]
-    pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
-        // TODO: This method is pretty big -- we should break it up.
-
+    async fn get_reload_actions(&self, events: Vec<FileEvent>) -> miette::Result<ReloadActions> {
         // Once we know which paths were modified and which paths were removed, we can combine
         // that with information about this `ghci` session to determine which modules need to be
         // reloaded, which modules need to be added, and which modules were removed. In the case
         // of removed modules, the entire `ghci` session must be restarted.
         let mut needs_restart = Vec::new();
         let mut needs_reload = Vec::new();
-        let mut add = Vec::new();
-        {
-            for event in events {
-                match event {
-                    FileEvent::Remove(path) => {
-                        // `ghci` can't cope with removed modules, so we need to fully restart the
-                        // `ghci` process in case any modules are removed or renamed.
-                        //
-                        // https://gitlab.haskell.org/ghc/ghc/-/issues/11596
-                        //
-                        // TODO: I should investigate if `:unadd` works for some classes of removed
-                        // modules.
-                        tracing::debug!(?path, "Needs restart");
-                        needs_restart.push(path);
-                        break;
-                    }
-                    FileEvent::Modify(path) => {
-                        if self.modules.contains_source_path(&path)? {
-                            // We can `:reload` paths `ghci` already has loaded.
-                            tracing::debug!(?path, "Needs reload");
-                            needs_reload.push(path);
-                        } else {
-                            // Otherwise we need to `:add` the new paths.
-                            tracing::debug!(?path, "Needs add");
-                            add.push(path);
-                        }
+        let mut needs_add = Vec::new();
+        for event in events {
+            match event {
+                FileEvent::Remove(path) => {
+                    // `ghci` can't cope with removed modules, so we need to fully restart the
+                    // `ghci` process in case any modules are removed or renamed.
+                    //
+                    // https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                    //
+                    // TODO: I should investigate if `:unadd` works for some classes of removed
+                    // modules.
+                    tracing::debug!(%path, "Needs restart");
+                    needs_restart.push(path);
+                }
+                FileEvent::Modify(path) => {
+                    if self.modules.contains_source_path(&path)? {
+                        // We can `:reload` paths `ghci` already has loaded.
+                        tracing::debug!(%path, "Needs reload");
+                        needs_reload.push(path);
+                    } else {
+                        // Otherwise we need to `:add` the new paths.
+                        tracing::debug!(%path, "Needs add");
+                        needs_add.push(path);
                     }
                 }
             }
         }
 
-        if !needs_restart.is_empty() {
+        Ok(ReloadActions {
+            needs_restart,
+            needs_reload,
+            needs_add,
+        })
+    }
+
+    /// Reload this `ghci` session to include the given modified and removed paths.
+    ///
+    /// This may fully restart the `ghci` process.
+    #[instrument(skip_all, level = "debug")]
+    pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
+        let actions = self.get_reload_actions(events).await?;
+
+        if !actions.needs_restart.is_empty() {
             tracing::info!(
                 "Restarting ghci due to deleted/moved modules:\n{}",
-                format_bulleted_list(&needs_restart)
+                format_bulleted_list(&actions.needs_restart)
             );
             // TODO: Probably also need a restart hook / `.cabal` hook / similar.
             self.stop().await?;
@@ -305,34 +310,32 @@ impl Ghci {
             let _ = std::mem::replace(self, new);
         }
 
-        let needs_add_or_reload = !add.is_empty() || !needs_reload.is_empty();
         let mut compilation_failed = false;
 
-        if !add.is_empty() {
+        if !actions.needs_add.is_empty() {
             tracing::info!(
                 "Adding new modules to ghci:\n{}",
-                format_bulleted_list(&add)
+                format_bulleted_list(&actions.needs_add)
             );
-            for path in add {
-                let add_result = self.add_module(path).await?;
+            for path in &actions.needs_add {
+                let add_result = self.add_module(path.into()).await?;
                 if let Some(CompilationResult::Err) = add_result {
                     compilation_failed = true;
                 }
             }
         }
 
-        if !needs_reload.is_empty() {
+        if !actions.needs_reload.is_empty() {
             tracing::info!(
                 "Reloading ghci due to changed modules:\n{}",
-                format_bulleted_list(&needs_reload)
+                format_bulleted_list(&actions.needs_reload)
             );
-            let reload_result = self.stdin.reload(&mut self.stdout).await?;
-            if let Some(CompilationResult::Err) = reload_result {
+            if let Some(CompilationResult::Err) = self.stdin.reload(&mut self.stdout).await? {
                 compilation_failed = true;
             }
         }
 
-        if needs_add_or_reload {
+        if actions.needs_add_or_reload() {
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
@@ -470,4 +473,23 @@ pub enum CompilationResult {
     Ok,
     /// Some modules failed to compile/load.
     Err,
+}
+
+/// Actions needed to perform a reload.
+///
+/// See [`Ghci::reload`].
+struct ReloadActions {
+    /// Paths to modules which need a full `ghci` restart.
+    needs_restart: Vec<Utf8PathBuf>,
+    /// Paths to modules which need a `:reload`.
+    needs_reload: Vec<Utf8PathBuf>,
+    /// Paths to modules which need an `:add`.
+    needs_add: Vec<Utf8PathBuf>,
+}
+
+impl ReloadActions {
+    /// Do any modules need to be added or reloaded?
+    fn needs_add_or_reload(&self) -> bool {
+        !self.needs_add.is_empty() || !self.needs_reload.is_empty()
+    }
 }
