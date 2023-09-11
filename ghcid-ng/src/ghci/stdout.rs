@@ -13,7 +13,6 @@ use tracing::instrument;
 use crate::aho_corasick::AhoCorasickExt;
 use crate::incremental_reader::IncrementalReader;
 use crate::incremental_reader::WriteBehavior;
-use crate::lines::Lines;
 use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::ModuleSet;
@@ -44,11 +43,11 @@ impl GhciStdout {
             "GHCJSi, version ",
             "Clashi, version ",
         ]);
-        let lines = self
+        let data = self
             .reader
             .read_until(&bootup_patterns, WriteBehavior::Write, &mut self.buffer)
             .await?;
-        tracing::debug!(?lines, "ghci started, saw version marker");
+        tracing::debug!(data, "ghci started, saw version marker");
 
         // We know that we'll get _one_ `ghci> ` prompt on startup.
         let init_prompt_patterns = AhoCorasick::from_anchored_patterns(["ghci> "]);
@@ -69,7 +68,7 @@ impl GhciStdout {
         prompt_patterns: Option<&AhoCorasick>,
     ) -> miette::Result<Option<CompilationResult>> {
         let prompt_patterns = prompt_patterns.unwrap_or(&self.prompt_patterns);
-        let lines = self
+        let data = self
             .reader
             .read_until(
                 prompt_patterns,
@@ -77,12 +76,12 @@ impl GhciStdout {
                 &mut self.buffer,
             )
             .await?;
-        tracing::debug!(lines = lines.len(), "Got data from ghci");
+        tracing::debug!(bytes = data.len(), "Got data from ghci");
 
         let mut result = None;
         if self.mode == Mode::Compiling {
             result = self
-                .get_status_from_compile_output(lines)
+                .get_status_from_compile_output(data.lines().last())
                 .await
                 .wrap_err("Failed to get status from compilation output")?;
         }
@@ -104,7 +103,7 @@ impl GhciStdout {
     pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         // Read until the sync marker...
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
-        let lines = self
+        let data = self
             .reader
             .read_until(&sync_pattern, WriteBehavior::NoFinalLine, &mut self.buffer)
             .await?;
@@ -113,7 +112,7 @@ impl GhciStdout {
             .reader
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
-        tracing::debug!(?lines, "Got data from ghci");
+        tracing::debug!(data, "Synced with ghci");
 
         // Tell the stderr stream to write the error log and then finish.
         let (err_sender, err_receiver) = oneshot::channel();
@@ -133,7 +132,7 @@ impl GhciStdout {
             .reader
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
-        ModuleSet::from_lines(&lines.join("\n"))
+        ModuleSet::from_lines(&lines)
     }
 
     #[instrument(skip(self), level = "debug")]
@@ -148,10 +147,10 @@ impl GhciStdout {
     /// compilation status.
     async fn get_status_from_compile_output(
         &mut self,
-        mut lines: Lines,
+        last_line: Option<&str>,
     ) -> miette::Result<Option<CompilationResult>> {
-        if let Some(line) = lines.pop() {
-            if compilation_finished_re().is_match(&line) {
+        if let Some(line) = last_line {
+            if compilation_finished_re().is_match(line) {
                 let result = if line.starts_with("Ok") {
                     tracing::debug!("Compilation succeeded");
                     CompilationResult::Ok
@@ -163,7 +162,7 @@ impl GhciStdout {
                 let (sender, receiver) = oneshot::channel();
                 self.stderr_sender
                     .send(StderrEvent::SetCompilationSummary {
-                        summary: line,
+                        summary: line.to_owned(),
                         sender,
                     })
                     .await

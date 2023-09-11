@@ -49,7 +49,6 @@ impl ModuleSet {
     /// Determine if a module with the given source path is contained in this module set.
     ///
     /// Returns `Err` if the `path` cannot be canonicalized.
-    #[allow(dead_code)]
     pub fn contains_source_path(&self, path: &Utf8Path) -> miette::Result<bool> {
         Ok(self.map.contains(&canonicalize(path)?))
     }
