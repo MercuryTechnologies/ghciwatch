@@ -29,8 +29,8 @@ use stdout::GhciStdout;
 mod stderr;
 use stderr::GhciStderr;
 
-mod show_modules;
-use show_modules::ModuleSet;
+mod parse;
+use parse::ModuleSet;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
@@ -400,7 +400,7 @@ impl Ghci {
                 // Compilation failed, so we don't want to add the module to the module set.
             }
             Some(CompilationResult::Ok) => {
-                self.modules.insert_source_path(path)?;
+                self.modules.insert_source_path(&path)?;
             }
         }
         Ok(result)
