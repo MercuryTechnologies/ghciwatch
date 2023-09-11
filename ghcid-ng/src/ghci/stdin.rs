@@ -12,7 +12,7 @@ use tracing::instrument;
 use crate::haskell_show::HaskellShow;
 use crate::sync_sentinel::SyncSentinel;
 
-use super::show_modules::ModuleSet;
+use super::parse::ModuleSet;
 use super::stderr::StderrEvent;
 use super::CompilationResult;
 use super::Mode;
