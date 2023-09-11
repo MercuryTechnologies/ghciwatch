@@ -3,6 +3,7 @@
 use std::pin::Pin;
 
 use aho_corasick::AhoCorasick;
+use line_span::LineSpans;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
@@ -14,7 +15,6 @@ use tokio::io::AsyncWriteExt;
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::buffers::VEC_BUFFER_CAPACITY;
-use crate::lines::Lines;
 
 /// A tool for incrementally reading from a stream like stdout (and forwarding that stream to a
 /// writer).
@@ -33,7 +33,7 @@ pub struct IncrementalReader<R, W> {
     /// The wrapped reader.
     reader: Pin<Box<R>>,
     /// Lines we've already read since the last marker/chunk.
-    lines: Lines,
+    lines: String,
     /// The line currently being written to.
     line: String,
     /// The wrapped writer, if any.
@@ -49,7 +49,7 @@ where
     pub fn new(reader: R) -> Self {
         Self {
             reader: Box::pin(reader),
-            lines: Vec::with_capacity(VEC_BUFFER_CAPACITY),
+            lines: String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
             line: String::with_capacity(LINE_BUFFER_CAPACITY),
             writer: None,
         }
@@ -76,7 +76,7 @@ where
         end_marker: &AhoCorasick,
         writing: WriteBehavior,
         buffer: &mut [u8],
-    ) -> miette::Result<Lines> {
+    ) -> miette::Result<String> {
         loop {
             if let Some(lines) = self.try_read_until(end_marker, writing, buffer).await? {
                 return Ok(lines);
@@ -92,10 +92,10 @@ where
         end_marker: &AhoCorasick,
         writing: WriteBehavior,
         buffer: &mut [u8],
-    ) -> miette::Result<Option<Lines>> {
-        if let Some(lines) = self.take_chunk_from_buffer(end_marker) {
-            tracing::trace!(lines = lines.len(), "Got lines from buffer");
-            return Ok(Some(lines));
+    ) -> miette::Result<Option<String>> {
+        if let Some(chunk) = self.take_chunk_from_buffer(end_marker) {
+            tracing::trace!(data = chunk.len(), "Got data from buffer");
+            return Ok(Some(chunk));
         }
 
         match self.reader.read(buffer).await {
@@ -114,12 +114,12 @@ where
                     })?;
                 match self.consume_str(decoded, end_marker, writing).await? {
                     Some(lines) => {
-                        tracing::trace!(data = ?decoded, "Decoded data");
+                        tracing::trace!(data = decoded, "Decoded data");
                         tracing::trace!(lines = lines.len(), "Got chunk");
                         Ok(Some(lines))
                     }
                     None => {
-                        tracing::trace!(data = ?decoded, "Decoded data, no end marker found");
+                        tracing::trace!(data = decoded, "Decoded data, no end marker found");
                         Ok(None)
                     }
                 }
@@ -140,7 +140,7 @@ where
         mut data: &str,
         end_marker: &AhoCorasick,
         writing: WriteBehavior,
-    ) -> miette::Result<Option<Lines>> {
+    ) -> miette::Result<Option<String>> {
         // Proof of this function's corectness: just trust me
 
         let mut ret = None;
@@ -211,7 +211,7 @@ where
     }
 
     /// Clears `self.lines` and `self.line`, returning the previous value of `self.lines`.
-    async fn take_lines(&mut self, writing: WriteBehavior) -> miette::Result<Lines> {
+    async fn take_lines(&mut self, writing: WriteBehavior) -> miette::Result<String> {
         if let Some(writer) = &mut self.writer {
             match writing {
                 WriteBehavior::Write => {
@@ -229,7 +229,7 @@ where
         self.line.clear();
         Ok(std::mem::replace(
             &mut self.lines,
-            Vec::with_capacity(VEC_BUFFER_CAPACITY),
+            String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
         ))
     }
 
@@ -250,7 +250,8 @@ where
 
         let line = std::mem::replace(&mut self.line, String::with_capacity(LINE_BUFFER_CAPACITY));
         tracing::debug!(line, "Read line");
-        self.lines.push(line);
+        self.lines.push_str(&line);
+        self.lines.push('\n');
 
         Ok(())
     }
@@ -259,25 +260,41 @@ where
     /// seen, the lines before the marker are returned. Otherwise, nothing is returned.
     ///
     /// Does _not_ read from the underlying reader.
-    fn take_chunk_from_buffer(&mut self, end_marker: &AhoCorasick) -> Option<Lines> {
+    fn take_chunk_from_buffer(&mut self, end_marker: &AhoCorasick) -> Option<String> {
         // Do any of the lines in `self.lines` start with `end_marker`?
-        if let Some((i, _line)) = self
+        if let Some(span) = self
             .lines
-            .iter()
-            .enumerate()
-            .find(|(_i, line)| end_marker.find_at_start(line).is_some())
+            .line_spans()
+            .find(|span| end_marker.find_at_start(span.as_str()).is_some())
         {
-            let mut rest = self.lines.split_off(i);
-            // Remove the line matching the `end_marker` from the buffer.
-            // This is very tragically O(n), maybe `self.lines` should be a `VecDeque`.
-            rest.remove(0);
+            // Suppose this is our original `self.lines`, with newlines indicated by `|`:
+            //
+            // -----------|--------------|--------------|------------|
+            //             ^^^^^^^^^^^^^^^
+            //             `span`
+            let range = span.range_with_ending();
+            let rest = self.lines.split_off(range.start);
+            // Now, we have:
+            // -----------|--------------|--------------|------------|
+            // ^^^^^^^^^^^^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // `self.lines`            `rest`
+            //      ↓                    ↓
+            //   `chunk`            `self.lines`
             let chunk = std::mem::replace(&mut self.lines, rest);
+            // Finally, we remove the line we matched from `self.lines`:
+            // -----------|--------------|--------------|------------|
+            // ^^^^^^^^^^^^               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            //   `chunk`                           `self.lines`
+            self.lines = self.lines.split_off(range.end - range.start);
             return Some(chunk);
         }
 
         // Does the current line in `self.line` start with `end_marker`?
         if end_marker.find_at_start(&self.line).is_some() {
-            let chunk = std::mem::replace(&mut self.lines, Vec::with_capacity(VEC_BUFFER_CAPACITY));
+            let chunk = std::mem::replace(
+                &mut self.lines,
+                String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
+            );
             self.line.clear();
             return Some(chunk);
         }
@@ -288,19 +305,20 @@ where
     /// Add arbitrary data to the internal buffer. Used for testing.
     #[cfg(test)]
     async fn push_to_buffer(&mut self, data: &str) {
-        for line in data.lines() {
-            self.line.push_str(line);
-            self.finish_line(WriteBehavior::Write).await.unwrap();
+        for span in data.line_spans() {
+            self.line.push_str(span.as_str());
+            if !span.ending_str().is_empty() {
+                self.finish_line(WriteBehavior::Write).await.unwrap();
+            }
         }
     }
 
     /// Get the internal buffer as a list of lines. Used for testing.
     #[cfg(test)]
-    fn buffer(&self) -> Vec<String> {
-        let mut ret = Vec::with_capacity(self.lines.len() + 1);
-        ret.extend_from_slice(&self.lines);
+    fn buffer(&self) -> String {
+        let mut ret = self.lines.clone();
         if !self.line.is_empty() {
-            ret.push(self.line.clone());
+            ret.push_str(&self.line);
         }
         ret
     }
@@ -350,12 +368,14 @@ mod tests {
                 .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
                 .await
                 .unwrap(),
-            vec![
-                "Build profile: -w ghc-9.6.1 -O0",
-                "In order, the following will be built (use -v for more details):",
-                " - mwb-0 (lib:test-dev) (ephemeral targets)",
-                "Preprocessing library 'test-dev' for mwb-0..",
-            ]
+            indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                "
+            )
         );
     }
 
@@ -367,14 +387,15 @@ mod tests {
         let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
         reader
             .push_to_buffer(indoc!(
-                "Build profile: -w ghc-9.6.1 -O0
-            In order, the following will be built (use -v for more details):
-             - mwb-0 (lib:test-dev) (ephemeral targets)
-            Preprocessing library 'test-dev' for mwb-0..
-            GHCi, version 9.6.1: https://www.haskell.org/ghc/  :? for help
-            Loaded GHCi configuration from .ghci-mwb
-            Ok, 5699 modules loaded.
-            ghci> "
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                GHCi, version 9.6.1: https://www.haskell.org/ghc/  :? for help
+                Loaded GHCi configuration from .ghci-mwb
+                Ok, 5699 modules loaded.
+                ghci> "
             ))
             .await;
 
@@ -386,21 +407,24 @@ mod tests {
                 .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
                 .await
                 .unwrap(),
-            vec![
-                "Build profile: -w ghc-9.6.1 -O0",
-                "In order, the following will be built (use -v for more details):",
-                " - mwb-0 (lib:test-dev) (ephemeral targets)",
-                "Preprocessing library 'test-dev' for mwb-0..",
-            ]
+            indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                "
+            )
         );
 
+        eprintln!("{:?}", reader.buffer());
         assert_eq!(
             reader.buffer(),
-            vec![
-                "Loaded GHCi configuration from .ghci-mwb",
-                "Ok, 5699 modules loaded.",
-                "ghci> ",
-            ]
+            indoc!(
+                "Loaded GHCi configuration from .ghci-mwb
+                Ok, 5699 modules loaded.
+                ghci> "
+            )
         );
     }
 
@@ -441,14 +465,16 @@ mod tests {
                 .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
                 .await
                 .unwrap(),
-            vec![
-                "Build profile: -w ghc-9.6.1 -O0",
-                "In order, the following will be built (use -v for more details):",
-                " - mwb-0 (lib:test-dev) (ephemeral targets)",
-                "Preprocessing library 'test-dev' for mwb-0..",
-            ]
+            indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                "
+            )
         );
 
-        assert_eq!(reader.buffer(), Vec::<String>::new());
+        assert_eq!(reader.buffer(), String::new());
     }
 }
