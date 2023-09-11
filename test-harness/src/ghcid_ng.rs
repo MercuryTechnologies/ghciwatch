@@ -214,7 +214,7 @@ impl GhcidNg {
             Ok(Ok(event)) => Ok(event),
             Ok(Err(err)) => Err(err),
             Err(_) => Err(miette!(
-                "Waiting for a log message timed out after {timeout_duration:.2?}"
+                "Waiting for a log message matching {matcher} timed out after {timeout_duration:.2?}"
             )),
         }
     }
