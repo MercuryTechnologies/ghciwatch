@@ -205,6 +205,7 @@ impl Ghci {
                     (Mode::Compiling, String::with_capacity(LINE_BUFFER_CAPACITY)),
                     (Mode::Testing, String::with_capacity(LINE_BUFFER_CAPACITY)),
                 ]),
+                buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
                 error_path: ret.opts.error_path.clone(),
                 mode: Mode::Compiling,
                 has_unwritten_data: false,
