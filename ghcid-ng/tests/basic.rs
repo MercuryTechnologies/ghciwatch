@@ -117,7 +117,7 @@ async fn can_reload_after_error() {
         .unwrap();
 
     session
-        .wait_until_add()
+        .wait_until_reload()
         .await
         .expect("ghcid-ng reloads on changes");
     session
@@ -173,9 +173,9 @@ async fn can_restart_after_module_move() {
 
     session
         .get_log(
-            Matcher::message("Read line")
+            Matcher::message("Compiling")
                 .in_span("reload")
-                .with_field("line", r"Compiling My\.CoolModule"),
+                .with_field("module", r"My\.CoolModule"),
         )
         .await
         .unwrap();
