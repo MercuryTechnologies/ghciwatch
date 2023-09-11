@@ -19,6 +19,7 @@ pub use test_harness_macro::test;
 
 mod ghcid_ng;
 pub use ghcid_ng::GhcidNg;
+pub use ghcid_ng::GhcidNgBuilder;
 
 mod ghc_version;
 pub use ghc_version::GhcVersion;
