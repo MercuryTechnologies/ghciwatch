@@ -111,7 +111,7 @@ impl GhciStdout {
         Ok(result)
     }
 
-    #[instrument(skip_all, level = "debug")]
+    #[instrument(skip_all, level = "trace")]
     pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         // Read until the sync marker...
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);

@@ -44,7 +44,7 @@ impl GhciStdin {
         stdout.prompt(None).await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
@@ -62,7 +62,7 @@ impl GhciStdin {
         .await?;
 
         for command in setup_commands {
-            tracing::debug!(?command, "Running user intialization command");
+            tracing::debug!(command, "Running user intialization command");
             self.write_line(stdout, &format!("{command}\n")).await?;
         }
 
@@ -83,7 +83,7 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         if let Some(test_command) = test_command {
             self.set_mode(stdout, Mode::Testing).await?;
-            tracing::debug!(command = ?test_command, "Running user test command");
+            tracing::debug!(command = test_command, "Running user test command");
             tracing::info!("Running tests");
             let start_time = Instant::now();
             self.write_line(stdout, &format!("{test_command}\n"))
@@ -114,7 +114,7 @@ impl GhciStdin {
         self.write_line(stdout, &format!(":add {path}\n")).await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), level = "trace")]
     pub async fn sync(
         &mut self,
         stdout: &mut GhciStdout,
@@ -146,7 +146,7 @@ impl GhciStdin {
         stdout.show_modules().await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), level = "trace")]
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 

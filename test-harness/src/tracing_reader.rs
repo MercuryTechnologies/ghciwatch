@@ -48,7 +48,9 @@ impl TracingReader {
 
         while let Some(duration) = backoff.next_backoff() {
             if let Some(line) = self.lines.next_line().await.into_diagnostic()? {
-                let event = serde_json::from_str(&line).into_diagnostic()?;
+                let event = serde_json::from_str(&line)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("Failed to deserialize JSON: {line}"))?;
                 return Ok(event);
             }
             tokio::time::sleep(duration).await;
