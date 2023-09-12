@@ -20,3 +20,7 @@ test-harness-macro = { path = "../test-harness-macro" }
 test_bin = "0.4.0"
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
 tracing = "0.1.37"
+
+# See: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+[package.metadata.release]
+release = false
