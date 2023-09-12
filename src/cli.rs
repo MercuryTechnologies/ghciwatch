@@ -45,6 +45,13 @@ pub struct Opts {
     #[arg(long)]
     pub errors: Option<Utf8PathBuf>,
 
+    /// Enable evaluating commands.
+    ///
+    /// This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>`
+    /// and `<$ -}` and evaluates them after reloads.
+    #[arg(long)]
+    pub enable_eval: bool,
+
     /// Options to modify file watching.
     #[command(flatten)]
     pub watch: WatchOpts,

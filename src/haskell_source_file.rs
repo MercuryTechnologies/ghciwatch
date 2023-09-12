@@ -4,6 +4,7 @@ use camino::Utf8Path;
 
 /// File extensions for Haskell source code.
 pub const HASKELL_SOURCE_EXTENSIONS: [&str; 9] = [
+    // NOTE: This should start with `hs` so that iterators try the most common extension first.
     "hs",      // Haskell
     "lhs",     // Literate Haskell
     "hsboot",  // Haskell boot file.

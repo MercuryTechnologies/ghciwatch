@@ -1,5 +1,7 @@
 //! The core [`Ghci`] session struct.
 
+use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::process::Stdio;
@@ -7,6 +9,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -33,6 +36,7 @@ use error_log::ErrorLog;
 
 pub mod parse;
 use parse::CompilationResult;
+use parse::EvalCommand;
 use parse::GhcDiagnostic;
 use parse::GhcMessage;
 use parse::ModuleSet;
@@ -48,8 +52,11 @@ use crate::cli::Opts;
 use crate::command;
 use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
+use crate::ghci::parse::ShowPaths;
 use crate::incremental_reader::IncrementalReader;
 use crate::sync_sentinel::SyncSentinel;
+
+use self::parse::parse_eval_commands;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -79,6 +86,8 @@ pub struct GhciOpts {
     pub after_startup_ghci: Vec<GhciCommand>,
     /// `ghci` command which runs tests.
     pub test_ghci: Option<GhciCommand>,
+    /// Enable running eval commands in files.
+    pub enable_eval: bool,
 }
 
 impl GhciOpts {
@@ -100,6 +109,7 @@ impl GhciOpts {
             before_startup_shell: opts.before_startup_shell.clone(),
             after_startup_ghci: opts.after_startup_ghci.clone(),
             test_ghci: opts.test_ghci.clone(),
+            enable_eval: opts.enable_eval,
         })
     }
 }
@@ -122,16 +132,20 @@ pub struct Ghci {
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
     sync_count: AtomicUsize,
-    /// The currently-loaded modules in this `ghci` session.
+    /// The currently-loaded modules in this `ghci` session, from `:show modules`.
     modules: ModuleSet,
-    /// Modules that have failed to compile in this `ghci` session.
+    /// The set of targets for this `ghci` session, from `:show targets`.
     ///
-    /// These don't show up in `:show modules` and aren't, technically speaking, loaded, but we
-    /// also get an error if we `:add` them due to [GHC bug #13254][ghc-13254], so we track them
-    /// here.
+    /// Targets that fail to compile don't show up in `:show modules` and aren't, technically
+    /// speaking, loaded, but we also get an error if we `:add` them due to [GHC bug
+    /// #13254][ghc-13254], so we track them here.
     ///
     /// [ghc-13254]: https://gitlab.haskell.org/ghc/ghc/-/issues/13254
-    failed_modules: ModuleSet,
+    targets: ModuleSet,
+    /// Eval commands, if `opts.enable_eval` is set.
+    eval_commands: BTreeMap<CanonicalizedUtf8PathBuf, Vec<EvalCommand>>,
+    /// Search paths / current working directory for this `ghci` session.
+    search_paths: ShowPaths,
 }
 
 impl Debug for Ghci {
@@ -218,7 +232,17 @@ impl Ghci {
             error_log,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
-            failed_modules: Default::default(),
+            targets: Default::default(),
+            eval_commands: Default::default(),
+            search_paths: ShowPaths {
+                cwd: std::env::current_dir()
+                    .into_diagnostic()
+                    .wrap_err("Failed to get current directory")?
+                    .try_into()
+                    .into_diagnostic()
+                    .wrap_err("Current directory is not UTF-8")?,
+                search_paths: Default::default(),
+            },
         };
 
         let stderr = task::spawn(
@@ -232,9 +256,7 @@ impl Ghci {
         );
 
         // Now, replace the `JoinHandle`s with the actual values.
-        {
-            ret.stderr_handle = stderr;
-        };
+        ret.stderr_handle = stderr;
 
         // Wait for the stdout job to start up.
         let messages = ret.stdout.initialize().await?;
@@ -249,9 +271,15 @@ impl Ghci {
         ret.sync().await?;
         // Get the initial list of loaded modules.
         ret.refresh_modules().await?;
+        // Get the initial list of targets.
+        ret.refresh_targets().await?;
+        // Get the initial list of eval commands.
+        ret.refresh_eval_commands().await?;
 
         tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
 
+        // Run the eval commands, if any.
+        ret.eval().await?;
         // Run the user-provided test command, if any.
         ret.test().await?;
 
@@ -282,9 +310,9 @@ impl Ghci {
                 FileEvent::Modify(path) => {
                     let path: CanonicalizedUtf8PathBuf = path.try_into()?;
                     if self.modules.contains_source_path(&path)?
-                        || self.failed_modules.contains_source_path(&path)?
+                        || self.targets.contains_source_path(&path)?
                     {
-                        // We can `:reload` paths `ghci` already has loaded.
+                        // We can `:reload` paths in the target set.
                         tracing::debug!(%path, "Needs reload");
                         needs_reload.push(path);
                     } else {
@@ -344,13 +372,16 @@ impl Ghci {
             if let Some(CompilationResult::Err) = self.process_ghc_messages(messages).await? {
                 compilation_failed = true;
             }
+            self.refresh_eval_commands_for_paths(&actions.needs_reload)
+                .await?;
         }
 
         if actions.needs_add_or_reload() {
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
-                // If we loaded or reloaded any modules, we should run tests.
+                // If we loaded or reloaded any modules, we should run tests/eval commands.
+                self.eval().await?;
                 self.test().await?;
             }
         }
@@ -379,16 +410,102 @@ impl Ghci {
         Ok(())
     }
 
+    /// Run the eval commands, if enabled.
+    #[instrument(skip_all, level = "debug")]
+    pub async fn eval(&mut self) -> miette::Result<()> {
+        if !self.opts.enable_eval {
+            return Ok(());
+        }
+
+        for (path, commands) in &self.eval_commands {
+            for command in commands {
+                tracing::info!("{path}:{command}");
+                let module_name = self.search_paths.path_to_module(path)?;
+                self.stdin
+                    .eval(&mut self.stdout, &module_name, command.as_command())
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Refresh the listing of loaded modules by parsing the `:show modules` output.
     #[instrument(skip_all, level = "debug")]
-    pub async fn refresh_modules(&mut self) -> miette::Result<()> {
-        let map = self.stdin.show_modules(&mut self.stdout).await?;
-        self.modules = map;
-        tracing::debug!(
-            "Parsed loaded modules, {} modules loaded",
-            self.modules.len()
-        );
+    async fn refresh_modules(&mut self) -> miette::Result<()> {
+        self.modules = self.stdin.show_modules(&mut self.stdout).await?;
+        tracing::debug!(modules = self.modules.len(), "Parsed loaded modules");
         Ok(())
+    }
+
+    /// Refresh the listing of targets by parsing the `:show paths` and `:show targets` output.
+    #[instrument(skip_all, level = "debug")]
+    async fn refresh_targets(&mut self) -> miette::Result<()> {
+        self.refresh_paths().await?;
+        self.targets = self
+            .stdin
+            .show_targets(&mut self.stdout, &self.search_paths)
+            .await?;
+        tracing::debug!(targets = self.targets.len(), "Parsed targets");
+        Ok(())
+    }
+
+    /// Refresh the listing of search paths by parsing the `:show paths` output.
+    #[instrument(skip_all, level = "debug")]
+    async fn refresh_paths(&mut self) -> miette::Result<()> {
+        self.search_paths = self.stdin.show_paths(&mut self.stdout).await?;
+        tracing::debug!(cwd = %self.search_paths.cwd, search_paths = ?self.search_paths.search_paths, "Parsed paths");
+        Ok(())
+    }
+
+    /// Refresh `eval_commands` by reading and parsing the files in `targets`.
+    #[instrument(skip_all, level = "debug")]
+    async fn refresh_eval_commands(&mut self) -> miette::Result<()> {
+        if !self.opts.enable_eval {
+            return Ok(());
+        }
+
+        let mut eval_commands = BTreeMap::new();
+
+        for path in self.targets.iter() {
+            let commands = Self::parse_eval_commands(path).await?;
+            if !commands.is_empty() {
+                eval_commands.insert(path.clone(), commands);
+            }
+        }
+
+        self.eval_commands = eval_commands;
+        Ok(())
+    }
+
+    /// Refresh `eval_commands` by reading and parsing the given files.
+    #[instrument(skip_all, level = "debug")]
+    async fn refresh_eval_commands_for_paths(
+        &mut self,
+        paths: &[impl Borrow<CanonicalizedUtf8PathBuf>],
+    ) -> miette::Result<()> {
+        if !self.opts.enable_eval {
+            return Ok(());
+        }
+
+        for path in paths {
+            let path = path.borrow();
+            let commands = Self::parse_eval_commands(path).await?;
+            self.eval_commands.insert(path.clone(), commands);
+        }
+
+        Ok(())
+    }
+
+    /// Read and parse eval commands from the given `path`.
+    #[instrument(level = "trace")]
+    async fn parse_eval_commands(path: &Utf8Path) -> miette::Result<Vec<EvalCommand>> {
+        let contents = tokio::fs::read_to_string(path)
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to read {path}"))?;
+        let commands = parse_eval_commands(&contents).wrap_err("Failed to parse eval commands")?;
+        Ok(commands)
     }
 
     /// `:add` a module to the `ghci` session by path.
@@ -401,7 +518,7 @@ impl Ghci {
     ) -> miette::Result<Option<CompilationResult>> {
         let messages = self
             .stdin
-            .add_module(&mut self.stdout, path.as_path())
+            .add_module(&mut self.stdout, &path.relative_to(&self.search_paths.cwd))
             .await?;
 
         let result = self.process_ghc_messages(messages).await?;
@@ -412,6 +529,7 @@ impl Ghci {
         // Otherwise, compilation failed or otherwise didn't print a summary, so we don't want to
         // add the module to the module set.
 
+        self.refresh_eval_commands_for_paths(&[path]).await?;
         Ok(result)
     }
 
@@ -440,8 +558,6 @@ impl Ghci {
             match message {
                 GhcMessage::Compiling(module) => {
                     tracing::debug!(module = %module.name, path = %module.path, "Compiling");
-                    let path: CanonicalizedUtf8PathBuf = module.path.as_path().try_into()?;
-                    self.failed_modules.remove_source_path(&path);
                 }
                 GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
@@ -452,8 +568,6 @@ impl Ghci {
                     // We can't use 'message' for the field name because that's what tracing uses
                     // for the message.
                     tracing::debug!(%path, error = message, "Module failed to compile");
-                    self.failed_modules
-                        .insert_source_path(path.as_path().try_into()?)?;
                 }
                 GhcMessage::Summary(summary) => {
                     compilation_summary = Some(*summary);

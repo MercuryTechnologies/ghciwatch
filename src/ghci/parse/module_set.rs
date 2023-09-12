@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 use std::cmp::Eq;
+use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::hash::Hash;
 
@@ -28,6 +29,18 @@ impl ModuleSet {
                         .wrap_err("Failed to parse `:show modules` line")
                         .and_then(|module| module.path.try_into())
                 })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    /// Construct a `ModuleSet` from an iterator of module source paths.
+    pub fn from_paths(
+        paths: impl IntoIterator<Item = impl AsRef<Utf8Path>>,
+    ) -> miette::Result<Self> {
+        Ok(Self {
+            set: paths
+                .into_iter()
+                .map(|path| path.as_ref().try_into())
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -71,5 +84,10 @@ impl ModuleSet {
         P: Hash + Eq,
     {
         self.set.remove(path);
+    }
+
+    /// Iterate over the source paths in this module set.
+    pub fn iter(&self) -> Iter<'_, CanonicalizedUtf8PathBuf> {
+        self.set.iter()
     }
 }

@@ -192,9 +192,13 @@ impl GhcidNg {
 
     /// Wait until a matching log event is found.
     ///
+    /// If `negative_matcher` is given, no log events may match it until an event matching the
+    /// regular `matcher` is found.
+    ///
     /// Errors if waiting for the event takes longer than the given `timeout`.
-    pub async fn get_log_with_timeout(
+    pub async fn assert_logged_with_timeout(
         &mut self,
+        negative_matcher: Option<Matcher>,
         matcher: impl IntoMatcher,
         timeout_duration: Duration,
     ) -> miette::Result<Event> {
@@ -209,6 +213,10 @@ impl GhcidNg {
                     Ok(event) => {
                         if matcher.matches(&event) {
                             return Ok(event);
+                        } else if let Some(negative_matcher) = &negative_matcher {
+                            if negative_matcher.matches(&event) {
+                                return Err(miette!("Found a log event matching {negative_matcher}"));
+                            }
                         }
                     }
                 }
@@ -225,16 +233,41 @@ impl GhcidNg {
     }
 
     /// Wait until a matching log event is found, with a default 10-second timeout.
-    pub async fn get_log(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
-        self.get_log_with_timeout(matcher, Duration::from_secs(10))
+    pub async fn assert_logged(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
+        self.assert_logged_with_timeout(None, matcher, Duration::from_secs(10))
             .await
     }
 
-    /// Wait until `ghcid-ng` completes its initial load and is ready to receive file events.
-    pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
-        self.get_log_with_timeout(r"ghci started in \d+\.\d+m?s", Duration::from_secs(60))
-            .await
-            .wrap_err("ghcid-ng didn't start in time")?;
+    /// Wait until a matching log event is found, with a default 10-second timeout.
+    ///
+    /// Error if a log event matching `negative_matcher` is found before an event matching
+    /// `matcher`.
+    pub async fn assert_not_logged(
+        &mut self,
+        negative_matcher: impl IntoMatcher,
+        matcher: impl IntoMatcher,
+    ) -> miette::Result<Event> {
+        self.assert_logged_with_timeout(
+            Some(negative_matcher.into_matcher()?),
+            matcher,
+            Duration::from_secs(10),
+        )
+        .await
+    }
+
+    /// Wait until `ghcid-ng` completes its initial load.
+    pub async fn wait_until_started(&mut self) -> miette::Result<Event> {
+        self.assert_logged_with_timeout(
+            None,
+            r"ghci started in \d+\.\d+m?s",
+            Duration::from_secs(60),
+        )
+        .await
+        .wrap_err("ghcid-ng didn't start in time")
+    }
+
+    /// Wait until `ghcid-ng` is ready to receive file events.
+    pub async fn wait_until_watcher_started(&mut self) -> miette::Result<Event> {
         // Only _after_ `ghci` starts up do we initialize the file watcher.
         // `watchexec` sends a few events when it starts up:
         //
@@ -253,18 +286,24 @@ impl GhcidNg {
         // "launching filesystem worker" is tempting, but the phrasing implies the event is emitted
         // _before_ the filesystem worker is started (hence it is not yet ready to notice file
         // events). Therefore, we wait for "applying changes to the watcher".
-        self.get_log(
+        self.assert_logged(
             Matcher::message("applying changes to the watcher").in_module("watchexec::fs"),
         )
         .await
-        .wrap_err("watchexec filesystem worker didn't start in time")?;
+        .wrap_err("watchexec filesystem worker didn't start in time")
+    }
+
+    /// Wait until `ghcid-ng` completes its initial load and is ready to receive file events.
+    pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
+        self.wait_until_started().await?;
+        self.wait_until_watcher_started().await?;
         Ok(())
     }
 
     /// Wait until `ghcid-ng` reloads the `ghci` session due to changed modules.
     pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
-        self.get_log("Reloading ghci due to changed modules")
+        self.assert_logged("Reloading ghci due to changed modules")
             .await
             .map(|_| ())
     }
@@ -272,13 +311,15 @@ impl GhcidNg {
     /// Wait until `ghcid-ng` adds new modules to the `ghci` session.
     pub async fn wait_until_add(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are being added.
-        self.get_log("Adding new modules to ghci").await.map(|_| ())
+        self.assert_logged("Adding new modules to ghci")
+            .await
+            .map(|_| ())
     }
 
     /// Wait until `ghcid-ng` restarts the `ghci` session.
     pub async fn wait_until_restart(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules have been deleted/moved.
-        self.get_log("Restarting ghci due to deleted/moved modules")
+        self.assert_logged("Restarting ghci due to deleted/moved modules")
             .await
             .map(|_| ())
     }

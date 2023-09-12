@@ -14,6 +14,7 @@ use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::GhcMessage;
 use super::parse::ModuleSet;
+use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::GhciCommand;
 use super::Mode;
@@ -145,6 +146,67 @@ impl GhciStdin {
             .into_diagnostic()?;
 
         stdout.show_modules().await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
+        self.set_mode(stdout, Mode::Internal).await?;
+
+        self.stdin
+            .write_all(b":show paths\n")
+            .await
+            .into_diagnostic()?;
+
+        stdout.show_paths().await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn show_targets(
+        &mut self,
+        stdout: &mut GhciStdout,
+        show_paths: &ShowPaths,
+    ) -> miette::Result<ModuleSet> {
+        self.set_mode(stdout, Mode::Internal).await?;
+
+        self.stdin
+            .write_all(b":show targets\n")
+            .await
+            .into_diagnostic()?;
+
+        stdout.show_targets(show_paths).await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn eval(
+        &mut self,
+        stdout: &mut GhciStdout,
+        module: &str,
+        command: &GhciCommand,
+    ) -> miette::Result<()> {
+        self.set_mode(stdout, Mode::Internal).await?;
+
+        self.stdin
+            .write_all(format!(":module + *{module}\n").as_bytes())
+            .await
+            .into_diagnostic()?;
+        stdout.prompt(None).await?;
+
+        for line in command.as_ref().lines() {
+            self.stdin
+                .write_all(line.as_bytes())
+                .await
+                .into_diagnostic()?;
+            self.stdin.write_all(b"\n").await.into_diagnostic()?;
+            stdout.prompt(None).await?;
+        }
+
+        self.stdin
+            .write_all(format!(":module - *{module}\n").as_bytes())
+            .await
+            .into_diagnostic()?;
+        stdout.prompt(None).await?;
+
+        Ok(())
     }
 
     #[instrument(skip(self, stdout), level = "trace")]

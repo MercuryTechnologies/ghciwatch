@@ -13,8 +13,11 @@ use crate::incremental_reader::WriteBehavior;
 use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::parse_ghc_messages;
+use super::parse::parse_show_paths;
+use super::parse::parse_show_targets;
 use super::parse::GhcMessage;
 use super::parse::ModuleSet;
+use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::Mode;
 
@@ -127,6 +130,26 @@ impl GhciStdout {
             .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
             .await?;
         ModuleSet::from_lines(&lines)
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    pub async fn show_paths(&mut self) -> miette::Result<ShowPaths> {
+        let lines = self
+            .reader
+            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .await?;
+        parse_show_paths(&lines).wrap_err("Failed to parse `:show paths` output")
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    pub async fn show_targets(&mut self, search_paths: &ShowPaths) -> miette::Result<ModuleSet> {
+        let lines = self
+            .reader
+            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .await?;
+        let paths = parse_show_targets(search_paths, &lines)
+            .wrap_err("Failed to parse `:show targets` output")?;
+        ModuleSet::from_paths(paths)
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
