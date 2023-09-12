@@ -43,16 +43,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install jq
-        run: sudo apt install -y jq
+      - uses: cachix/install-nix-action@v22
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            accept-flake-config = true
 
       - name: Get version number
         id: get_cargo_metadata
-        run: |
-          echo "version=$(./.github/workflows/get-crate-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(nix run .#get-crate-version)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Release Build
@@ -70,49 +70,53 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
-        if: runner.os == 'macOS'
+      - uses: cachix/install-nix-action@v22
         with:
-          target: x86_64-apple-darwin, aarch64-apple-darwin
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            accept-flake-config = true
 
-      - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
-        if: runner.os == 'Linux'
-        with:
-          target: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
-
-      - name: Log versions
-        run: which -a rustup && rustup --version
-
-      - name: Test
-        run: cargo test
+      - name: Create target directory
+        run: mkdir -p target/release/
 
       - name: Build (macOS, x86_64)
         if: runner.os == 'macOS'
-        run: cargo build --release --target x86_64-apple-darwin
+        # Cross-compilation from aarch64-darwin -> x86_64-darwin is broken in nixpkgs,
+        # but running the build under Rosetta with `--system` works fine.
+        # See: https://github.com/NixOS/nixpkgs/issues/180771
+        #
+        # This is actually superfluous as `macos-latest` is x86_64, but it'll
+        # work on M1 too.
+        run: |
+          nix build --print-build-logs --system x86_64-darwin .#ghcid-ng
+          cp result/bin/ghcid-ng target/release/ghcid-ng-x86_64-darwin
 
       - name: Build (macOS, aarch64)
         if: runner.os == 'macOS'
-        run: cargo build --release --target aarch64-apple-darwin
+        # `macos-latest` is x86_64, so here we're building the aarch64 binary directly.
+        run: |
+          nix build --print-build-logs .#packages.aarch64-darwin.ghcid-ng
+          cp result/bin/ghcid-ng target/release/ghcid-ng-aarch64-darwin
 
-      - name: Build (Linux, x86_64)
-        if: runner.os == 'Linux'
-        run: cargo build --release --target x86_64-unknown-linux-musl
-
-      - name: Create macOS universal executable and codesign it
+      - name: Create macOS universal executable
         if: runner.os == 'macOS'
         run: |
           lipo -create -output target/release/ghcid-ng-macos \
-            target/x86_64-apple-darwin/release/ghcid-ng \
-            target/aarch64-apple-darwin/release/ghcid-ng
+            target/release/ghcid-ng-x86_64-darwin \
+            target/release/ghcid-ng-aarch64-darwin
 
-      - name: Rename executables for upload
+      - name: Build (Linux, x86_64)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p target/release
-          mv target/x86_64-unknown-linux-musl/release/ghcid-ng \
-             target/release/ghcid-ng-x86_64-linux
+          nix build --print-build-logs .#ghcid-ng
+          cp result/bin/ghcid-ng target/release/ghcid-ng-x86_64-linux
+
+      - name: Build (Linux, aarch64)
+        if: runner.os == 'Linux'
+        run: |
+          nix build --print-build-logs .#ghcid-ng-aarch64-linux
+          cp result/bin/ghcid-ng target/release/ghcid-ng-aarch64-linux
 
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
@@ -125,15 +129,17 @@ jobs:
         uses: actions/upload-artifact@v3
         if: runner.os == 'Linux'
         with:
-          name: linux-x86_64
-          path: target/release/ghcid-ng-x86_64-linux
+          name: linux
+          path: |
+            target/release/ghcid-ng-x86_64-linux
+            target/release/ghcid-ng-aarch64-linux
 
       - name: Publish to crates.io
         if: runner.os == 'Linux'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish
+          nix develop --command cargo publish
 
   upload:
     name: Upload assets to release
@@ -159,10 +165,10 @@ jobs:
         #
         #     - uses: actions/upload-artifact@v3
         #       with:
-        #         name: linux-aarch64
+        #         name: linux
         #         path: target/release/ghcid-ng-aarch64-linux
         #
-        # will be downloaded to `linux-aarch64/ghcid-ng-aarch64-linux`.
+        # will be downloaded to `linux/ghcid-ng-aarch64-linux`.
         uses: actions/download-artifact@v3
 
       - name: Create release
@@ -177,7 +183,8 @@ jobs:
           tag_name: v${{ needs.version.outputs.version }}
           files: |
             macos/ghcid-ng-macos
-            linux-x86_64/ghcid-ng-x86_64-linux
+            linux/ghcid-ng-x86_64-linux
+            linux/ghcid-ng-aarch64-linux
 
       - name: Comment on PR with link to the release
         uses: peter-evans/create-or-update-comment@v2

@@ -9,6 +9,13 @@
       inputs.flake-utils.follows = "flake-utils";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -32,148 +39,79 @@
     crane,
     flake-utils,
     advisory-db,
-    flake-compat,
+    rust-overlay,
+    ...
   }:
     flake-utils.lib.eachDefaultSystem (
-      system: let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
-        inherit (pkgs) lib stdenv;
+      localSystem: let
+        makePkgs = {crossSystem ? localSystem}:
+          import nixpkgs {
+            inherit localSystem crossSystem;
+            overlays = [
+              (import rust-overlay)
+              (
+                final: prev: {
+                  # TODO: Any chance this overlay will clobber something useful?
+                  rustToolchain =
+                    final.callPackage ./nix/rust-toolchain.nix {rust-bin = final.pkgsBuildHost.rust-bin;};
 
-        # GHC versions to include in the environment for integration tests.
-        # Keep this in sync with `./test-harness/src/ghc_version.rs`.
-        ghcVersions = [
-          "ghc90"
-          "ghc92"
-          "ghc94"
-          "ghc96"
-        ];
+                  craneLib = (crane.mkLib final).overrideToolchain final.rustToolchain;
 
-        ghcPackages = builtins.map (ghcVersion: pkgs.haskell.compiler.${ghcVersion}) ghcVersions;
-
-        ghcBuildInputs =
-          [
-            pkgs.haskellPackages.cabal-install
-            pkgs.hpack
-          ]
-          ++ ghcPackages;
-
-        GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
-
-        craneLib = crane.lib.${system};
-
-        src = lib.cleanSourceWith {
-          src = craneLib.path ./.;
-          filter = let
-            # Keep test project data, needed for the build.
-            testDataFilter = path: _type: lib.hasInfix "tests/data" path;
-          in
-            path: type:
-              (testDataFilter path type) || (craneLib.filterCargoSources path type);
-        };
-
-        commonArgs' =
-          (craneLib.crateNameFromCargoToml {cargoToml = ./ghcid-ng/Cargo.toml;})
-          // {
-            inherit src;
-
-            buildInputs = lib.optionals stdenv.isDarwin [
-              # Additional darwin specific inputs can be set here
-              pkgs.libiconv
-              pkgs.darwin.apple_sdk.frameworks.CoreServices
+                  inherit advisory-db;
+                }
+              )
             ];
-
-            # Provide GHC versions to use to the integration test suite.
-            inherit GHC_VERSIONS;
-
-            cargoBuildCommand = "cargoWithProfile build --all";
-            cargoCheckExtraArgs = "--all";
-            cargoTestExtraArgs = "--all";
           };
 
-        # Build *just* the cargo dependencies, so we can reuse
-        # all of that work (e.g. via cachix) when running in CI
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs';
+        pkgs = makePkgs {};
+        inherit (pkgs) stdenv lib;
 
-        commonArgs =
-          commonArgs'
-          // {
-            inherit cargoArtifacts;
+        make-ghcid-ng = pkgs:
+          pkgs.callPackage ./nix/ghcid-ng.nix {} {
+            # GHC versions to include in the environment for integration tests.
+            # Keep this in sync with `./test-harness/src/ghc_version.rs`.
+            ghcVersions = [
+              "ghc90"
+              "ghc92"
+              "ghc94"
+              "ghc96"
+            ];
           };
 
-        # Build the actual crate itself, reusing the dependency
-        # artifacts from above.
-        ghcid-ng = craneLib.buildPackage (commonArgs
-          // {
-            # Don't run tests; we'll do that in a separate derivation.
-            # This will allow people to install and depend on `ghcid-ng`
-            # without downloading a half dozen different versions of GHC.
-            doCheck = false;
-          });
+        ghcid-ng = make-ghcid-ng pkgs;
       in {
-        checks = {
-          ghcid-ng-tests = craneLib.cargoNextest (commonArgs
-            // {
-              buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
-              NEXTEST_PROFILE = "ci";
-              NEXTEST_HIDE_PROGRESS_BAR = "true";
-            });
-          ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
-            // {
-              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
-            });
-          ghcid-ng-doc = craneLib.cargoDoc commonArgs;
-          ghcid-ng-fmt = craneLib.cargoFmt commonArgs;
-          ghcid-ng-audit = craneLib.cargoAudit (commonArgs
-            // {
-              inherit advisory-db;
-            });
+        inherit (ghcid-ng) checks;
 
-          # Check that the Haskell project used for integration tests is OK.
-          haskell-project-for-integration-tests = stdenv.mkDerivation {
-            name = "haskell-project-for-integration-tests";
+        packages =
+          {
+            inherit ghcid-ng;
+            default = ghcid-ng;
+            ghcid-ng-tests = ghcid-ng.checks.ghcid-ng-tests;
 
-            src = ./ghcid-ng/tests/data/simple;
+            get-crate-version = pkgs.callPackage ./nix/get-crate-version.nix {};
+            make-release-commit = pkgs.callPackage ./nix/make-release-commit.nix {};
+          }
+          // (lib.optionalAttrs stdenv.isLinux {
+            # ghcid-ng cross-compiled to aarch64-linux.
+            ghcid-ng-aarch64-linux = let
+              crossPkgs = makePkgs {crossSystem = "aarch64-linux";};
+            in
+              (make-ghcid-ng crossPkgs).overrideAttrs (old: {
+                CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+                CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${crossPkgs.stdenv.cc.targetPrefix}cc";
+              });
+          });
 
-            nativeBuildInputs = ghcBuildInputs;
-
-            inherit GHC_VERSIONS;
-
-            phases = ["unpackPhase" "buildPhase" "installPhase"];
-
-            buildPhase = ''
-              # Need an empty `.cabal/config` or `cabal` errors trying to use the network.
-              mkdir .cabal
-              touch .cabal/config
-              export HOME=$(pwd)
-
-              for VERSION in $GHC_VERSIONS; do
-                make test GHC="ghc-$VERSION"
-              done
-            '';
-
-            installPhase = ''
-              touch $out
-            '';
-          };
-        };
-
-        packages = {
-          inherit ghcid-ng;
-          default = ghcid-ng;
-          ghcid-ng-tests = self.checks.${system}.ghcid-ng-tests;
-        };
         apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
 
-        devShells.default = craneLib.devShell {
-          checks = self.checks.${system};
+        devShells.default = pkgs.craneLib.devShell {
+          checks = self.checks.${localSystem};
 
           # Make rust-analyzer work
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           # Provide GHC versions to use to the integration test suite.
-          inherit GHC_VERSIONS;
+          inherit (ghcid-ng) GHC_VERSIONS;
 
           # Extra development tools (cargo and rustc are included by default).
           packages = [
