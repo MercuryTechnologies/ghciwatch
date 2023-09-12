@@ -43,16 +43,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install jq
-        run: sudo apt install -y jq
+      - uses: cachix/install-nix-action@v22
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            accept-flake-config = true
 
       - name: Get version number
         id: get_cargo_metadata
-        run: |
-          echo "version=$(./.github/workflows/get-crate-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(nix run .#get-crate-version)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Release Build
@@ -76,43 +76,55 @@ jobs:
         with:
           target: x86_64-apple-darwin, aarch64-apple-darwin
 
-      - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
-        if: runner.os == 'Linux'
-        with:
-          target: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
-
       - name: Log versions
+        if: runner.os == 'macOS'
         run: which -a rustup && rustup --version
-
-      - name: Test
-        run: cargo test
 
       - name: Build (macOS, x86_64)
         if: runner.os == 'macOS'
+        # Nix cross-compilation is broken on macOS, but cargo works fine.
+        # See: https://github.com/NixOS/nixpkgs/issues/180771
         run: cargo build --release --target x86_64-apple-darwin
 
       - name: Build (macOS, aarch64)
         if: runner.os == 'macOS'
         run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Build (Linux, x86_64)
-        if: runner.os == 'Linux'
-        run: cargo build --release --target x86_64-unknown-linux-musl
-
-      - name: Create macOS universal executable and codesign it
+      - name: Create macOS universal executable
         if: runner.os == 'macOS'
         run: |
           lipo -create -output target/release/ghcid-ng-macos \
             target/x86_64-apple-darwin/release/ghcid-ng \
             target/aarch64-apple-darwin/release/ghcid-ng
 
-      - name: Rename executables for upload
+      - uses: cachix/install-nix-action@v22
+        if: runner.os == 'Linux'
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Create target directory (Linux)
+        if: runner.os == 'Linux'
+        run: mkdir -p target/
+
+      - name: Build (Linux, x86_64)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p target/release
-          mv target/x86_64-unknown-linux-musl/release/ghcid-ng \
-             target/release/ghcid-ng-x86_64-linux
+          mkdir -p target/
+          nix build --print-build-logs .#ghcid-ng
+          cp result/bin/ghcid-ng target/ghcid-ng-x86_64-linux
+
+      - name: Build (Linux, aarch64)
+        if: runner.os == 'Linux'
+        run: |
+          nix build --print-build-logs .#ghcid-ng-aarch64-linux
+          cp result/bin/ghcid-ng target/ghcid-ng-aarch64-linux
+
+      - name: Remove result symlink
+        if: runner.os == 'Linux'
+        run: rm -f result
 
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
@@ -121,19 +133,21 @@ jobs:
           name: macos
           path: target/release/ghcid-ng-macos
 
-      - name: Upload Linux x86_64 executable
+      - name: Upload Linux executables
         uses: actions/upload-artifact@v3
         if: runner.os == 'Linux'
         with:
-          name: linux-x86_64
-          path: target/release/ghcid-ng-x86_64-linux
+          name: linux
+          path: |
+            target/ghcid-ng-x86_64-linux
+            target/ghcid-ng-aarch64-linux
 
       - name: Publish to crates.io
         if: runner.os == 'Linux'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish
+          nix run .#cargo -- publish
 
   upload:
     name: Upload assets to release
@@ -159,10 +173,10 @@ jobs:
         #
         #     - uses: actions/upload-artifact@v3
         #       with:
-        #         name: linux-aarch64
+        #         name: linux
         #         path: target/release/ghcid-ng-aarch64-linux
         #
-        # will be downloaded to `linux-aarch64/ghcid-ng-aarch64-linux`.
+        # will be downloaded to `linux/ghcid-ng-aarch64-linux`.
         uses: actions/download-artifact@v3
 
       - name: Create release
@@ -177,7 +191,8 @@ jobs:
           tag_name: v${{ needs.version.outputs.version }}
           files: |
             macos/ghcid-ng-macos
-            linux-x86_64/ghcid-ng-x86_64-linux
+            linux/ghcid-ng-x86_64-linux
+            linux/ghcid-ng-aarch64-linux
 
       - name: Comment on PR with link to the release
         uses: peter-evans/create-or-update-comment@v2
