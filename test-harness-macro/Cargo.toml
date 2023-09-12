@@ -13,3 +13,7 @@ proc-macro = true
 [dependencies]
 quote = "1.0.33"
 syn = { version = "2.0.29", features = ["full"] }
+
+# See: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+[package.metadata.release]
+release = false
