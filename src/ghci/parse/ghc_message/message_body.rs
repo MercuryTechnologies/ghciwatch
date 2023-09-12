@@ -17,13 +17,6 @@ pub fn parse_message_body<'i>(input: &mut &'i str) -> PResult<&'i str> {
         .parse_next(input)
 }
 
-/// Parse a GHC diagnostic message body after the first line.
-pub fn parse_message_body_lines<'i>(input: &mut &'i str) -> PResult<&'i str> {
-    repeat::<_, _, (), _, _>(0.., parse_message_body_line)
-        .recognize()
-        .parse_next(input)
-}
-
 /// Parse a GHC diagnostic message body line and newline.
 ///
 /// Message body lines are indented or start with a line number before a pipe `|`.
@@ -84,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_message_body_lines() {
+    fn test_parse_message_body() {
         let src = indoc!(
             "    • Can't make a derived instance of ‘MyClass MyType’:
                     ‘MyClass’ is not a stock derivable class (Eq, Show, etc.)
@@ -96,10 +89,7 @@ mod tests {
             "
         );
         assert_eq!(parse_message_body.parse(src).unwrap(), src);
-    }
 
-    #[test]
-    fn test_parse_message_body() {
         let src = indoc!(
             "[GHC-00158]
                 • Can't make a derived instance of ‘MyClass MyType’:

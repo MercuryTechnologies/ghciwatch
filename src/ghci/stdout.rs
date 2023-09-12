@@ -116,14 +116,6 @@ impl GhciStdout {
             .await?;
         tracing::debug!(data, "Synced with ghci");
 
-        // Tell the stderr stream to write the error log and then finish.
-        let (err_sender, err_receiver) = oneshot::channel();
-        let _ = self
-            .stderr_sender
-            .send(StderrEvent::Write(err_sender))
-            .await;
-        let _ = err_receiver.await;
-
         sentinel.finish();
         Ok(())
     }

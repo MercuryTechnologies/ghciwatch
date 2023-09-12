@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use winnow::combinator::dispatch;
 use winnow::combinator::fail;
 use winnow::combinator::success;
@@ -13,6 +15,15 @@ pub enum Severity {
     Warning,
     /// Error-level; fatal.
     Error,
+}
+
+impl Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Severity::Warning => write!(f, "warning"),
+            Severity::Error => write!(f, "error"),
+        }
+    }
 }
 
 /// Parse a severity followed by a `:`, either `Warning` or `Error`.
@@ -59,5 +70,11 @@ mod tests {
         assert!(parse_severity_colon.parse("Warning :").is_err());
         assert!(parse_severity_colon.parse("Warning: ").is_err());
         assert!(parse_severity_colon.parse("W arning:").is_err());
+    }
+
+    #[test]
+    fn test_display() {
+        assert_eq!(Severity::Error.to_string(), "error");
+        assert_eq!(Severity::Warning.to_string(), "warning");
     }
 }

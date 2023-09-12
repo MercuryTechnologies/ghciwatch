@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use winnow::ascii::digit1;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
@@ -20,6 +22,17 @@ impl Position {
     pub fn new(line: usize, column: usize) -> Self {
         Self { line, column }
     }
+
+    /// Is the line and column of this position zero? If so, there's no useful location information.
+    pub fn is_zero(&self) -> bool {
+        self.line == 0 && self.column == 0
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.line, self.column)
+    }
 }
 
 /// A range (span) of positions in a file.
@@ -38,6 +51,34 @@ impl PositionRange {
         Self {
             start: Position::new(start_line, start_column),
             end: Position::new(end_line, end_column),
+        }
+    }
+
+    /// Is this a zero-length span at `0:0`?
+    pub fn is_zero(&self) -> bool {
+        self.start.is_zero() && self.end.is_zero()
+    }
+}
+
+impl Display for PositionRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.start.line == self.end.line {
+            if self.start.column == self.end.column {
+                write!(f, "{}", self.start)
+            } else {
+                write!(
+                    f,
+                    "{}:{}-{}",
+                    self.start.line, self.start.column, self.end.column
+                )
+            }
+        } else {
+            // Different start and end lines.
+            write!(
+                f,
+                "({},{})-({},{})",
+                self.start.line, self.start.column, self.end.line, self.end.column
+            )
         }
     }
 }
@@ -173,5 +214,17 @@ mod tests {
         assert!(parse_position_range.parse("1,2-3,4:").is_err());
         // Extra parens:
         assert!(parse_position_range.parse("(1:2):").is_err());
+    }
+
+    #[test]
+    fn test_display() {
+        assert_eq!(Position::new(1, 1).to_string(), "1:1");
+        assert_eq!(Position::new(19, 98).to_string(), "19:98");
+
+        assert_eq!(PositionRange::new(1, 1, 1, 1).to_string(), "1:1");
+        assert_eq!(PositionRange::new(2, 3, 2, 3).to_string(), "2:3");
+        assert_eq!(PositionRange::new(2, 3, 2, 5).to_string(), "2:3-5");
+        assert_eq!(PositionRange::new(12, 3, 12, 28).to_string(), "12:3-28");
+        assert_eq!(PositionRange::new(2, 3, 4, 5).to_string(), "(2,3)-(4,5)");
     }
 }

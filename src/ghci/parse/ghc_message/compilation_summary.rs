@@ -2,7 +2,6 @@ use winnow::ascii::digit1;
 use winnow::ascii::line_ending;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
-use winnow::combinator::terminated;
 use winnow::PResult;
 use winnow::Parser;
 
@@ -10,33 +9,57 @@ use crate::ghci::parse::CompilationResult;
 
 use super::GhcMessage;
 
+/// Compilation finished.
+///
+/// ```text
+/// Ok, 123 modules loaded.
+/// ```
+///
+/// Or:
+///
+/// ```text
+/// Failed, 58 modules loaded.
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompilationSummary {
+    /// The compilation result; whether compilation succeeded or failed.
+    pub result: CompilationResult,
+    /// The count of modules loaded.
+    pub modules_loaded: usize,
+}
+
 /// Parse a compilation summary, like `Ok, one module loaded.`.
 pub fn compilation_summary(input: &mut &str) -> PResult<GhcMessage> {
-    fn inner(input: &mut &str) -> PResult<CompilationResult> {
-        let compilation_result = alt((
-            "Ok".map(|_| CompilationResult::Ok),
-            "Failed".map(|_| CompilationResult::Err),
-        ))
-        .parse_next(input)?;
-        let _ = ", ".parse_next(input)?;
+    let result = alt((
+        "Ok".map(|_| CompilationResult::Ok),
+        "Failed".map(|_| CompilationResult::Err),
+    ))
+    .parse_next(input)?;
+    let _ = ", ".parse_next(input)?;
 
-        // There's special cases for 0-6 modules!
-        // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/ghc/GHCi/UI.hs#L2286-L2287
-        // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L1429-L1453
-        let _ =
-            alt((digit1, "no", "one", "two", "three", "four", "five", "six")).parse_next(input)?;
-        let _ = " module".parse_next(input)?;
-        let _ = opt("s").parse_next(input)?;
-        let _ = " loaded.".parse_next(input)?;
-        Ok(compilation_result)
-    }
+    // There's special cases for 0-6 modules!
+    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/ghc/GHCi/UI.hs#L2286-L2287
+    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L1429-L1453
+    let modules_loaded = alt((
+        digit1.parse_to(),
+        "no".value(0),
+        "one".value(1),
+        "two".value(2),
+        "three".value(3),
+        "four".value(4),
+        "five".value(5),
+        "six".value(6),
+    ))
+    .parse_next(input)?;
+    let _ = " module".parse_next(input)?;
+    let _ = opt("s").parse_next(input)?;
+    let _ = " loaded.".parse_next(input)?;
+    let _ = line_ending.parse_next(input)?;
 
-    terminated(inner.with_recognized(), line_ending)
-        .map(|(result, message)| GhcMessage::Summary {
-            result,
-            message: message.to_owned(),
-        })
-        .parse_next(input)
+    Ok(GhcMessage::Summary(CompilationSummary {
+        result,
+        modules_loaded,
+    }))
 }
 
 #[cfg(test)]
@@ -52,60 +75,60 @@ mod tests {
             compilation_summary
                 .parse("Ok, 123 modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Ok,
-                message: "Ok, 123 modules loaded.".into()
-            }
+                modules_loaded: 123,
+            })
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, no modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Ok,
-                message: "Ok, no modules loaded.".into()
-            }
+                modules_loaded: 0,
+            })
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, one module loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Ok,
-                message: "Ok, one module loaded.".into()
-            }
+                modules_loaded: 1,
+            })
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, six modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Ok,
-                message: "Ok, six modules loaded.".into()
-            }
+                modules_loaded: 6,
+            })
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Failed, 7 modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Err,
-                message: "Failed, 7 modules loaded.".into()
-            }
+                modules_loaded: 7,
+            })
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Failed, one module loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary {
+            GhcMessage::Summary(CompilationSummary {
                 result: CompilationResult::Err,
-                message: "Failed, one module loaded.".into()
-            }
+                modules_loaded: 1,
+            })
         );
 
         // Negative cases
@@ -130,6 +153,16 @@ mod tests {
             .is_err());
         assert!(compilation_summary
             .parse("Weird, no modules loaded.\n")
+            .is_err());
+        // Bad numbers
+        assert!(compilation_summary
+            .parse("Ok, seven modules loaded.\n")
+            .is_err());
+        assert!(compilation_summary
+            .parse("Ok, -3 modules loaded.\n")
+            .is_err());
+        assert!(compilation_summary
+            .parse("Ok, eight hundred modules loaded.\n")
             .is_err());
     }
 }

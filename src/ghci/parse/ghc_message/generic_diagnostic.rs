@@ -9,6 +9,8 @@ use crate::ghci::parse::ghc_message::position;
 use crate::ghci::parse::ghc_message::severity;
 use crate::ghci::parse::ghc_message::GhcMessage;
 
+use super::GhcDiagnostic;
+
 /// Parse a warning or error like this:
 ///
 /// ```plain
@@ -30,12 +32,12 @@ pub fn generic_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
     let _ = space0.parse_next(input)?;
     let message = parse_message_body.parse_next(input)?;
 
-    Ok(GhcMessage::Diagnostic {
+    Ok(GhcMessage::Diagnostic(GhcDiagnostic {
         severity,
         path: Some(path.to_owned()),
         span,
         message: message.to_owned(),
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -63,7 +65,7 @@ mod tests {
                     "
                 ))
                 .unwrap(),
-            GhcMessage::Diagnostic {
+            GhcMessage::Diagnostic(GhcDiagnostic {
                 severity: Severity::Error,
                 path: Some("NotStockDeriveable.hs".into()),
                 span: PositionRange::new(6, 12, 6, 12),
@@ -79,7 +81,7 @@ mod tests {
                     "
                 )
                 .into()
-            }
+            })
         );
 
         // Doesn't parse another error message.
@@ -98,5 +100,43 @@ mod tests {
                     "
             ))
             .is_err(),);
+    }
+
+    #[test]
+    fn test_diagnostic_display() {
+        assert_eq!(
+            GhcDiagnostic {
+                severity: Severity::Error,
+                path: Some("src/MyModule.hs".into()),
+                span: PositionRange::new(4, 11, 4, 11),
+                message: [
+                    "",
+                    "    • Couldn't match type ‘[Char]’ with ‘()’",
+                    "      Expected: ()",
+                    "        Actual: String",
+                    "    • In the expression: \"example\"",
+                    "      In an equation for ‘example’: example = \"example\"",
+                    "  |",
+                    "4 | example = \"example\"",
+                    "  |           ^^^^^^^^^",
+                    "",
+                ]
+                .join("\n")
+            }
+            .to_string(),
+            indoc!(
+                r#"
+                src/MyModule.hs:4:11: error:
+                    • Couldn't match type ‘[Char]’ with ‘()’
+                      Expected: ()
+                        Actual: String
+                    • In the expression: "example"
+                      In an equation for ‘example’: example = "example"
+                  |
+                4 | example = "example"
+                  |           ^^^^^^^^^
+                "#
+            )
+        );
     }
 }

@@ -25,9 +25,7 @@ async fn can_write_error_log() {
         .await
         .expect("ghcid-ng writes ghcid.txt");
     expect![[r#"
-        Ok, four modules loaded.
-        Warning: No remote package servers have been specified. Usually you would have
-        one specified in the config file.
+        All good (4 modules)
     "#]]
     .assert_eq(&error_contents);
 }
@@ -68,11 +66,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghcid-ng loads new modules");
 
     session
-        .get_log(
-            Matcher::span_close()
-                .in_span("write")
-                .in_module("ghcid_ng::ghci::stderr"),
-        )
+        .get_log(Matcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghcid-ng writes ghcid.txt");
 
@@ -82,8 +76,6 @@ async fn can_write_error_log_compilation_errors() {
 
     let expected = match session.ghc_version() {
         Ghc90 | Ghc92 | Ghc94 => expect![[r#"
-            Failed, four modules loaded.
-
             src/My/Module.hs:3:11: error:
                 * Couldn't match type `[Char]' with `()'
                   Expected: ()
@@ -95,8 +87,6 @@ async fn can_write_error_log_compilation_errors() {
               |           ^^^^^^^^
         "#]],
         Ghc96 => expect![[r#"
-            Failed, four modules loaded.
-
             src/My/Module.hs:3:11: error: [GHC-83865]
                 * Couldn't match type `[Char]' with `()'
                   Expected: ()
@@ -121,11 +111,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghcid-ng reloads on changes");
 
     session
-        .get_log(
-            Matcher::span_close()
-                .in_span("write")
-                .in_module("ghcid_ng::ghci::stderr"),
-        )
+        .get_log(Matcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghcid-ng writes ghcid.txt");
 
@@ -134,7 +120,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghcid-ng writes ghcid.txt");
 
     expect![[r#"
-        Ok, five modules loaded.
+        All good (5 modules)
     "#]]
     .assert_eq(&error_contents);
 }

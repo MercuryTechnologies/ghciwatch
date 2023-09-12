@@ -1,6 +1,5 @@
 //! The core [`Ghci`] session struct.
 
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::process::Stdio;
@@ -17,7 +16,6 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Child;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tokio::task;
 use tokio::task::JoinHandle;
 use tracing::instrument;
@@ -31,8 +29,12 @@ use stdout::GhciStdout;
 mod stderr;
 use stderr::GhciStderr;
 
+mod error_log;
+use error_log::ErrorLog;
+
 pub mod parse;
 use parse::CompilationResult;
+use parse::GhcDiagnostic;
 use parse::GhcMessage;
 use parse::ModuleSet;
 use parse::Severity;
@@ -45,8 +47,6 @@ use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
 use crate::sync_sentinel::SyncSentinel;
-
-use self::stderr::StderrEvent;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -114,8 +114,8 @@ pub struct Ghci {
     stdin: GhciStdin,
     /// The stdout reader.
     stdout: GhciStdout,
-    /// Channel for communicating with the stderr reader task.
-    stderr: mpsc::Sender<StderrEvent>,
+    /// Writer for `ghcid`-compatible output, useful for editor integration for diagnostics.
+    error_log: ErrorLog,
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
     sync_count: AtomicUsize,
@@ -204,13 +204,15 @@ impl Ghci {
             stderr_sender: stderr_sender.clone(),
         };
 
+        let error_log = ErrorLog::new(opts.error_path.clone());
+
         let mut ret = Ghci {
             opts,
             process: child,
             stderr_handle,
             stdin,
             stdout,
-            stderr: stderr_sender,
+            error_log,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
             failed_modules: Default::default(),
@@ -220,15 +222,8 @@ impl Ghci {
             GhciStderr {
                 reader: BufReader::new(stderr).lines(),
                 receiver: stderr_receiver,
-                compilation_summary: String::new(),
-                buffers: BTreeMap::from([
-                    (Mode::Compiling, String::with_capacity(LINE_BUFFER_CAPACITY)),
-                    (Mode::Testing, String::with_capacity(LINE_BUFFER_CAPACITY)),
-                ]),
                 buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
-                error_path: ret.opts.error_path.clone(),
                 mode: Mode::Compiling,
-                has_unwritten_data: false,
             }
             .run(),
         );
@@ -433,25 +428,27 @@ impl Ghci {
         &mut self,
         messages: Vec<GhcMessage>,
     ) -> miette::Result<Option<CompilationResult>> {
-        for message in messages {
+        let mut compilation_summary = None;
+        for message in &messages {
             match message {
                 GhcMessage::Compiling(module) => {
                     tracing::debug!(module = %module.name, path = %module.path, "Compiling");
                     self.failed_modules.remove_source_path(&module.path)?;
                 }
-                GhcMessage::Diagnostic {
+                GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
                     path: Some(path),
                     message,
                     ..
-                } => {
+                }) => {
                     // We can't use 'message' for the field name because that's what tracing uses
                     // for the message.
                     tracing::debug!(%path, error = message, "Module failed to compile");
-                    self.failed_modules.insert_source_path(&path)?;
+                    self.failed_modules.insert_source_path(path)?;
                 }
-                GhcMessage::Summary { result, message } => {
-                    match result {
+                GhcMessage::Summary(summary) => {
+                    compilation_summary = Some(*summary);
+                    match summary.result {
                         CompilationResult::Ok => {
                             tracing::debug!("Compilation succeeded");
                         }
@@ -459,31 +456,12 @@ impl Ghci {
                             tracing::debug!("Compilation failed");
                         }
                     }
-
-                    // Notify the stderr task of the compilation summary.
-                    let (sender, receiver) = oneshot::channel();
-                    self.stderr
-                        .send(StderrEvent::SetCompilationSummary {
-                            summary: message.clone(),
-                            sender,
-                        })
-                        .await
-                        .into_diagnostic()?;
-                    receiver.await.into_diagnostic()?;
                 }
                 _ => {}
             }
         }
 
-        // Tell the stderr stream to write the error log and then finish.
-        {
-            let (sender, receiver) = oneshot::channel();
-            self.stderr
-                .send(StderrEvent::Write(sender))
-                .await
-                .into_diagnostic()?;
-            receiver.await.into_diagnostic()?;
-        }
+        self.error_log.write(compilation_summary, &messages).await?;
 
         Ok(None)
     }
