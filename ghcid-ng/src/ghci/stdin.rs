@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use camino::Utf8PathBuf;
+use camino::Utf8Path;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
@@ -12,9 +12,9 @@ use tracing::instrument;
 use crate::haskell_show::HaskellShow;
 use crate::sync_sentinel::SyncSentinel;
 
+use super::parse::GhcMessage;
 use super::parse::ModuleSet;
 use super::stderr::StderrEvent;
-use super::CompilationResult;
 use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
@@ -36,7 +36,7 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         line: &str,
-    ) -> miette::Result<Option<CompilationResult>> {
+    ) -> miette::Result<Vec<GhcMessage>> {
         self.stdin
             .write_all(line.as_bytes())
             .await
@@ -44,7 +44,7 @@ impl GhciStdin {
         stdout.prompt(None).await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
@@ -62,7 +62,7 @@ impl GhciStdin {
         .await?;
 
         for command in setup_commands {
-            tracing::debug!(?command, "Running user intialization command");
+            tracing::debug!(command, "Running user intialization command");
             self.write_line(stdout, &format!("{command}\n")).await?;
         }
 
@@ -70,10 +70,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn reload(
-        &mut self,
-        stdout: &mut GhciStdout,
-    ) -> miette::Result<Option<CompilationResult>> {
+    pub async fn reload(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
         self.set_mode(stdout, Mode::Compiling).await?;
         self.write_line(stdout, ":reload\n").await
     }
@@ -86,7 +83,7 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         if let Some(test_command) = test_command {
             self.set_mode(stdout, Mode::Testing).await?;
-            tracing::debug!(command = ?test_command, "Running user test command");
+            tracing::debug!(command = test_command, "Running user test command");
             tracing::info!("Running tests");
             let start_time = Instant::now();
             self.write_line(stdout, &format!("{test_command}\n"))
@@ -103,8 +100,8 @@ impl GhciStdin {
     pub async fn add_module(
         &mut self,
         stdout: &mut GhciStdout,
-        path: Utf8PathBuf,
-    ) -> miette::Result<Option<CompilationResult>> {
+        path: &Utf8Path,
+    ) -> miette::Result<Vec<GhcMessage>> {
         self.set_mode(stdout, Mode::Compiling).await?;
 
         // We use `:add` because `:load` unloads all previously loaded modules:
@@ -117,7 +114,7 @@ impl GhciStdin {
         self.write_line(stdout, &format!(":add {path}\n")).await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), level = "trace")]
     pub async fn sync(
         &mut self,
         stdout: &mut GhciStdout,
@@ -149,7 +146,7 @@ impl GhciStdin {
         stdout.show_modules().await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip(self, stdout), level = "trace")]
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
         let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
 

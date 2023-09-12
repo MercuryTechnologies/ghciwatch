@@ -1,9 +1,6 @@
-use std::sync::OnceLock;
-
 use aho_corasick::AhoCorasick;
 use miette::Context;
 use miette::IntoDiagnostic;
-use regex::Regex;
 use tokio::io::Stdout;
 use tokio::process::ChildStdout;
 use tokio::sync::mpsc;
@@ -15,9 +12,10 @@ use crate::incremental_reader::IncrementalReader;
 use crate::incremental_reader::WriteBehavior;
 use crate::sync_sentinel::SyncSentinel;
 
+use super::parse::parse_ghc_messages;
+use super::parse::GhcMessage;
 use super::parse::ModuleSet;
 use super::stderr::StderrEvent;
-use super::CompilationResult;
 use super::Mode;
 
 pub struct GhciStdout {
@@ -35,8 +33,8 @@ pub struct GhciStdout {
 }
 
 impl GhciStdout {
-    #[instrument(skip_all, level = "debug")]
-    pub async fn initialize(&mut self) -> miette::Result<()> {
+    #[instrument(skip_all, name = "stdout_initialize", level = "debug")]
+    pub async fn initialize(&mut self) -> miette::Result<Vec<GhcMessage>> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -51,10 +49,10 @@ impl GhciStdout {
 
         // We know that we'll get _one_ `ghci> ` prompt on startup.
         let init_prompt_patterns = AhoCorasick::from_anchored_patterns(["ghci> "]);
-        self.prompt(Some(&init_prompt_patterns)).await?;
+        let messages = self.prompt(Some(&init_prompt_patterns)).await?;
         tracing::debug!("Saw initial `ghci> ` prompt");
 
-        Ok(())
+        Ok(messages)
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -66,7 +64,7 @@ impl GhciStdout {
         // compiler doesn't know we don't mess with `self.prompt_patterns` in here. So we use
         // `None` to represent that case and handle the default inline.
         prompt_patterns: Option<&AhoCorasick>,
-    ) -> miette::Result<Option<CompilationResult>> {
+    ) -> miette::Result<Vec<GhcMessage>> {
         let prompt_patterns = prompt_patterns.unwrap_or(&self.prompt_patterns);
         let data = self
             .reader
@@ -78,28 +76,32 @@ impl GhciStdout {
             .await?;
         tracing::debug!(bytes = data.len(), "Got data from ghci");
 
-        let mut result = None;
-        if self.mode == Mode::Compiling {
-            result = self
-                .get_status_from_compile_output(data.lines().last())
-                .await
-                .wrap_err("Failed to get status from compilation output")?;
-        }
-
-        // Tell the stderr stream to write the error log and then finish.
-        {
-            let (sender, receiver) = oneshot::channel();
-            self.stderr_sender
-                .send(StderrEvent::Write(sender))
-                .await
-                .into_diagnostic()?;
-            receiver.await.into_diagnostic()?;
-        }
+        let result = if self.mode == Mode::Compiling {
+            // Parse GHCi output into compiler messages.
+            //
+            // These include diagnostics, which modules were compiled, and a compilation summary.
+            let stderr_data = {
+                let (sender, receiver) = oneshot::channel();
+                let _ = self
+                    .stderr_sender
+                    .send(StderrEvent::GetBuffer { sender })
+                    .await;
+                receiver.await.into_diagnostic()?
+            };
+            let mut messages =
+                parse_ghc_messages(&data).wrap_err("Failed to parse compiler output")?;
+            messages.extend(
+                parse_ghc_messages(&stderr_data).wrap_err("Failed to parse compiler output")?,
+            );
+            messages
+        } else {
+            Vec::new()
+        };
 
         Ok(result)
     }
 
-    #[instrument(skip_all, level = "debug")]
+    #[instrument(skip_all, level = "trace")]
     pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
         // Read until the sync marker...
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
@@ -135,57 +137,7 @@ impl GhciStdout {
         ModuleSet::from_lines(&lines)
     }
 
-    #[instrument(skip(self), level = "debug")]
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
-
-    /// Get the compilation status from a chunk of lines. The compilation status is on the last
-    /// line.
-    ///
-    /// The outer result fails if any of the operation failed, the inner `Option` conveys the
-    /// compilation status.
-    async fn get_status_from_compile_output(
-        &mut self,
-        last_line: Option<&str>,
-    ) -> miette::Result<Option<CompilationResult>> {
-        if let Some(line) = last_line {
-            if compilation_finished_re().is_match(line) {
-                let result = if line.starts_with("Ok") {
-                    tracing::debug!("Compilation succeeded");
-                    CompilationResult::Ok
-                } else {
-                    tracing::debug!("Compilation failed");
-                    CompilationResult::Err
-                };
-
-                let (sender, receiver) = oneshot::channel();
-                self.stderr_sender
-                    .send(StderrEvent::SetCompilationSummary {
-                        summary: line.to_owned(),
-                        sender,
-                    })
-                    .await
-                    .into_diagnostic()?;
-                receiver.await.into_diagnostic()?;
-
-                return Ok(Some(result));
-            } else {
-                tracing::debug!("Didn't parse 'modules loaded' line");
-            }
-        }
-
-        Ok(None)
-    }
-}
-
-fn compilation_finished_re() -> &'static Regex {
-    // There's special cases for 0-6 modules!
-    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/ghc/GHCi/UI.hs#L2286-L2287
-    // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L1429-L1453
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"^(?:Ok|Failed), (?:no|one|two|three|four|five|six|[0-9]+) modules? loaded.$")
-            .unwrap()
-    })
 }

@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -16,6 +17,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Child;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task;
 use tokio::task::JoinHandle;
 use tracing::instrument;
@@ -29,8 +31,11 @@ use stdout::GhciStdout;
 mod stderr;
 use stderr::GhciStderr;
 
-mod parse;
+pub mod parse;
+use parse::CompilationResult;
+use parse::GhcMessage;
 use parse::ModuleSet;
+use parse::Severity;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
@@ -40,6 +45,8 @@ use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::incremental_reader::IncrementalReader;
 use crate::sync_sentinel::SyncSentinel;
+
+use self::stderr::StderrEvent;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -103,14 +110,25 @@ pub struct Ghci {
     process: Child,
     /// The handle for the stderr reader task.
     stderr_handle: JoinHandle<miette::Result<()>>,
-    /// The handle for the stdin interaction task.
+    /// The stdin writer.
     stdin: GhciStdin,
+    /// The stdout reader.
     stdout: GhciStdout,
+    /// Channel for communicating with the stderr reader task.
+    stderr: mpsc::Sender<StderrEvent>,
     /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
     /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
     sync_count: AtomicUsize,
     /// The currently-loaded modules in this `ghci` session.
     modules: ModuleSet,
+    /// Modules that have failed to compile in this `ghci` session.
+    ///
+    /// These don't show up in `:show modules` and aren't, technically speaking, loaded, but we
+    /// also get an error if we `:add` them due to [GHC bug #13254][ghc-13254], so we track them
+    /// here.
+    ///
+    /// [ghc-13254]: https://gitlab.haskell.org/ghc/ghc/-/issues/13254
+    failed_modules: ModuleSet,
 }
 
 impl Debug for Ghci {
@@ -192,8 +210,10 @@ impl Ghci {
             stderr_handle,
             stdin,
             stdout,
+            stderr: stderr_sender,
             sync_count: AtomicUsize::new(0),
             modules: Default::default(),
+            failed_modules: Default::default(),
         };
 
         let stderr = task::spawn(
@@ -205,6 +225,7 @@ impl Ghci {
                     (Mode::Compiling, String::with_capacity(LINE_BUFFER_CAPACITY)),
                     (Mode::Testing, String::with_capacity(LINE_BUFFER_CAPACITY)),
                 ]),
+                buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
                 error_path: ret.opts.error_path.clone(),
                 mode: Mode::Compiling,
                 has_unwritten_data: false,
@@ -218,29 +239,18 @@ impl Ghci {
         };
 
         // Wait for the stdout job to start up.
-        {
-            let span = tracing::debug_span!("Stdout startup");
-            let _enter = span.enter();
-            ret.stdout.initialize().await?;
-        }
+        let messages = ret.stdout.initialize().await?;
+        ret.process_ghc_messages(messages).await?;
 
         // Perform start-of-session initialization.
-        {
-            let span = tracing::debug_span!("Start-of-session initialization");
-            let _enter = span.enter();
-            ret.stdin
-                .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
-                .await?;
-        }
+        ret.stdin
+            .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
+            .await?;
 
-        {
-            let span = tracing::debug_span!("Start-of-session sync");
-            let _enter = span.enter();
-            // Sync up for any prompts.
-            ret.sync().await?;
-            // Get the initial list of loaded modules.
-            ret.refresh_modules().await?;
-        }
+        // Sync up for any prompts.
+        ret.sync().await?;
+        // Get the initial list of loaded modules.
+        ret.refresh_modules().await?;
 
         tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
 
@@ -272,7 +282,9 @@ impl Ghci {
                     needs_restart.push(path);
                 }
                 FileEvent::Modify(path) => {
-                    if self.modules.contains_source_path(&path)? {
+                    if self.modules.contains_source_path(&path)?
+                        || self.failed_modules.contains_source_path(&path)?
+                    {
                         // We can `:reload` paths `ghci` already has loaded.
                         tracing::debug!(%path, "Needs reload");
                         needs_reload.push(path);
@@ -304,7 +316,6 @@ impl Ghci {
                 "Restarting ghci due to deleted/moved modules:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
-            // TODO: Probably also need a restart hook / `.cabal` hook / similar.
             self.stop().await?;
             let new = Self::new(self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
@@ -318,7 +329,7 @@ impl Ghci {
                 format_bulleted_list(&actions.needs_add)
             );
             for path in &actions.needs_add {
-                let add_result = self.add_module(path.into()).await?;
+                let add_result = self.add_module(path).await?;
                 if let Some(CompilationResult::Err) = add_result {
                     compilation_failed = true;
                 }
@@ -330,7 +341,8 @@ impl Ghci {
                 "Reloading ghci due to changed modules:\n{}",
                 format_bulleted_list(&actions.needs_reload)
             );
-            if let Some(CompilationResult::Err) = self.stdin.reload(&mut self.stdout).await? {
+            let messages = self.stdin.reload(&mut self.stdout).await?;
+            if let Some(CompilationResult::Err) = self.process_ghc_messages(messages).await? {
                 compilation_failed = true;
             }
         }
@@ -386,26 +398,18 @@ impl Ghci {
     #[instrument(skip(self), level = "debug")]
     pub async fn add_module(
         &mut self,
-        path: Utf8PathBuf,
+        path: &Utf8Path,
     ) -> miette::Result<Option<CompilationResult>> {
-        let result = self
-            .stdin
-            .add_module(&mut self.stdout, path.clone())
-            .await?;
-        match result {
-            None => {
-                tracing::debug!(
-                    ?path,
-                    "Added module but didn't receive a compilation result"
-                );
-            }
-            Some(CompilationResult::Err) => {
-                // Compilation failed, so we don't want to add the module to the module set.
-            }
-            Some(CompilationResult::Ok) => {
-                self.modules.insert_source_path(&path)?;
-            }
+        let messages = self.stdin.add_module(&mut self.stdout, path).await?;
+
+        let result = self.process_ghc_messages(messages).await?;
+
+        if let Some(CompilationResult::Ok) = result {
+            self.modules.insert_source_path(path)?;
         }
+        // Otherwise, compilation failed or otherwise didn't print a summary, so we don't want to
+        // add the module to the module set.
+
         Ok(result)
     }
 
@@ -421,6 +425,67 @@ impl Ghci {
         self.process.kill().await.into_diagnostic()?;
 
         Ok(())
+    }
+
+    /// Processes a set of diagnostics and messages parsed from GHC output.
+    #[instrument(skip_all, level = "trace")]
+    async fn process_ghc_messages(
+        &mut self,
+        messages: Vec<GhcMessage>,
+    ) -> miette::Result<Option<CompilationResult>> {
+        for message in messages {
+            match message {
+                GhcMessage::Compiling(module) => {
+                    tracing::debug!(module = %module.name, path = %module.path, "Compiling");
+                    self.failed_modules.remove_source_path(&module.path)?;
+                }
+                GhcMessage::Diagnostic {
+                    severity: Severity::Error,
+                    path: Some(path),
+                    message,
+                    ..
+                } => {
+                    // We can't use 'message' for the field name because that's what tracing uses
+                    // for the message.
+                    tracing::debug!(%path, error = message, "Module failed to compile");
+                    self.failed_modules.insert_source_path(&path)?;
+                }
+                GhcMessage::Summary { result, message } => {
+                    match result {
+                        CompilationResult::Ok => {
+                            tracing::debug!("Compilation succeeded");
+                        }
+                        CompilationResult::Err => {
+                            tracing::debug!("Compilation failed");
+                        }
+                    }
+
+                    // Notify the stderr task of the compilation summary.
+                    let (sender, receiver) = oneshot::channel();
+                    self.stderr
+                        .send(StderrEvent::SetCompilationSummary {
+                            summary: message.clone(),
+                            sender,
+                        })
+                        .await
+                        .into_diagnostic()?;
+                    receiver.await.into_diagnostic()?;
+                }
+                _ => {}
+            }
+        }
+
+        // Tell the stderr stream to write the error log and then finish.
+        {
+            let (sender, receiver) = oneshot::channel();
+            self.stderr
+                .send(StderrEvent::Write(sender))
+                .await
+                .into_diagnostic()?;
+            receiver.await.into_diagnostic()?;
+        }
+
+        Ok(None)
     }
 }
 
@@ -464,15 +529,6 @@ fn format_bulleted_list(items: &[impl Display]) -> String {
     } else {
         format!("• {}", items.iter().join("\n• "))
     }
-}
-
-/// The result of compiling modules in `ghci`.
-#[derive(Debug, Clone, Copy)]
-pub enum CompilationResult {
-    /// All the modules compiled successfully.
-    Ok,
-    /// Some modules failed to compile/load.
-    Err,
 }
 
 /// Actions needed to perform a reload.

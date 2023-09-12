@@ -33,6 +33,9 @@ pub enum StderrEvent {
         mode: Mode,
         sender: oneshot::Sender<()>,
     },
+
+    /// Get the buffer contents since the last `Mode` event.
+    GetBuffer { sender: oneshot::Sender<String> },
 }
 
 pub struct GhciStderr {
@@ -47,6 +50,8 @@ pub struct GhciStderr {
     /// separately. Useful to avoid clobbering the `error_path` with test data when there were
     /// useful compilation errors stored.
     pub buffers: BTreeMap<Mode, String>,
+    /// Output buffer.
+    pub buffer: String,
     /// The path to write the error log to.
     pub error_path: Option<Utf8PathBuf>,
     /// The mode we're currently reading output in.
@@ -106,12 +111,15 @@ impl GhciStderr {
             StderrEvent::SetCompilationSummary { summary, sender } => {
                 self.set_compilation_summary(sender, summary).await;
             }
+            StderrEvent::GetBuffer { sender } => {
+                self.get_buffer(sender).await;
+            }
         }
 
         Ok(())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self), level = "trace")]
     async fn ingest_line(&mut self, line: String) {
         // We might not have a buffer for some modes, e.g. `Internal`.
         if let Some(buffer) = self.buffers.get_mut(&self.mode) {
@@ -119,6 +127,9 @@ impl GhciStderr {
             buffer.push('\n');
             self.has_unwritten_data = true;
         }
+        // Then write to our general buffer.
+        self.buffer.push_str(&line);
+        self.buffer.push('\n');
         eprintln!("{line}");
     }
 
@@ -134,7 +145,7 @@ impl GhciStderr {
             let mut writer = BufWriter::new(file);
 
             if !self.compilation_summary.is_empty() {
-                tracing::debug!(?path, "Writing error log headline");
+                tracing::debug!(%path, "Writing error log headline");
                 writer
                     .write_all(self.compilation_summary.as_bytes())
                     .await
@@ -143,7 +154,7 @@ impl GhciStderr {
             }
 
             for (mode, buffer) in &self.buffers {
-                tracing::debug!(?path, %mode, bytes = buffer.len(), "Writing error log");
+                tracing::debug!(%path, %mode, bytes = buffer.len(), "Writing error log");
                 writer
                     .write_all(&strip_ansi_escapes::strip(buffer.as_bytes()))
                     .await
@@ -160,7 +171,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    #[instrument(skip(self, sender), level = "debug")]
+    #[instrument(skip(self, sender), level = "trace")]
     async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
         self.mode = mode;
 
@@ -174,6 +185,9 @@ impl GhciStderr {
         if let Some(buffer) = self.buffers.get_mut(&self.mode) {
             buffer.clear();
         }
+
+        // Clear the general buffer.
+        self.buffer.clear();
 
         // If we're compiling, also clear the headline so we don't write a stale status/module
         // count.
@@ -191,5 +205,11 @@ impl GhciStderr {
             self.has_unwritten_data = true;
         }
         let _ = sender.send(());
+    }
+
+    #[instrument(skip(self, sender), level = "debug")]
+    async fn get_buffer(&mut self, sender: oneshot::Sender<String>) {
+        // TODO: Does it make more sense to clear the buffer here?
+        let _ = sender.send(self.buffer.clone());
     }
 }

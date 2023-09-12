@@ -35,13 +35,11 @@ impl ModuleSet {
     }
 
     /// Determine if this set is empty.
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Remove all entries from this set, leaving it empty.
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.set.clear();
     }
@@ -66,7 +64,6 @@ impl ModuleSet {
     /// Returns whether the path was present in the set.
     ///
     /// Returns `Err` if the `path` cannot be canonicalized.
-    #[allow(dead_code)]
     pub fn remove_source_path(&mut self, path: &Utf8Path) -> miette::Result<bool> {
         Ok(self.set.remove(&canonicalize(path)?))
     }
