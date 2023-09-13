@@ -52,8 +52,17 @@
               (
                 final: prev: {
                   # TODO: Any chance this overlay will clobber something useful?
-                  rustToolchain =
-                    final.callPackage ./nix/rust-toolchain.nix {rust-bin = final.pkgsBuildHost.rust-bin;};
+                  rustToolchain = final.pkgsBuildHost.rust-bin.stable.latest.default.override {
+                    targets =
+                      final.lib.optionals final.stdenv.isDarwin [
+                        "x86_64-apple-darwin"
+                        "aarch64-apple-darwin"
+                      ]
+                      ++ final.lib.optionals final.stdenv.isLinux [
+                        "x86_64-unknown-linux-musl"
+                        "aarch64-unknown-linux-musl"
+                      ];
+                  };
 
                   craneLib = (crane.mkLib final).overrideToolchain final.rustToolchain;
 
