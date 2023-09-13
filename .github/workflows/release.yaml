@@ -135,7 +135,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          nix develop --command cargo publish
+          nix develop --command cargo publish --dry-run
 
   upload:
     name: Upload assets to release
