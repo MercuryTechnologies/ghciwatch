@@ -15,6 +15,7 @@ use crate::sync_sentinel::SyncSentinel;
 use super::parse::GhcMessage;
 use super::parse::ModuleSet;
 use super::stderr::StderrEvent;
+use super::GhciCommand;
 use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
@@ -32,7 +33,7 @@ impl GhciStdin {
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn write_line(
+    async fn write_line(
         &mut self,
         stdout: &mut GhciStdout,
         line: &str,
@@ -48,7 +49,7 @@ impl GhciStdin {
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
-        setup_commands: &[String],
+        setup_commands: &[GhciCommand],
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt {PROMPT}\n"))
@@ -62,7 +63,7 @@ impl GhciStdin {
         .await?;
 
         for command in setup_commands {
-            tracing::debug!(command, "Running user intialization command");
+            tracing::debug!(%command, "Running user intialization command");
             self.write_line(stdout, &format!("{command}\n")).await?;
         }
 
@@ -79,11 +80,11 @@ impl GhciStdin {
     pub async fn test(
         &mut self,
         stdout: &mut GhciStdout,
-        test_command: Option<String>,
+        test_command: Option<GhciCommand>,
     ) -> miette::Result<()> {
         if let Some(test_command) = test_command {
             self.set_mode(stdout, Mode::Testing).await?;
-            tracing::debug!(command = test_command, "Running user test command");
+            tracing::debug!(command = %test_command, "Running user test command");
             tracing::info!("Running tests");
             let start_time = Instant::now();
             self.write_line(stdout, &format!("{test_command}\n"))

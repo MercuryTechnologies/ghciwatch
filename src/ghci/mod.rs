@@ -39,6 +39,9 @@ use parse::GhcMessage;
 use parse::ModuleSet;
 use parse::Severity;
 
+mod ghci_command;
+pub use ghci_command::GhciCommand;
+
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
@@ -73,9 +76,9 @@ pub struct GhciOpts {
     /// Shell commands to run before starting or restarting `ghci`.
     pub before_startup_shell: Vec<ClonableCommand>,
     /// `ghci` commands to run after starting or restarting `ghci`.
-    pub after_startup_ghci: Vec<String>,
+    pub after_startup_ghci: Vec<GhciCommand>,
     /// `ghci` command which runs tests.
-    pub test_ghci: Option<String>,
+    pub test_ghci: Option<GhciCommand>,
 }
 
 impl GhciOpts {
