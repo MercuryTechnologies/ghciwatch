@@ -13,6 +13,7 @@
 
 pub mod aho_corasick;
 pub mod buffers;
+pub mod canonicalized_path;
 pub mod clap;
 pub mod cli;
 pub mod command;

@@ -1,9 +1,12 @@
+use std::borrow::Borrow;
+use std::cmp::Eq;
 use std::collections::HashSet;
+use std::hash::Hash;
 
 use camino::Utf8Path;
-use camino::Utf8PathBuf;
 use miette::Context;
-use miette::IntoDiagnostic;
+
+use crate::canonicalized_path::CanonicalizedUtf8PathBuf;
 
 use super::Module;
 
@@ -11,7 +14,7 @@ use super::Module;
 /// session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleSet {
-    set: HashSet<Utf8PathBuf>,
+    set: HashSet<CanonicalizedUtf8PathBuf>,
 }
 
 impl ModuleSet {
@@ -23,7 +26,7 @@ impl ModuleSet {
                 .map(|line| {
                     line.parse::<Module>()
                         .wrap_err("Failed to parse `:show modules` line")
-                        .and_then(|module| canonicalize(&module.path))
+                        .and_then(|module| module.path.try_into())
                 })
                 .collect::<Result<_, _>>()?,
         })
@@ -45,33 +48,28 @@ impl ModuleSet {
     }
 
     /// Determine if a module with the given source path is contained in this module set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn contains_source_path(&self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.set.contains(&canonicalize(path)?))
+    pub fn contains_source_path<P>(&self, path: &P) -> miette::Result<bool>
+    where
+        CanonicalizedUtf8PathBuf: Borrow<P>,
+        P: Hash + Eq,
+    {
+        Ok(self.set.contains(path))
     }
 
     /// Add a source path to this module set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn insert_source_path(&mut self, path: &Utf8Path) -> miette::Result<()> {
-        self.set.insert(canonicalize(path)?);
+    pub fn insert_source_path(&mut self, path: CanonicalizedUtf8PathBuf) -> miette::Result<()> {
+        self.set.insert(path);
         Ok(())
     }
 
     /// Remove a source path from this module set.
     ///
     /// Returns whether the path was present in the set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn remove_source_path(&mut self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.set.remove(&canonicalize(path)?))
+    pub fn remove_source_path<P>(&mut self, path: &P)
+    where
+        CanonicalizedUtf8PathBuf: Borrow<P>,
+        P: Hash + Eq,
+    {
+        self.set.remove(path);
     }
-}
-
-/// Canonicalize the given path.
-fn canonicalize(path: &Utf8Path) -> miette::Result<Utf8PathBuf> {
-    path.canonicalize_utf8()
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to canonicalize path: {path:?}"))
 }

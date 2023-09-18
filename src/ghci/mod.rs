@@ -7,7 +7,6 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
-use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -44,6 +43,7 @@ pub use ghci_command::GhciCommand;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
+use crate::canonicalized_path::CanonicalizedUtf8PathBuf;
 use crate::cli::Opts;
 use crate::command;
 use crate::command::ClonableCommand;
@@ -280,6 +280,7 @@ impl Ghci {
                     needs_restart.push(path);
                 }
                 FileEvent::Modify(path) => {
+                    let path: CanonicalizedUtf8PathBuf = path.try_into()?;
                     if self.modules.contains_source_path(&path)?
                         || self.failed_modules.contains_source_path(&path)?
                     {
@@ -396,14 +397,17 @@ impl Ghci {
     #[instrument(skip(self), level = "debug")]
     pub async fn add_module(
         &mut self,
-        path: &Utf8Path,
+        path: &CanonicalizedUtf8PathBuf,
     ) -> miette::Result<Option<CompilationResult>> {
-        let messages = self.stdin.add_module(&mut self.stdout, path).await?;
+        let messages = self
+            .stdin
+            .add_module(&mut self.stdout, path.as_path())
+            .await?;
 
         let result = self.process_ghc_messages(messages).await?;
 
         if let Some(CompilationResult::Ok) = result {
-            self.modules.insert_source_path(path)?;
+            self.modules.insert_source_path(path.clone())?;
         }
         // Otherwise, compilation failed or otherwise didn't print a summary, so we don't want to
         // add the module to the module set.
@@ -436,7 +440,8 @@ impl Ghci {
             match message {
                 GhcMessage::Compiling(module) => {
                     tracing::debug!(module = %module.name, path = %module.path, "Compiling");
-                    self.failed_modules.remove_source_path(&module.path)?;
+                    let path: CanonicalizedUtf8PathBuf = module.path.as_path().try_into()?;
+                    self.failed_modules.remove_source_path(&path);
                 }
                 GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
@@ -447,7 +452,8 @@ impl Ghci {
                     // We can't use 'message' for the field name because that's what tracing uses
                     // for the message.
                     tracing::debug!(%path, error = message, "Module failed to compile");
-                    self.failed_modules.insert_source_path(path)?;
+                    self.failed_modules
+                        .insert_source_path(path.as_path().try_into()?)?;
                 }
                 GhcMessage::Summary(summary) => {
                     compilation_summary = Some(*summary);
@@ -519,9 +525,9 @@ struct ReloadActions {
     /// Paths to modules which need a full `ghci` restart.
     needs_restart: Vec<Utf8PathBuf>,
     /// Paths to modules which need a `:reload`.
-    needs_reload: Vec<Utf8PathBuf>,
+    needs_reload: Vec<CanonicalizedUtf8PathBuf>,
     /// Paths to modules which need an `:add`.
-    needs_add: Vec<Utf8PathBuf>,
+    needs_add: Vec<CanonicalizedUtf8PathBuf>,
 }
 
 impl ReloadActions {
