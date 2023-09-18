@@ -113,18 +113,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p target/
-          nix build --print-build-logs .#ghcid-ng
-          cp result/bin/ghcid-ng target/ghcid-ng-x86_64-linux
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghcid-ng)
+          cp "$RESULT/bin/ghcid-ng" target/ghcid-ng-x86_64-linux
 
       - name: Build (Linux, aarch64)
         if: runner.os == 'Linux'
         run: |
-          nix build --print-build-logs .#ghcid-ng-aarch64-linux
-          cp result/bin/ghcid-ng target/ghcid-ng-aarch64-linux
-
-      - name: Remove result symlink
-        if: runner.os == 'Linux'
-        run: rm -f result
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghcid-ng-aarch64-linux)
+          cp "$RESULT/bin/ghcid-ng" target/ghcid-ng-aarch64-linux
 
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
