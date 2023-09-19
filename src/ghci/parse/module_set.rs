@@ -3,44 +3,28 @@ use std::cmp::Eq;
 use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::path::Path;
 
-use camino::Utf8Path;
-use miette::Context;
-
-use crate::canonicalized_path::CanonicalizedUtf8PathBuf;
-
-use super::Module;
+use crate::normal_path::NormalPath;
 
 /// A collection of source paths, retaining information about loaded modules in a `ghci`
 /// session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleSet {
-    set: HashSet<CanonicalizedUtf8PathBuf>,
+    set: HashSet<NormalPath>,
 }
 
 impl ModuleSet {
-    /// Parse a `ModuleSet` from a set of lines read from `ghci` stdout.
-    pub fn from_lines(lines: &str) -> miette::Result<Self> {
-        Ok(Self {
-            set: lines
-                .lines()
-                .map(|line| {
-                    line.parse::<Module>()
-                        .wrap_err("Failed to parse `:show modules` line")
-                        .and_then(|module| module.path.try_into())
-                })
-                .collect::<Result<_, _>>()?,
-        })
-    }
-
     /// Construct a `ModuleSet` from an iterator of module source paths.
     pub fn from_paths(
-        paths: impl IntoIterator<Item = impl AsRef<Utf8Path>>,
+        paths: impl IntoIterator<Item = impl AsRef<Path>>,
+        current_dir: impl AsRef<Path>,
     ) -> miette::Result<Self> {
+        let current_dir = current_dir.as_ref();
         Ok(Self {
             set: paths
                 .into_iter()
-                .map(|path| path.as_ref().try_into())
+                .map(|path| NormalPath::new(path.as_ref(), current_dir))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -63,14 +47,14 @@ impl ModuleSet {
     /// Determine if a module with the given source path is contained in this module set.
     pub fn contains_source_path<P>(&self, path: &P) -> miette::Result<bool>
     where
-        CanonicalizedUtf8PathBuf: Borrow<P>,
-        P: Hash + Eq,
+        NormalPath: Borrow<P>,
+        P: Hash + Eq + ?Sized,
     {
         Ok(self.set.contains(path))
     }
 
     /// Add a source path to this module set.
-    pub fn insert_source_path(&mut self, path: CanonicalizedUtf8PathBuf) -> miette::Result<()> {
+    pub fn insert_source_path(&mut self, path: NormalPath) -> miette::Result<()> {
         self.set.insert(path);
         Ok(())
     }
@@ -80,14 +64,14 @@ impl ModuleSet {
     /// Returns whether the path was present in the set.
     pub fn remove_source_path<P>(&mut self, path: &P)
     where
-        CanonicalizedUtf8PathBuf: Borrow<P>,
+        NormalPath: Borrow<P>,
         P: Hash + Eq,
     {
         self.set.remove(path);
     }
 
     /// Iterate over the source paths in this module set.
-    pub fn iter(&self) -> Iter<'_, CanonicalizedUtf8PathBuf> {
+    pub fn iter(&self) -> Iter<'_, NormalPath> {
         self.set.iter()
     }
 }

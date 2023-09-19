@@ -124,15 +124,6 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn show_modules(&mut self) -> miette::Result<ModuleSet> {
-        let lines = self
-            .reader
-            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
-            .await?;
-        ModuleSet::from_lines(&lines)
-    }
-
-    #[instrument(skip_all, level = "debug")]
     pub async fn show_paths(&mut self) -> miette::Result<ShowPaths> {
         let lines = self
             .reader
@@ -149,7 +140,7 @@ impl GhciStdout {
             .await?;
         let paths = parse_show_targets(search_paths, &lines)
             .wrap_err("Failed to parse `:show targets` output")?;
-        ModuleSet::from_paths(paths)
+        ModuleSet::from_paths(paths, &search_paths.cwd)
     }
 
     pub fn set_mode(&mut self, mode: Mode) {

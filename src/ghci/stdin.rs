@@ -137,18 +137,6 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn show_modules(&mut self, stdout: &mut GhciStdout) -> miette::Result<ModuleSet> {
-        self.set_mode(stdout, Mode::Internal).await?;
-
-        self.stdin
-            .write_all(b":show modules\n")
-            .await
-            .into_diagnostic()?;
-
-        stdout.show_modules().await
-    }
-
-    #[instrument(skip(self, stdout), level = "debug")]
     pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
         self.set_mode(stdout, Mode::Internal).await?;
 

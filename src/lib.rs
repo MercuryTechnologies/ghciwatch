@@ -13,7 +13,6 @@
 
 pub mod aho_corasick;
 pub mod buffers;
-pub mod canonicalized_path;
 pub mod clap;
 pub mod cli;
 pub mod command;
@@ -23,7 +22,7 @@ pub mod haskell_show;
 pub mod haskell_source_file;
 pub mod incremental_reader;
 pub mod lines;
-pub mod relative_path;
+pub mod normal_path;
 pub mod sync_sentinel;
 pub mod textwrap;
 pub mod tracing;
