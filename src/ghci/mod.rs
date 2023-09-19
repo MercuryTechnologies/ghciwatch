@@ -54,6 +54,7 @@ use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::ghci::parse::ShowPaths;
 use crate::incremental_reader::IncrementalReader;
+use crate::relative_path::RelativePath;
 use crate::sync_sentinel::SyncSentinel;
 
 use self::parse::parse_eval_commands;
@@ -143,7 +144,7 @@ pub struct Ghci {
     /// [ghc-13254]: https://gitlab.haskell.org/ghc/ghc/-/issues/13254
     targets: ModuleSet,
     /// Eval commands, if `opts.enable_eval` is set.
-    eval_commands: BTreeMap<CanonicalizedUtf8PathBuf, Vec<EvalCommand>>,
+    eval_commands: BTreeMap<RelativePath<CanonicalizedUtf8PathBuf>, Vec<EvalCommand>>,
     /// Search paths / current working directory for this `ghci` session.
     search_paths: ShowPaths,
 }
@@ -305,12 +306,13 @@ impl Ghci {
                     // TODO: I should investigate if `:unadd` works for some classes of removed
                     // modules.
                     tracing::debug!(%path, "Needs restart");
-                    needs_restart.push(path);
+                    needs_restart.push(self.relative_path(path));
                 }
                 FileEvent::Modify(path) => {
                     let path: CanonicalizedUtf8PathBuf = path.try_into()?;
-                    if self.modules.contains_source_path(&path)?
-                        || self.targets.contains_source_path(&path)?
+                    let path = self.relative_path(path);
+                    if self.modules.contains_source_path(path.original())?
+                        || self.targets.contains_source_path(path.original())?
                     {
                         // We can `:reload` paths in the target set.
                         tracing::debug!(%path, "Needs reload");
@@ -470,7 +472,7 @@ impl Ghci {
         for path in self.targets.iter() {
             let commands = Self::parse_eval_commands(path).await?;
             if !commands.is_empty() {
-                eval_commands.insert(path.clone(), commands);
+                eval_commands.insert(self.relative_path(path.clone()), commands);
             }
         }
 
@@ -482,7 +484,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn refresh_eval_commands_for_paths(
         &mut self,
-        paths: &[impl Borrow<CanonicalizedUtf8PathBuf>],
+        paths: impl IntoIterator<Item = impl Borrow<CanonicalizedUtf8PathBuf>>,
     ) -> miette::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
@@ -491,7 +493,8 @@ impl Ghci {
         for path in paths {
             let path = path.borrow();
             let commands = Self::parse_eval_commands(path).await?;
-            self.eval_commands.insert(path.clone(), commands);
+            self.eval_commands
+                .insert(self.relative_path(path.clone()), commands);
         }
 
         Ok(())
@@ -512,24 +515,26 @@ impl Ghci {
     ///
     /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
-    pub async fn add_module(
+    async fn add_module(
         &mut self,
-        path: &CanonicalizedUtf8PathBuf,
+        path: &RelativePath<CanonicalizedUtf8PathBuf>,
     ) -> miette::Result<Option<CompilationResult>> {
         let messages = self
             .stdin
-            .add_module(&mut self.stdout, &path.relative_to(&self.search_paths.cwd))
+            .add_module(&mut self.stdout, path.relative())
             .await?;
 
         let result = self.process_ghc_messages(messages).await?;
 
         if let Some(CompilationResult::Ok) = result {
-            self.modules.insert_source_path(path.clone())?;
+            self.modules
+                .insert_source_path(path.original().to_owned())?;
         }
         // Otherwise, compilation failed or otherwise didn't print a summary, so we don't want to
         // add the module to the module set.
 
-        self.refresh_eval_commands_for_paths(&[path]).await?;
+        self.refresh_eval_commands_for_paths(std::iter::once(path))
+            .await?;
         Ok(result)
     }
 
@@ -588,6 +593,14 @@ impl Ghci {
 
         Ok(None)
     }
+
+    /// Make a path relative to the `ghci` session's current working directory.
+    fn relative_path<P>(&self, path: P) -> RelativePath<P>
+    where
+        P: AsRef<Utf8Path>,
+    {
+        RelativePath::new(path, &self.search_paths.cwd)
+    }
 }
 
 /// The mode a `ghci` session is in. This is used to track output, particularly for the error log
@@ -624,11 +637,12 @@ impl Display for Mode {
     }
 }
 
-fn format_bulleted_list(items: &[impl Display]) -> String {
-    if items.is_empty() {
+fn format_bulleted_list(items: impl IntoIterator<Item = impl Display>) -> String {
+    let mut items = items.into_iter().peekable();
+    if items.peek().is_none() {
         String::new()
     } else {
-        format!("• {}", items.iter().join("\n• "))
+        format!("• {}", items.join("\n• "))
     }
 }
 
@@ -637,11 +651,11 @@ fn format_bulleted_list(items: &[impl Display]) -> String {
 /// See [`Ghci::reload`].
 struct ReloadActions {
     /// Paths to modules which need a full `ghci` restart.
-    needs_restart: Vec<Utf8PathBuf>,
+    needs_restart: Vec<RelativePath<Utf8PathBuf>>,
     /// Paths to modules which need a `:reload`.
-    needs_reload: Vec<CanonicalizedUtf8PathBuf>,
+    needs_reload: Vec<RelativePath<CanonicalizedUtf8PathBuf>>,
     /// Paths to modules which need an `:add`.
-    needs_add: Vec<CanonicalizedUtf8PathBuf>,
+    needs_add: Vec<RelativePath<CanonicalizedUtf8PathBuf>>,
 }
 
 impl ReloadActions {

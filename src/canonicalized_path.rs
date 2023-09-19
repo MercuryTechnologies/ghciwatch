@@ -12,6 +12,11 @@ use miette::Context;
 use miette::IntoDiagnostic;
 
 /// A canonicalized [`Utf8PathBuf`].
+///
+/// This stores both the canonicalized path and the pre-canonicalized path.
+///
+/// These paths are [`Display`]ed as the original path but compared ([`Hash`], [`Eq`], [`Ord`]) as
+/// the canonicalized path.
 #[derive(Debug, Clone)]
 pub struct CanonicalizedUtf8PathBuf {
     canon: Utf8PathBuf,
@@ -19,35 +24,9 @@ pub struct CanonicalizedUtf8PathBuf {
 }
 
 impl CanonicalizedUtf8PathBuf {
-    /// Consume this path, producing the wrapped canonical path buffer.
-    pub fn into_path(self) -> Utf8PathBuf {
-        self.canon
-    }
-
     /// Get a reference to this canonical path, borrowed as a [`Utf8Path`].
-    pub fn as_path(&self) -> &Utf8Path {
+    pub fn canon(&self) -> &Utf8Path {
         self.canon.as_path()
-    }
-
-    /// Get the canonicalized path.
-    pub fn canonicalized(&self) -> &Utf8PathBuf {
-        &self.canon
-    }
-
-    /// Get the original path.
-    pub fn original(&self) -> &Utf8PathBuf {
-        &self.original
-    }
-
-    /// Make this path relative to the given base path.
-    ///
-    /// If making this path relative fails, a clone of the original path used to construct this
-    /// path is returned.
-    pub fn relative_to(&self, base: impl AsRef<Utf8Path>) -> Utf8PathBuf {
-        match pathdiff::diff_utf8_paths(&self.original, base) {
-            Some(path) => path,
-            None => self.original.clone(),
-        }
     }
 }
 
@@ -108,7 +87,7 @@ impl TryFrom<Utf8PathBuf> for CanonicalizedUtf8PathBuf {
 
 impl From<CanonicalizedUtf8PathBuf> for Utf8PathBuf {
     fn from(value: CanonicalizedUtf8PathBuf) -> Self {
-        value.into_path()
+        value.canon
     }
 }
 
