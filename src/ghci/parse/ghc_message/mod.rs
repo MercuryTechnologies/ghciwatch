@@ -1,5 +1,7 @@
 //! Parser for GHC compiler output.
 
+use std::fmt::Display;
+
 use camino::Utf8PathBuf;
 use miette::miette;
 use winnow::combinator::alt;
@@ -25,6 +27,7 @@ mod message_body;
 
 mod compilation_summary;
 use compilation_summary::compilation_summary;
+pub use compilation_summary::CompilationSummary;
 
 mod loaded_configuration;
 use loaded_configuration::loaded_configuration;
@@ -60,16 +63,7 @@ pub enum GhcMessage {
     /// ```text
     /// Foo.hs:81:1: Warning: Defined but not used: `bar'
     /// ```
-    Diagnostic {
-        /// The diagnostic's severity.
-        severity: Severity,
-        /// Path to the relevant file, like `src/Foo/Bar.hs`.
-        path: Option<Utf8PathBuf>,
-        /// Span for the diagnostic.
-        span: PositionRange,
-        /// The associated message.
-        message: String,
-    },
+    Diagnostic(GhcDiagnostic),
     /// A configuration file being loaded.
     ///
     /// ```text
@@ -90,12 +84,18 @@ pub enum GhcMessage {
     /// ```text
     /// Failed, 58 modules loaded.
     /// ```
-    Summary {
-        /// The compilation result; whether compilation succeeded or failed.
-        result: CompilationResult,
-        /// The summary message, as a string; this is displayed in the output file.
-        message: String,
-    },
+    Summary(CompilationSummary),
+}
+
+impl GhcMessage {
+    /// Extract the contained diagnostic, if any.
+    #[cfg(test)]
+    pub fn into_diagnostic(self) -> Option<GhcDiagnostic> {
+        match self {
+            GhcMessage::Diagnostic(diagnostic) => Some(diagnostic),
+            _ => None,
+        }
+    }
 }
 
 /// The result of compiling modules in `ghci`.
@@ -105,6 +105,47 @@ pub enum CompilationResult {
     Ok,
     /// Some modules failed to compile/load.
     Err,
+}
+
+/// An error or warning diagnostic message.
+///
+/// ```text
+/// Foo.hs:81:1: Warning: Defined but not used: `bar'
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GhcDiagnostic {
+    /// The diagnostic's severity.
+    pub severity: Severity,
+    /// Path to the relevant file, like `src/Foo/Bar.hs`.
+    pub path: Option<Utf8PathBuf>,
+    /// Span for the diagnostic.
+    pub span: PositionRange,
+    /// The associated message.
+    pub message: String,
+}
+
+impl Display for GhcDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.path {
+            Some(path) => write!(f, "{path}")?,
+            None => write!(f, "<no location info>")?,
+        }
+
+        if !self.span.is_zero() {
+            write!(f, ":{}", self.span)?;
+        }
+        write!(f, ": {}:", self.severity)?;
+
+        // If there's text on the line after the severity (like an error code), put a space before
+        // that. If the message starts with a newline, take care to not write trailing whitespace.
+        if self.message.starts_with('\n') {
+            write!(f, "{}", self.message)?;
+        } else {
+            write!(f, " {}", self.message)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Parse [`GhcMessage`]s from lines of compiler output.
@@ -202,7 +243,7 @@ mod tests {
                     name: "MyModule".into(),
                     path: "src/MyModule.hs".into(),
                 }),
-                GhcMessage::Diagnostic {
+                GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
                     path: Some("src/MyModule.hs".into()),
                     span: PositionRange::new(4, 11, 4, 11),
@@ -219,11 +260,11 @@ mod tests {
                         "",
                     ]
                     .join("\n")
-                },
-                GhcMessage::Summary {
+                }),
+                GhcMessage::Summary(CompilationSummary {
                     result: CompilationResult::Err,
-                    message: "Failed, one module loaded.".into()
-                },
+                    modules_loaded: 1,
+                }),
             ]
         );
     }

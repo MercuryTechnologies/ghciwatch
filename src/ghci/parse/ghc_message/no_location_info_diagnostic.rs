@@ -8,6 +8,8 @@ use crate::ghci::parse::ghc_message::position;
 use crate::ghci::parse::ghc_message::severity;
 use crate::ghci::parse::ghc_message::GhcMessage;
 
+use super::GhcDiagnostic;
+
 /// Parse a message like this:
 ///
 /// ```text
@@ -22,12 +24,12 @@ pub fn no_location_info_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
     let _ = space0.parse_next(input)?;
     let message = parse_message_body.parse_next(input)?;
 
-    Ok(GhcMessage::Diagnostic {
+    Ok(GhcMessage::Diagnostic(GhcDiagnostic {
         severity,
         path: None,
         span: Default::default(),
         message: message.to_owned(),
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -50,7 +52,7 @@ mod tests {
         );
         assert_eq!(
             no_location_info_diagnostic.parse(message).unwrap(),
-            GhcMessage::Diagnostic {
+            GhcMessage::Diagnostic(GhcDiagnostic {
                 severity: Severity::Error,
                 path: None,
                 span: Default::default(),
@@ -58,7 +60,7 @@ mod tests {
                     \n    It is not a module in the current program, or in any known package.\
                     \n"
                 .into()
-            }
+            })
         );
 
         assert_eq!(
@@ -71,7 +73,7 @@ mod tests {
                     "
                 ))
                 .unwrap(),
-            GhcMessage::Diagnostic {
+            GhcMessage::Diagnostic(GhcDiagnostic {
                 severity: Severity::Error,
                 path: None,
                 span: Default::default(),
@@ -83,7 +85,7 @@ mod tests {
                     "
                 )
                 .into()
-            }
+            })
         );
 
         // Shouldn't parse another error.
@@ -97,5 +99,26 @@ mod tests {
                 "
             ))
             .is_err());
+    }
+
+    #[test]
+    fn no_location_info_diagnostic_display() {
+        // Error message from here: https://github.com/commercialhaskell/stack/issues/3582
+        let message = indoc!(
+            "
+            <no location info>: error:
+                Could not find module ‘Example’
+                It is not a module in the current program, or in any known package.
+            "
+        );
+        assert_eq!(
+            no_location_info_diagnostic
+                .parse(message)
+                .unwrap()
+                .into_diagnostic()
+                .unwrap()
+                .to_string(),
+            message
+        );
     }
 }

@@ -9,12 +9,13 @@ use winnow::token::take_until1;
 use winnow::PResult;
 use winnow::Parser;
 
-use crate::ghci::parse::ghc_message::message_body::parse_message_body_lines;
-use crate::ghci::parse::ghc_message::single_quote::single_quote;
-use crate::ghci::parse::ghc_message::GhcMessage;
 use crate::ghci::parse::haskell_grammar::module_name;
 use crate::ghci::parse::lines::rest_of_line;
 use crate::ghci::parse::Severity;
+
+use super::single_quote::single_quote;
+use super::GhcDiagnostic;
+use super::GhcMessage;
 
 /// Either:
 ///
@@ -50,29 +51,28 @@ pub fn module_import_cycle_diagnostic(input: &mut &str) -> PResult<Vec<GhcMessag
         Ok(Utf8PathBuf::from(path))
     }
 
-    let _ = alt((
-        "Module imports form a cycle:",
-        "Module graph contains a cycle:",
-    ))
-    .parse_next(input)?;
-    let _ = line_ending.parse_next(input)?;
-    let (paths, message) = parse_message_body_lines
-        .and_then(|message: &mut &str| {
-            let full_message = message.to_owned();
-            repeat(1.., parse_import_cycle_line)
-                .parse_next(message)
-                .map(move |paths: Vec<_>| (paths, full_message))
-        })
+    fn inner(input: &mut &str) -> PResult<Vec<Utf8PathBuf>> {
+        let _ = alt((
+            "Module imports form a cycle:",
+            "Module graph contains a cycle:",
+        ))
         .parse_next(input)?;
+        let _ = line_ending.parse_next(input)?;
+        repeat(1.., parse_import_cycle_line).parse_next(input)
+    }
+
+    let (paths, message) = inner.with_recognized().parse_next(input)?;
 
     Ok(paths
         .into_iter()
         .unique()
-        .map(|path| GhcMessage::Diagnostic {
-            severity: Severity::Error,
-            path: Some(path),
-            span: Default::default(),
-            message: message.clone(),
+        .map(|path| {
+            GhcMessage::Diagnostic(GhcDiagnostic {
+                severity: Severity::Error,
+                path: Some(path),
+                span: Default::default(),
+                message: message.to_owned(),
+            })
         })
         .collect())
 }
@@ -86,84 +86,83 @@ mod tests {
 
     #[test]
     fn test_parse_module_import_cycle_message() {
-        // It's not convenient to use `indoc!` here because all of the lines have leading
-        // whitespace.
-        let message = [
-            "        module ‘C’ (./C.hs)",
-            "        imports module ‘A’ (A.hs)",
-            "  which imports module ‘B’ (./B.hs)",
-            "  which imports module ‘C’ (./C.hs)",
-            "",
-        ]
-        .join("\n");
+        let message = indoc!(
+            "
+            Module graph contains a cycle:
+                    module ‘C’ (./C.hs)
+                    imports module ‘A’ (A.hs)
+              which imports module ‘B’ (./B.hs)
+              which imports module ‘C’ (./C.hs)
+            "
+        );
 
         assert_eq!(
-            module_import_cycle_diagnostic
-                .parse(&format!("Module graph contains a cycle:\n{message}"))
-                .unwrap(),
+            module_import_cycle_diagnostic.parse(message).unwrap(),
             vec![
-                GhcMessage::Diagnostic {
+                GhcMessage::Diagnostic(GhcDiagnostic {
+                    severity: Severity::Error,
+                    path: Some("./C.hs".into()),
+                    span: Default::default(),
+                    message: message.to_owned()
+                }),
+                GhcMessage::Diagnostic(GhcDiagnostic {
+                    severity: Severity::Error,
+                    path: Some("A.hs".into()),
+                    span: Default::default(),
+                    message: message.to_owned()
+                }),
+                GhcMessage::Diagnostic(GhcDiagnostic {
+                    severity: Severity::Error,
+                    path: Some("./B.hs".into()),
+                    span: Default::default(),
+                    message: message.to_owned()
+                }),
+            ]
+        );
+
+        let message = message.replace(
+            "Module graph contains a cycle:",
+            "Module imports form a cycle:",
+        );
+
+        assert_eq!(
+            module_import_cycle_diagnostic.parse(&message).unwrap(),
+            vec![
+                GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
                     path: Some("./C.hs".into()),
                     span: Default::default(),
                     message: message.clone()
-                },
-                GhcMessage::Diagnostic {
+                }),
+                GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
                     path: Some("A.hs".into()),
                     span: Default::default(),
                     message: message.clone()
-                },
-                GhcMessage::Diagnostic {
+                }),
+                GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
                     path: Some("./B.hs".into()),
                     span: Default::default(),
                     message: message.clone()
-                },
+                }),
             ]
         );
 
-        assert_eq!(
-            module_import_cycle_diagnostic
-                .parse(&format!("Module imports form a cycle:\n{message}"))
-                .unwrap(),
-            vec![
-                GhcMessage::Diagnostic {
-                    severity: Severity::Error,
-                    path: Some("./C.hs".into()),
-                    span: Default::default(),
-                    message: message.clone()
-                },
-                GhcMessage::Diagnostic {
-                    severity: Severity::Error,
-                    path: Some("A.hs".into()),
-                    span: Default::default(),
-                    message: message.clone()
-                },
-                GhcMessage::Diagnostic {
-                    severity: Severity::Error,
-                    path: Some("./B.hs".into()),
-                    span: Default::default(),
-                    message: message.clone()
-                },
-            ]
+        let message = indoc!(
+            "
+            Module graph contains a cycle:
+              module ‘A’ (A.hs) imports itself
+            "
         );
-
         assert_eq!(
-            module_import_cycle_diagnostic
-                .parse(indoc!(
-                    "
-                    Module graph contains a cycle:
-                      module ‘A’ (A.hs) imports itself
-                    "
-                ))
-                .unwrap(),
-            vec![GhcMessage::Diagnostic {
+            module_import_cycle_diagnostic.parse(message).unwrap(),
+            vec![GhcMessage::Diagnostic(GhcDiagnostic {
                 severity: Severity::Error,
                 path: Some("A.hs".into()),
                 span: Default::default(),
-                message: "  module ‘A’ (A.hs) imports itself\n".into()
-            },]
+                message: message.into(),
+            })]
         );
 
         // Shouldn't parse anything after the message
@@ -176,5 +175,32 @@ mod tests {
                     "
             ))
             .is_err(),);
+    }
+
+    #[test]
+    fn test_import_cycle_diagnostic_display() {
+        let message = indoc!(
+            "
+            Module graph contains a cycle:
+                    module ‘C’ (./C.hs)
+                    imports module ‘A’ (A.hs)
+              which imports module ‘B’ (./B.hs)
+              which imports module ‘C’ (./C.hs)
+            "
+        );
+
+        assert_eq!(
+            module_import_cycle_diagnostic
+                .parse(message)
+                .unwrap()
+                .into_iter()
+                .map(|message| message.into_diagnostic().unwrap().to_string())
+                .collect::<Vec<_>>(),
+            vec![
+                format!("./C.hs: error: {message}"),
+                format!("A.hs: error: {message}"),
+                format!("./B.hs: error: {message}"),
+            ]
+        );
     }
 }

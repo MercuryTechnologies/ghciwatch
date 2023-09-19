@@ -374,4 +374,31 @@ mod tests {
             ..event.clone()
         }));
     }
+
+    #[test]
+    fn test_matcher_in_span() {
+        assert!(Matcher::span_close()
+            .in_span("error_log_write")
+            .matches(&Event {
+                timestamp: "2023-09-12T18:06:04.677942Z".into(),
+                level: Level::DEBUG,
+                message: "close".into(),
+                fields: [
+                    ("message".into(), "close".into()),
+                    ("time.busy".into(), "206µs".into()),
+                    ("time.idle".into(), "246µs".into()),
+                ]
+                .into(),
+                target: "ghcid_ng::ghci::error_log".into(),
+                span: Some(Span {
+                    name: "error_log_write".into(),
+                    rest: [(
+                        "compilation_summary".into(),
+                        "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
+                    )]
+                    .into(),
+                }),
+                spans: vec![Span::new("on_action"), Span::new("reload"),]
+            }));
+    }
 }

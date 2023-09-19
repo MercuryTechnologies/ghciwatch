@@ -18,30 +18,25 @@ async fn can_run_test_suite_on_reload() {
         .wait_until_ready()
         .await
         .expect("ghcid-ng loads ghci");
+
     fs::touch(session.path("src/MyLib.hs"))
         .await
         .expect("Can touch file");
+
+    session
+        .get_log(Matcher::span_close().in_span("error_log_write"))
+        .await
+        .expect("ghcid-ng writes ghcid.txt");
     session
         .get_log("Finished running tests")
         .await
         .expect("ghcid-ng runs the test suite");
 
-    session
-        .get_log(
-            Matcher::span_close()
-                .in_span("write")
-                .in_module("ghcid_ng::ghci::stderr"),
-        )
-        .await
-        .expect("ghcid-ng writes ghcid.txt");
-
     let error_contents = fs::read(&error_path)
         .await
         .expect("ghcid-ng writes ghcid.txt");
-
     expect![[r#"
-        Ok, four modules loaded.
-        0 tests executed, 0 failures :)
+        All good (4 modules)
     "#]]
     .assert_eq(&error_contents);
 }

@@ -570,7 +570,6 @@ dependencies = [
  "tap",
  "test-harness",
  "textwrap 0.16.0",
- "time",
  "tokio",
  "tracing",
  "tracing-subscriber",
