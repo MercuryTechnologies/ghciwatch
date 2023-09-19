@@ -81,18 +81,19 @@ impl GhciStdin {
     pub async fn test(
         &mut self,
         stdout: &mut GhciStdout,
-        test_command: Option<GhciCommand>,
+        test_commands: &[GhciCommand],
     ) -> miette::Result<()> {
-        if let Some(test_command) = test_command {
+        if test_commands.is_empty() {
+            tracing::debug!("No test command provided, not running tests");
+        }
+        for test_command in test_commands {
             self.set_mode(stdout, Mode::Testing).await?;
             tracing::debug!(command = %test_command, "Running user test command");
-            tracing::info!("Running tests");
+            tracing::info!("Running tests: {test_command}");
             let start_time = Instant::now();
             self.write_line(stdout, &format!("{test_command}\n"))
                 .await?;
             tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
-        } else {
-            tracing::debug!("No test command provided, not running tests");
         }
 
         Ok(())

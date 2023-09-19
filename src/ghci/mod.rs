@@ -85,8 +85,8 @@ pub struct GhciOpts {
     pub before_startup_shell: Vec<ClonableCommand>,
     /// `ghci` commands to run after starting or restarting `ghci`.
     pub after_startup_ghci: Vec<GhciCommand>,
-    /// `ghci` command which runs tests.
-    pub test_ghci: Option<GhciCommand>,
+    /// `ghci` commands which run tests.
+    pub test_ghci: Vec<GhciCommand>,
     /// Enable running eval commands in files.
     pub enable_eval: bool,
 }
@@ -399,7 +399,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
         self.stdin
-            .test(&mut self.stdout, self.opts.test_ghci.clone())
+            .test(&mut self.stdout, &self.opts.test_ghci)
             .await?;
         Ok(())
     }

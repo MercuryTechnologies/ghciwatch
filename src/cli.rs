@@ -25,10 +25,10 @@ pub struct Opts {
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
 
-    /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
+    /// `ghci` commands which runs tests, like `TestMain.testMain`. If given, these commands will be
     /// run after reloads.
     #[arg(long, value_name = "GHCI_COMMAND")]
-    pub test_ghci: Option<GhciCommand>,
+    pub test_ghci: Vec<GhciCommand>,
 
     /// Shell commands to run before starting or restarting `ghci`.
     ///
@@ -40,6 +40,14 @@ pub struct Opts {
     /// the command-line arguments for tests.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub after_startup_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run before reloading `ghci`.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub before_reload_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run after reloading `ghci`.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub after_reload_ghci: Vec<GhciCommand>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
     #[arg(long)]
