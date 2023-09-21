@@ -30,9 +30,10 @@ pub struct ShowPaths {
 impl ShowPaths {
     /// Convert a target (from `:show targets` output) to a module source path.
     pub fn target_to_path(&self, target: &str) -> miette::Result<Utf8PathBuf> {
-        if is_haskell_source_file(Utf8Path::new(target)) {
+        let target_path = Utf8Path::new(target);
+        if is_haskell_source_file(target_path) {
             // The target is already a path.
-            if let Some(path) = self.target_path_to_path(Utf8Path::new(target)) {
+            if let Some(path) = self.target_path_to_path(target_path) {
                 return Ok(path);
             }
         } else {
