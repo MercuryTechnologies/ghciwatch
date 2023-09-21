@@ -48,6 +48,7 @@ pub use ghci_command::GhciCommand;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
+use crate::cli::HookOpts;
 use crate::cli::Opts;
 use crate::command;
 use crate::command::ClonableCommand;
@@ -81,14 +82,10 @@ pub struct GhciOpts {
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
     pub error_path: Option<Utf8PathBuf>,
-    /// Shell commands to run before starting or restarting `ghci`.
-    pub before_startup_shell: Vec<ClonableCommand>,
-    /// `ghci` commands to run after starting or restarting `ghci`.
-    pub after_startup_ghci: Vec<GhciCommand>,
-    /// `ghci` commands which run tests.
-    pub test_ghci: Vec<GhciCommand>,
     /// Enable running eval commands in files.
     pub enable_eval: bool,
+    /// Lifecycle hooks, mostly `ghci` commands to run at certain points.
+    pub hooks: HookOpts,
 }
 
 impl GhciOpts {
@@ -107,10 +104,8 @@ impl GhciOpts {
         Ok(Self {
             command,
             error_path: opts.errors.clone(),
-            before_startup_shell: opts.before_startup_shell.clone(),
-            after_startup_ghci: opts.after_startup_ghci.clone(),
-            test_ghci: opts.test_ghci.clone(),
             enable_eval: opts.enable_eval,
+            hooks: opts.hooks.clone(),
         })
     }
 }
@@ -165,7 +160,7 @@ impl Ghci {
         {
             let span = tracing::debug_span!("before_startup_shell");
             let _enter = span.enter();
-            for command in &opts.before_startup_shell {
+            for command in &opts.hooks.before_startup_shell {
                 let program = &command.program;
                 let mut command = command.as_tokio();
                 let command_formatted = command::format(&command);
@@ -262,7 +257,7 @@ impl Ghci {
 
         // Perform start-of-session initialization.
         ret.stdin
-            .initialize(&mut ret.stdout, &ret.opts.after_startup_ghci)
+            .initialize(&mut ret.stdout, &ret.opts.hooks.after_startup_ghci)
             .await?;
 
         // Sync up for any prompts.
@@ -330,6 +325,11 @@ impl Ghci {
     /// This may fully restart the `ghci` process.
     #[instrument(skip_all, level = "debug")]
     pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
+        for command in &self.opts.hooks.before_reload_ghci {
+            tracing::info!(%command, "Running before-reload command");
+            self.stdin.run_command(&mut self.stdout, command).await?;
+        }
+
         let actions = self.get_reload_actions(events).await?;
 
         if !actions.needs_restart.is_empty() {
@@ -337,9 +337,17 @@ impl Ghci {
                 "Restarting ghci due to deleted/moved modules:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
+            for command in &self.opts.hooks.before_restart_ghci {
+                tracing::info!(%command, "Running before-restart command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
+            }
             self.stop().await?;
             let new = Self::new(self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
+            for command in &self.opts.hooks.after_restart_ghci {
+                tracing::info!(%command, "Running after-restart command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
+            }
         }
 
         let mut compilation_failed = false;
@@ -368,6 +376,11 @@ impl Ghci {
             }
             self.refresh_eval_commands_for_paths(&actions.needs_reload)
                 .await?;
+        }
+
+        for command in &self.opts.hooks.after_reload_ghci {
+            tracing::info!(%command, "Running after-reload command");
+            self.stdin.run_command(&mut self.stdout, command).await?;
         }
 
         if actions.needs_add_or_reload() {
@@ -399,7 +412,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     pub async fn test(&mut self) -> miette::Result<()> {
         self.stdin
-            .test(&mut self.stdout, &self.opts.test_ghci)
+            .test(&mut self.stdout, &self.opts.hooks.test_ghci)
             .await?;
         Ok(())
     }
