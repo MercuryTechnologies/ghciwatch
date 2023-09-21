@@ -252,13 +252,14 @@ impl Ghci {
         ret.stderr_handle = stderr;
 
         // Wait for the stdout job to start up.
-        let messages = ret.stdout.initialize().await?;
-        ret.process_ghc_messages(messages).await?;
+        ret.stdout.initialize().await?;
 
         // Perform start-of-session initialization.
-        ret.stdin
+        let messages = ret
+            .stdin
             .initialize(&mut ret.stdout, &ret.opts.hooks.after_startup_ghci)
             .await?;
+        ret.process_ghc_messages(messages).await?;
 
         // Sync up for any prompts.
         ret.sync().await?;

@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 use tracing::instrument;
 
 use crate::haskell_show::HaskellShow;
+use crate::incremental_reader::FindAt;
 use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::GhcMessage;
@@ -33,17 +34,32 @@ impl GhciStdin {
     /// Write a line on `stdin` and wait for a prompt on stdout.
     ///
     /// The `line` should contain the trailing newline.
+    ///
+    /// The `find` parameter determines where the prompt can be found in the output line.
     #[instrument(skip(self, stdout), level = "debug")]
-    async fn write_line(
+    async fn write_line_with_prompt_at(
         &mut self,
         stdout: &mut GhciStdout,
         line: &str,
+        find: FindAt,
     ) -> miette::Result<Vec<GhcMessage>> {
         self.stdin
             .write_all(line.as_bytes())
             .await
             .into_diagnostic()?;
-        stdout.prompt(None).await
+        stdout.prompt(find).await
+    }
+
+    /// Write a line on `stdin` and wait for a prompt on stdout.
+    ///
+    /// The `line` should contain the trailing newline.
+    async fn write_line(
+        &mut self,
+        stdout: &mut GhciStdout,
+        line: &str,
+    ) -> miette::Result<Vec<GhcMessage>> {
+        self.write_line_with_prompt_at(stdout, line, FindAt::LineStart)
+            .await
     }
 
     /// Run a [`GhciCommand`].
@@ -63,7 +79,7 @@ impl GhciStdin {
                 .await
                 .into_diagnostic()?;
             self.stdin.write_all(b"\n").await.into_diagnostic()?;
-            ret.extend(stdout.prompt(None).await?);
+            ret.extend(stdout.prompt(FindAt::LineStart).await?);
         }
 
         Ok(ret)
@@ -74,10 +90,14 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         setup_commands: &[GhciCommand],
-    ) -> miette::Result<()> {
-        self.set_mode(stdout, Mode::Internal).await?;
-        self.write_line(stdout, &format!(":set prompt {PROMPT}\n"))
+    ) -> miette::Result<Vec<GhcMessage>> {
+        // We tell stdout/stderr we're compiling for the first prompt because this includes all the
+        // module compilation before the first prompt.
+        self.set_mode(stdout, Mode::Compiling).await?;
+        let messages = self
+            .write_line_with_prompt_at(stdout, &format!(":set prompt {PROMPT}\n"), FindAt::Anywhere)
             .await?;
+        self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
             .await?;
         self.write_line(
@@ -91,7 +111,7 @@ impl GhciStdin {
             self.run_command(stdout, command).await?;
         }
 
-        Ok(())
+        Ok(messages)
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -200,7 +220,7 @@ impl GhciStdin {
             .write_all(format!(":module + *{module}\n").as_bytes())
             .await
             .into_diagnostic()?;
-        stdout.prompt(None).await?;
+        stdout.prompt(FindAt::LineStart).await?;
 
         self.run_command(stdout, command).await?;
 
@@ -208,7 +228,7 @@ impl GhciStdin {
             .write_all(format!(":module - *{module}\n").as_bytes())
             .await
             .into_diagnostic()?;
-        stdout.prompt(None).await?;
+        stdout.prompt(FindAt::LineStart).await?;
 
         Ok(())
     }

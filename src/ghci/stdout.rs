@@ -8,7 +8,9 @@ use tokio::sync::oneshot;
 use tracing::instrument;
 
 use crate::aho_corasick::AhoCorasickExt;
+use crate::incremental_reader::FindAt;
 use crate::incremental_reader::IncrementalReader;
+use crate::incremental_reader::ReadOpts;
 use crate::incremental_reader::WriteBehavior;
 use crate::sync_sentinel::SyncSentinel;
 
@@ -37,7 +39,7 @@ pub struct GhciStdout {
 
 impl GhciStdout {
     #[instrument(skip_all, name = "stdout_initialize", level = "debug")]
-    pub async fn initialize(&mut self) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn initialize(&mut self) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -46,36 +48,28 @@ impl GhciStdout {
         ]);
         let data = self
             .reader
-            .read_until(&bootup_patterns, WriteBehavior::Write, &mut self.buffer)
+            .read_until(&mut ReadOpts {
+                end_marker: &bootup_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Write,
+                buffer: &mut self.buffer,
+            })
             .await?;
         tracing::debug!(data, "ghci started, saw version marker");
 
-        // We know that we'll get _one_ `ghci> ` prompt on startup.
-        let init_prompt_patterns = AhoCorasick::from_anchored_patterns(["ghci> "]);
-        let messages = self.prompt(Some(&init_prompt_patterns)).await?;
-        tracing::debug!("Saw initial `ghci> ` prompt");
-
-        Ok(messages)
+        Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn prompt(
-        &mut self,
-        // We usually want this to be `&self.prompt_patterns`, but when we initialize we want to
-        // pass in a different value. This method takes an `&mut self` reference, so if we try to
-        // pass in `&self.prompt_patterns` when we call it we get a borrow error because the
-        // compiler doesn't know we don't mess with `self.prompt_patterns` in here. So we use
-        // `None` to represent that case and handle the default inline.
-        prompt_patterns: Option<&AhoCorasick>,
-    ) -> miette::Result<Vec<GhcMessage>> {
-        let prompt_patterns = prompt_patterns.unwrap_or(&self.prompt_patterns);
+    pub async fn prompt(&mut self, find: FindAt) -> miette::Result<Vec<GhcMessage>> {
         let data = self
             .reader
-            .read_until(
-                prompt_patterns,
-                WriteBehavior::NoFinalLine,
-                &mut self.buffer,
-            )
+            .read_until(&mut ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find,
+                writing: WriteBehavior::NoFinalLine,
+                buffer: &mut self.buffer,
+            })
             .await?;
         tracing::debug!(bytes = data.len(), "Got data from ghci");
 
@@ -110,12 +104,22 @@ impl GhciStdout {
         let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
         let data = self
             .reader
-            .read_until(&sync_pattern, WriteBehavior::NoFinalLine, &mut self.buffer)
+            .read_until(&mut ReadOpts {
+                end_marker: &sync_pattern,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::NoFinalLine,
+                buffer: &mut self.buffer,
+            })
             .await?;
         // Then make sure to consume the prompt on the next line, and then we'll be caught up.
         let _ = self
             .reader
-            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .read_until(&mut ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut self.buffer,
+            })
             .await?;
         tracing::debug!(data, "Synced with ghci");
 
@@ -127,7 +131,12 @@ impl GhciStdout {
     pub async fn show_paths(&mut self) -> miette::Result<ShowPaths> {
         let lines = self
             .reader
-            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .read_until(&mut ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut self.buffer,
+            })
             .await?;
         parse_show_paths(&lines).wrap_err("Failed to parse `:show paths` output")
     }
@@ -136,7 +145,12 @@ impl GhciStdout {
     pub async fn show_targets(&mut self, search_paths: &ShowPaths) -> miette::Result<ModuleSet> {
         let lines = self
             .reader
-            .read_until(&self.prompt_patterns, WriteBehavior::Hide, &mut self.buffer)
+            .read_until(&mut ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut self.buffer,
+            })
             .await?;
         let paths = parse_show_targets(search_paths, &lines)
             .wrap_err("Failed to parse `:show targets` output")?;
