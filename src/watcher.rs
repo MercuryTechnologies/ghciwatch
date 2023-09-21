@@ -13,9 +13,10 @@ use watchexec::action::Action;
 use watchexec::action::Outcome;
 use watchexec::config::InitConfig;
 use watchexec::config::RuntimeConfig;
+use watchexec::error::RuntimeError;
 use watchexec::event::Event;
 use watchexec::handler::Handler;
-use watchexec::handler::PrintDebug;
+use watchexec::ErrorHook;
 use watchexec::Watchexec;
 use watchexec_signals::Signal;
 
@@ -65,7 +66,24 @@ impl Watcher {
     /// Create a new [`Watcher`] from a [`Ghci`] session.
     pub fn new(ghci: Ghci, opts: WatcherOpts) -> miette::Result<Self> {
         let mut init_config = InitConfig::default();
-        init_config.on_error(PrintDebug(std::io::stderr()));
+        init_config.on_error(|error_hook: ErrorHook| async move {
+            match error_hook.error {
+                RuntimeError::Exit => {
+                    // Graceful exit.
+                }
+                RuntimeError::Handler { err, .. } => {
+                    // The `RuntimeError` display isn't great for these errors, it prefixes some
+                    // nonsense like `handler error while action worker`. Let's just print our
+                    // contained error.
+                    tracing::error!("{}", err);
+                }
+                err => {
+                    // Some other error.
+                    tracing::error!("{}", err);
+                }
+            }
+            Ok::<(), RuntimeError>(())
+        });
 
         let action_handler = ActionHandler { ghci };
 
@@ -117,8 +135,9 @@ impl ActionHandler {
         let events = file_events_from_action(&action)?;
         if events.is_empty() {
             tracing::debug!("No relevant file events");
-        } else {
-            self.ghci.reload(events).await?;
+        } else if let Err(err) = self.ghci.reload(events).await {
+            tracing::error!("{err:?}");
+            action.outcome(Outcome::Exit);
         }
 
         Ok(())
