@@ -24,7 +24,7 @@ use super::lines::until_newline;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalCommand {
     /// The Haskell code or `ghci` command to evaluate.
-    command: GhciCommand,
+    pub command: GhciCommand,
     /// The `command` in a user-friendly format. In particular, multiline commands aren't wrapped
     /// with `:{` and `:}`.
     display_command: String,
@@ -34,13 +34,6 @@ pub struct EvalCommand {
     column: usize,
     /// The byte offsets corresponding to the span this command is from.
     byte_span: Range<usize>,
-}
-
-impl EvalCommand {
-    /// Get the contained command.
-    pub fn as_command(&self) -> &GhciCommand {
-        &self.command
-    }
 }
 
 impl Display for EvalCommand {

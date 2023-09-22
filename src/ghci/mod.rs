@@ -416,7 +416,7 @@ impl Ghci {
                 tracing::info!("{path}:{command}");
                 let module_name = self.search_paths.path_to_module(path)?;
                 self.stdin
-                    .eval(&mut self.stdout, &module_name, command.as_command())
+                    .eval(&mut self.stdout, &module_name, &command.command)
                     .await?;
             }
         }
