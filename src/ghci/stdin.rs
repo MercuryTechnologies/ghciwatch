@@ -14,7 +14,9 @@ use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::GhcMessage;
 use super::parse::ModuleSet;
+use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
+use super::GhciCommand;
 use super::Mode;
 use super::IO_MODULE_NAME;
 use super::PROMPT;
@@ -32,7 +34,7 @@ impl GhciStdin {
     ///
     /// The `line` should contain the trailing newline.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn write_line(
+    async fn write_line(
         &mut self,
         stdout: &mut GhciStdout,
         line: &str,
@@ -48,7 +50,7 @@ impl GhciStdin {
     pub async fn initialize(
         &mut self,
         stdout: &mut GhciStdout,
-        setup_commands: &[String],
+        setup_commands: &[GhciCommand],
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt {PROMPT}\n"))
@@ -62,7 +64,7 @@ impl GhciStdin {
         .await?;
 
         for command in setup_commands {
-            tracing::debug!(command, "Running user intialization command");
+            tracing::debug!(%command, "Running user intialization command");
             self.write_line(stdout, &format!("{command}\n")).await?;
         }
 
@@ -79,11 +81,11 @@ impl GhciStdin {
     pub async fn test(
         &mut self,
         stdout: &mut GhciStdout,
-        test_command: Option<String>,
+        test_command: Option<GhciCommand>,
     ) -> miette::Result<()> {
         if let Some(test_command) = test_command {
             self.set_mode(stdout, Mode::Testing).await?;
-            tracing::debug!(command = test_command, "Running user test command");
+            tracing::debug!(command = %test_command, "Running user test command");
             tracing::info!("Running tests");
             let start_time = Instant::now();
             self.write_line(stdout, &format!("{test_command}\n"))
@@ -135,15 +137,64 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn show_modules(&mut self, stdout: &mut GhciStdout) -> miette::Result<ModuleSet> {
+    pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
         self.set_mode(stdout, Mode::Internal).await?;
 
         self.stdin
-            .write_all(b":show modules\n")
+            .write_all(b":show paths\n")
             .await
             .into_diagnostic()?;
 
-        stdout.show_modules().await
+        stdout.show_paths().await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn show_targets(
+        &mut self,
+        stdout: &mut GhciStdout,
+        show_paths: &ShowPaths,
+    ) -> miette::Result<ModuleSet> {
+        self.set_mode(stdout, Mode::Internal).await?;
+
+        self.stdin
+            .write_all(b":show targets\n")
+            .await
+            .into_diagnostic()?;
+
+        stdout.show_targets(show_paths).await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn eval(
+        &mut self,
+        stdout: &mut GhciStdout,
+        module: &str,
+        command: &GhciCommand,
+    ) -> miette::Result<()> {
+        self.set_mode(stdout, Mode::Internal).await?;
+
+        self.stdin
+            .write_all(format!(":module + *{module}\n").as_bytes())
+            .await
+            .into_diagnostic()?;
+        stdout.prompt(None).await?;
+
+        for line in command.as_ref().lines() {
+            self.stdin
+                .write_all(line.as_bytes())
+                .await
+                .into_diagnostic()?;
+            self.stdin.write_all(b"\n").await.into_diagnostic()?;
+            stdout.prompt(None).await?;
+        }
+
+        self.stdin
+            .write_all(format!(":module - *{module}\n").as_bytes())
+            .await
+            .into_diagnostic()?;
+        stdout.prompt(None).await?;
+
+        Ok(())
     }
 
     #[instrument(skip(self, stdout), level = "trace")]

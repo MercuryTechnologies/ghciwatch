@@ -22,6 +22,7 @@ pub mod haskell_show;
 pub mod haskell_source_file;
 pub mod incremental_reader;
 pub mod lines;
+pub mod normal_path;
 pub mod sync_sentinel;
 pub mod textwrap;
 pub mod tracing;

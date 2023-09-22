@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::Event;
 
 /// An [`Event`] matcher.
+#[derive(Clone)]
 pub struct Matcher {
     message: Regex,
     target: Option<String>,
@@ -191,6 +192,12 @@ pub trait IntoMatcher {
 impl IntoMatcher for Matcher {
     fn into_matcher(self) -> miette::Result<Matcher> {
         Ok(self)
+    }
+}
+
+impl IntoMatcher for &Matcher {
+    fn into_matcher(self) -> miette::Result<Matcher> {
+        Ok(self.clone())
     }
 }
 

@@ -1,30 +1,30 @@
+use std::borrow::Borrow;
+use std::cmp::Eq;
+use std::collections::hash_set::Iter;
 use std::collections::HashSet;
+use std::hash::Hash;
+use std::path::Path;
 
-use camino::Utf8Path;
-use camino::Utf8PathBuf;
-use miette::Context;
-use miette::IntoDiagnostic;
-
-use super::Module;
+use crate::normal_path::NormalPath;
 
 /// A collection of source paths, retaining information about loaded modules in a `ghci`
 /// session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleSet {
-    set: HashSet<Utf8PathBuf>,
+    set: HashSet<NormalPath>,
 }
 
 impl ModuleSet {
-    /// Parse a `ModuleSet` from a set of lines read from `ghci` stdout.
-    pub fn from_lines(lines: &str) -> miette::Result<Self> {
+    /// Construct a `ModuleSet` from an iterator of module source paths.
+    pub fn from_paths(
+        paths: impl IntoIterator<Item = impl AsRef<Path>>,
+        current_dir: impl AsRef<Path>,
+    ) -> miette::Result<Self> {
+        let current_dir = current_dir.as_ref();
         Ok(Self {
-            set: lines
-                .lines()
-                .map(|line| {
-                    line.parse::<Module>()
-                        .wrap_err("Failed to parse `:show modules` line")
-                        .and_then(|module| canonicalize(&module.path))
-                })
+            set: paths
+                .into_iter()
+                .map(|path| NormalPath::new(path.as_ref(), current_dir))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -45,33 +45,33 @@ impl ModuleSet {
     }
 
     /// Determine if a module with the given source path is contained in this module set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn contains_source_path(&self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.set.contains(&canonicalize(path)?))
+    pub fn contains_source_path<P>(&self, path: &P) -> miette::Result<bool>
+    where
+        NormalPath: Borrow<P>,
+        P: Hash + Eq + ?Sized,
+    {
+        Ok(self.set.contains(path))
     }
 
     /// Add a source path to this module set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn insert_source_path(&mut self, path: &Utf8Path) -> miette::Result<()> {
-        self.set.insert(canonicalize(path)?);
+    pub fn insert_source_path(&mut self, path: NormalPath) -> miette::Result<()> {
+        self.set.insert(path);
         Ok(())
     }
 
     /// Remove a source path from this module set.
     ///
     /// Returns whether the path was present in the set.
-    ///
-    /// Returns `Err` if the `path` cannot be canonicalized.
-    pub fn remove_source_path(&mut self, path: &Utf8Path) -> miette::Result<bool> {
-        Ok(self.set.remove(&canonicalize(path)?))
+    pub fn remove_source_path<P>(&mut self, path: &P)
+    where
+        NormalPath: Borrow<P>,
+        P: Hash + Eq,
+    {
+        self.set.remove(path);
     }
-}
 
-/// Canonicalize the given path.
-fn canonicalize(path: &Utf8Path) -> miette::Result<Utf8PathBuf> {
-    path.canonicalize_utf8()
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to canonicalize path: {path:?}"))
+    /// Iterate over the source paths in this module set.
+    pub fn iter(&self) -> Iter<'_, NormalPath> {
+        self.set.iter()
+    }
 }

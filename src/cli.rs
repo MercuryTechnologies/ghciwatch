@@ -10,6 +10,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
 use crate::command::ClonableCommand;
+use crate::ghci::GhciCommand;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
 #[derive(Debug, Clone, Parser)]
@@ -27,7 +28,7 @@ pub struct Opts {
     /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
     /// run after reloads.
     #[arg(long, value_name = "GHCI_COMMAND")]
-    pub test_ghci: Option<String>,
+    pub test_ghci: Option<GhciCommand>,
 
     /// Shell commands to run before starting or restarting `ghci`.
     ///
@@ -38,11 +39,18 @@ pub struct Opts {
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
     #[arg(long, value_name = "GHCI_COMMAND")]
-    pub after_startup_ghci: Vec<String>,
+    pub after_startup_ghci: Vec<GhciCommand>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
     #[arg(long)]
     pub errors: Option<Utf8PathBuf>,
+
+    /// Enable evaluating commands.
+    ///
+    /// This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>`
+    /// and `<$ -}` and evaluates them after reloads.
+    #[arg(long)]
+    pub enable_eval: bool,
 
     /// Options to modify file watching.
     #[command(flatten)]

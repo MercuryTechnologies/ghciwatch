@@ -66,7 +66,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghcid-ng loads new modules");
 
     session
-        .get_log(Matcher::span_close().in_span("error_log_write"))
+        .assert_logged(Matcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghcid-ng writes ghcid.txt");
 
@@ -106,12 +106,12 @@ async fn can_write_error_log_compilation_errors() {
         .unwrap();
 
     session
-        .wait_until_reload()
+        .wait_until_add()
         .await
         .expect("ghcid-ng reloads on changes");
 
     session
-        .get_log(Matcher::span_close().in_span("error_log_write"))
+        .assert_logged(Matcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghcid-ng writes ghcid.txt");
 

@@ -1,17 +1,31 @@
 use winnow::combinator::terminated;
+use winnow::stream::AsChar;
+use winnow::stream::FindSlice;
+use winnow::stream::Stream;
+use winnow::stream::StreamIsPartial;
 use winnow::token::take_until0;
 use winnow::PResult;
 use winnow::Parser;
 
 /// Parse the rest of a line, including the newline character.
-pub fn rest_of_line<'i>(input: &mut &'i str) -> PResult<&'i str> {
+pub fn rest_of_line<I>(input: &mut I) -> PResult<<I as Stream>::Slice>
+where
+    I: Stream + StreamIsPartial + for<'i> FindSlice<&'i str>,
+    <I as Stream>::Token: AsChar,
+    <I as Stream>::Token: Clone,
+{
     until_newline.recognize().parse_next(input)
 }
 
 /// Parse the rest of a line, including the newline character, but do not return the newline
 /// character in the output.
-pub fn until_newline<'i>(input: &mut &'i str) -> PResult<&'i str> {
-    terminated(take_until0("\n"), "\n").parse_next(input)
+pub fn until_newline<I>(input: &mut I) -> PResult<<I as Stream>::Slice>
+where
+    I: Stream + StreamIsPartial + for<'i> FindSlice<&'i str>,
+    <I as Stream>::Token: AsChar,
+    <I as Stream>::Token: Clone,
+{
+    terminated(take_until0("\n"), '\n').parse_next(input)
 }
 
 #[cfg(test)]

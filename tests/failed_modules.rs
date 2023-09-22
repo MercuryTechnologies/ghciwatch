@@ -18,7 +18,7 @@ async fn can_start_with_failed_modules() {
     let module_path = session.path(module_path);
 
     session
-        .get_log("Compilation failed")
+        .assert_logged("Compilation failed")
         .await
         .expect("ghcid-ng fails to load with errors");
 
@@ -29,7 +29,7 @@ async fn can_start_with_failed_modules() {
         .unwrap();
 
     session
-        .get_log("Compilation succeeded")
+        .assert_logged("Compilation succeeded")
         .await
         .expect("ghcid-ng reloads fixed modules");
 }

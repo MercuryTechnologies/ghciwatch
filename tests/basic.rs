@@ -44,7 +44,7 @@ async fn can_reload() {
         .await
         .expect("ghcid-ng reloads on changes");
     session
-        .get_log(
+        .assert_logged(
             Matcher::span_close()
                 .in_module("ghcid_ng::ghci")
                 .in_spans(["on_action", "reload"]),
@@ -108,7 +108,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghcid-ng loads new modules");
     session
-        .get_log(Matcher::message("Compilation failed").in_spans(["reload", "add_module"]))
+        .assert_logged(Matcher::message("Compilation failed").in_spans(["reload", "add_module"]))
         .await
         .unwrap();
 
@@ -117,11 +117,11 @@ async fn can_reload_after_error() {
         .unwrap();
 
     session
-        .wait_until_reload()
+        .wait_until_add()
         .await
         .expect("ghcid-ng reloads on changes");
     session
-        .get_log(Matcher::message("Compilation succeeded").in_span("reload"))
+        .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }
@@ -172,7 +172,7 @@ async fn can_restart_after_module_move() {
         .expect("ghcid-ng restarts ghci");
 
     session
-        .get_log(
+        .assert_logged(
             Matcher::message("Compiling")
                 .in_span("reload")
                 .with_field("module", r"My\.CoolModule"),
@@ -181,7 +181,7 @@ async fn can_restart_after_module_move() {
         .unwrap();
 
     session
-        .get_log(Matcher::message("Compilation succeeded").in_span("reload"))
+        .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }

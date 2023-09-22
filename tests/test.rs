@@ -24,11 +24,11 @@ async fn can_run_test_suite_on_reload() {
         .expect("Can touch file");
 
     session
-        .get_log(Matcher::span_close().in_span("error_log_write"))
+        .assert_logged(Matcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghcid-ng writes ghcid.txt");
     session
-        .get_log("Finished running tests")
+        .assert_logged("Finished running tests")
         .await
         .expect("ghcid-ng runs the test suite");
 
