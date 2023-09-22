@@ -127,6 +127,21 @@ impl GhciStdout {
         ModuleSet::from_paths(paths, &search_paths.cwd)
     }
 
+    #[instrument(skip_all, level = "debug")]
+    pub async fn quit(&mut self) -> miette::Result<()> {
+        let bootup_patterns = AhoCorasick::from_anchored_patterns(["Leaving GHCi."]);
+        let _data = self
+            .reader
+            .read_until(&mut ReadOpts {
+                end_marker: &bootup_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Write,
+                buffer: &mut self.buffer,
+            })
+            .await?;
+        Ok(())
+    }
+
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }

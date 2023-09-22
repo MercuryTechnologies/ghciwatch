@@ -6,20 +6,18 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tokio::process::Child;
 use tokio::sync::mpsc;
-use tokio::task;
-use tokio::task::JoinHandle;
+use tokio::sync::Mutex;
 use tracing::instrument;
 
 mod stdin;
@@ -30,6 +28,11 @@ use stdout::GhciStdout;
 
 mod stderr;
 use stderr::GhciStderr;
+
+mod process;
+use process::GhciProcess;
+
+pub mod manager;
 
 mod error_log;
 use error_log::ErrorLog;
@@ -53,10 +56,13 @@ use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::ghci::parse::ShowPaths;
+use crate::ghci::process::GhciProcessState;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
+use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
+use crate::ShutdownError;
 
 use self::parse::parse_eval_commands;
 
@@ -73,9 +79,8 @@ pub const IO_MODULE_NAME: &str = "GHCIWATCH_IO_INTERNAL__";
 /// because Rust tragically lacks named arguments.
 ///
 /// Some of the other `*Opts` structs include borrowed data from the [`Opts`] struct, but this one
-/// is fully owned; ultimately, this is because the [`watchexec::config::RuntimeConfig::on_action`]
-/// takes an owned value. If we ever move to using something like the `notify` crate directly, we
-/// could consider making this struct borrowed.
+/// is fully owned; ultimately, this is because [`Ghci`] is run through a [`ShutdownHandle`], which
+/// requires that the task is fully owned.
 #[derive(Debug, Clone)]
 pub struct GhciOpts {
     /// The command used to start the underlying `ghci` session.
@@ -122,14 +127,19 @@ pub struct Ghci {
     /// Options used to start this `ghci` session. We keep this around so we can reuse it when
     /// restarting this session.
     opts: GhciOpts,
-    /// The running `ghci` process.
-    process: Child,
-    /// The handle for the stderr reader task.
-    stderr_handle: JoinHandle<miette::Result<()>>,
+    /// The shutdown handle, used for performing or responding to graceful shutdowns.
+    shutdown: ShutdownHandle,
+    /// The state of the `ghci` session process.
+    process_state: Arc<Mutex<GhciProcessState>>,
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
     stdout: GhciStdout,
+    /// Sender for notifying the process watching job ([`GhciProcess`]) that we're shutting down
+    /// the `ghci` session on purpose. If the process watcher sees `ghci` exit, usually it will
+    /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
+    /// purpose, so this channel helps us avoid that.
+    restart_sender: mpsc::Sender<()>,
     /// Writer for `ghcid`-compatible output, useful for editor integration for diagnostics.
     error_log: ErrorLog,
     /// The set of targets for this `ghci` session, from `:show targets`.
@@ -148,23 +158,24 @@ pub struct Ghci {
 
 impl Debug for Ghci {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Ghci").field(&self.process).finish()
+        f.debug_tuple("Ghci").finish()
     }
 }
 
 impl Ghci {
-    /// Start a new `ghci` session using the given `command` to start `ghci`.
+    /// Start a new `ghci` session.
     ///
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(opts: GhciOpts) -> miette::Result<Self> {
+    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
         let start_instant = Instant::now();
 
         {
             let span = tracing::debug_span!("before_startup_shell");
             let _enter = span.enter();
             for command in &opts.hooks.before_startup_shell {
+                shutdown.error_if_shutdown_requested()?;
                 let program = &command.program;
                 let mut command = command.as_tokio();
                 let command_formatted = command.display();
@@ -191,11 +202,12 @@ impl Ghci {
                 .stdout(Stdio::piped())
                 .kill_on_drop(true);
 
-            command
-                .spawn()
-                .into_diagnostic()
-                .wrap_err_with(|| format!("Failed to start `{}`", command.display()))?
+            command.spawn_without_inheriting_sigint()?
         };
+
+        shutdown.error_if_shutdown_requested()?;
+
+        tracing::debug!(pid = child.id(), "Started ghci");
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -203,11 +215,6 @@ impl Ghci {
 
         // TODO: Is this a good capacity? Maybe it should just be 1.
         let (stderr_sender, stderr_receiver) = mpsc::channel(8);
-
-        // So we want to put references to the `Ghci` struct we return in our tasks, but we don't
-        // have that struct yet. So we create some trivial tasks to construct a valid `Ghci`, and
-        // then create weak pointers to it and swap out the tasks.
-        let stderr_handle = task::spawn(async { Ok(()) });
 
         let stdout = GhciStdout {
             reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
@@ -222,14 +229,43 @@ impl Ghci {
             stderr_sender: stderr_sender.clone(),
         };
 
+        shutdown
+            .spawn("ghci stderr".to_owned(), |shutdown| {
+                GhciStderr {
+                    shutdown,
+                    reader: BufReader::new(stderr).lines(),
+                    receiver: stderr_receiver,
+                    buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
+                    mode: Mode::Compiling,
+                }
+                .run()
+            })
+            .await;
+
+        let process_state: Arc<Mutex<GhciProcessState>> = Default::default();
+        let (restart_sender, restart_receiver) = mpsc::channel(1);
+
+        shutdown
+            .spawn("ghci process".to_owned(), |shutdown| {
+                GhciProcess {
+                    shutdown,
+                    restart_receiver,
+                    process: child,
+                    state: process_state.clone(),
+                }
+                .run()
+            })
+            .await;
+
         let error_log = ErrorLog::new(opts.error_path.clone());
 
         let mut ret = Ghci {
             opts,
-            process: child,
-            stderr_handle,
+            shutdown: shutdown.clone(),
+            process_state,
             stdin,
             stdout,
+            restart_sender,
             error_log,
             targets: Default::default(),
             eval_commands: Default::default(),
@@ -244,42 +280,41 @@ impl Ghci {
             },
         };
 
-        let stderr = task::spawn(
-            GhciStderr {
-                reader: BufReader::new(stderr).lines(),
-                receiver: stderr_receiver,
-                buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
-                mode: Mode::Compiling,
+        let setup = async {
+            // Wait for the stdout job to start up.
+            ret.stdout.initialize().await?;
+
+            // Perform start-of-session initialization.
+            let messages = ret
+                .stdin
+                .initialize(&mut ret.stdout, &ret.opts.hooks.after_startup_ghci)
+                .await?;
+            ret.process_ghc_messages(messages).await?;
+
+            // Get the initial list of targets.
+            ret.refresh_targets().await?;
+            // Get the initial list of eval commands.
+            ret.refresh_eval_commands().await?;
+
+            tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
+
+            // Run the eval commands, if any.
+            ret.eval().await?;
+            // Run the user-provided test command, if any.
+            ret.test().await?;
+
+            Ok::<_, miette::Report>(ret)
+        };
+
+        // Perform the rest of setup, or shutdown when requested.
+        tokio::select! {
+            ret = setup => {
+                ret
             }
-            .run(),
-        );
-
-        // Now, replace the `JoinHandle`s with the actual values.
-        ret.stderr_handle = stderr;
-
-        // Wait for the stdout job to start up.
-        ret.stdout.initialize().await?;
-
-        // Perform start-of-session initialization.
-        let messages = ret
-            .stdin
-            .initialize(&mut ret.stdout, &ret.opts.hooks.after_startup_ghci)
-            .await?;
-        ret.process_ghc_messages(messages).await?;
-
-        // Get the initial list of targets.
-        ret.refresh_targets().await?;
-        // Get the initial list of eval commands.
-        ret.refresh_eval_commands().await?;
-
-        tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
-
-        // Run the eval commands, if any.
-        ret.eval().await?;
-        // Run the user-provided test command, if any.
-        ret.test().await?;
-
-        Ok(ret)
+            _ = shutdown.on_shutdown_requested() => {
+                Err(ShutdownError.into())
+            }
+        }
     }
 
     async fn get_reload_actions(&self, events: Vec<FileEvent>) -> miette::Result<ReloadActions> {
@@ -349,11 +384,6 @@ impl Ghci {
     /// This may fully restart the `ghci` process.
     #[instrument(skip_all, level = "debug")]
     pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
-        // Check if `ghci` has exited.
-        if let Some(status) = self.process.try_wait().into_diagnostic()? {
-            return Err(miette!("ghci exited: {status}"));
-        }
-
         let actions = self.get_reload_actions(events).await?;
 
         if !actions.needs_restart.is_empty() {
@@ -366,7 +396,7 @@ impl Ghci {
                 self.stdin.run_command(&mut self.stdout, command).await?;
             }
             self.stop().await?;
-            let new = Self::new(self.opts.clone()).await?;
+            let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
             for command in &self.opts.hooks.after_restart_ghci {
                 tracing::info!(%command, "Running after-restart command");
@@ -554,13 +584,14 @@ impl Ghci {
     /// Stop this `ghci` session and cancel the async tasks associated with it.
     #[instrument(skip_all, level = "debug")]
     async fn stop(&mut self) -> miette::Result<()> {
-        // TODO: Worth canceling the `mpsc::Receiver`s in the tasks here?
-        // I'd need to add events for it.
-        self.stderr_handle.abort();
+        // Tell the `GhciProcess` that we're going to quit the session and it shouldn't quit
+        // `ghciwatch` in response.
+        let _ = self.restart_sender.try_send(());
 
-        // Kill the old `ghci` process.
-        // TODO: Worth trying `SIGINT` or closing stdin here?
-        self.process.kill().await.into_diagnostic()?;
+        self.stdin
+            .quit(&mut self.stdout)
+            .await
+            .wrap_err("Failed to `:quit` ghci")?;
 
         Ok(())
     }
@@ -610,6 +641,11 @@ impl Ghci {
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
         NormalPath::new(path, &self.search_paths.cwd)
+    }
+
+    /// Get the state of the process backing this session.
+    pub async fn get_process_state(&self) -> GhciProcessState {
+        *self.process_state.lock().await
     }
 }
 

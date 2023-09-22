@@ -4,7 +4,6 @@ use std::pin::Pin;
 
 use aho_corasick::AhoCorasick;
 use line_span::LineSpans;
-use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use tokio::io::AsyncRead;
@@ -94,7 +93,7 @@ where
         match self.reader.read(opts.buffer).await {
             Ok(0) => {
                 // EOF
-                Err(miette!("End-of-file reached"))
+                Ok(None)
             }
             Ok(n) => {
                 let decoded = std::str::from_utf8(&opts.buffer[..n])

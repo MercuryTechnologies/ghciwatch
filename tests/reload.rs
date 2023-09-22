@@ -32,11 +32,7 @@ async fn can_reload() {
         .await
         .expect("ghciwatch reloads on changes");
     session
-        .wait_for_log(
-            BaseMatcher::span_close()
-                .in_module("ghciwatch::ghci")
-                .in_spans(["on_action", "reload"]),
-        )
+        .wait_for_log(BaseMatcher::reload_completes())
         .await
         .expect("ghciwatch finishes reloading");
 }

@@ -2,6 +2,8 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub use serde_json::Value as JsonValue;
+
 mod tracing_json;
 pub use tracing_json::Event;
 

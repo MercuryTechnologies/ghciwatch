@@ -1,167 +1,178 @@
-//! A [`Watcher`], which waits for file changes and sends reload events to the `ghci` session.
-
-use std::error::Error;
-use std::sync::Arc;
 use std::time::Duration;
 
+use miette::miette;
+use miette::IntoDiagnostic;
+use notify_debouncer_full::notify;
+use notify_debouncer_full::notify::PollWatcher;
+use notify_debouncer_full::notify::RecommendedWatcher;
+use notify_debouncer_full::notify::RecursiveMode;
+use notify_debouncer_full::DebounceEventHandler;
+use notify_debouncer_full::DebounceEventResult;
+use notify_debouncer_full::Debouncer;
+use notify_debouncer_full::FileIdMap;
 use tokio::runtime::Handle;
+use tokio::sync::mpsc;
 use tokio::task::block_in_place;
-use tokio::task::JoinHandle;
 use tracing::instrument;
-use watchexec::action::Action;
-use watchexec::action::Outcome;
-use watchexec::config::InitConfig;
-use watchexec::config::RuntimeConfig;
-use watchexec::error::RuntimeError;
-use watchexec::event::Event;
-use watchexec::handler::Handler;
-use watchexec::ErrorHook;
-use watchexec::Watchexec;
-use watchexec_signals::Signal;
 
 use crate::cli::Opts;
 use crate::event_filter::file_events_from_action;
-use crate::ghci::Ghci;
+use crate::ghci::manager::GhciEvent;
 use crate::normal_path::NormalPath;
+use crate::shutdown::ShutdownHandle;
 
-/// Options for constructing a [`Watcher`]. This is like a lower-effort builder interface, mostly
+/// Options for [`run_watcher`]. This is like a lower-effort builder interface, mostly
 /// provided because Rust tragically lacks named arguments.
-pub struct WatcherOpts<'opts> {
+pub struct WatcherOpts {
     /// The paths to watch for changes.
-    pub watch: &'opts [NormalPath],
+    pub watch: Vec<NormalPath>,
     /// Paths to watch for changes and restart the `ghci` session on.
-    pub watch_restart: &'opts [NormalPath],
+    pub watch_restart: Vec<NormalPath>,
     /// Debounce duration for filesystem events.
     pub debounce: Duration,
     /// If given, use the polling file watcher with the given duration as the poll interval.
     pub poll: Option<Duration>,
     /// Extra file extensions to reload on.
-    pub extra_extensions: &'opts [String],
+    pub extra_extensions: Vec<String>,
 }
 
-impl<'opts> WatcherOpts<'opts> {
-    /// Construct options for [`Watcher`] from parsed command-line interface arguments as [`Opts`].
+impl WatcherOpts {
+    /// Construct options for [`run_watcher`] from parsed command-line interface arguments as [`Opts`].
     ///
-    /// This extracts the bits of an [`Opts`] struct relevant to the [`Watcher`] session without
-    /// cloning or taking ownership of the entire thing.
-    pub fn from_cli(opts: &'opts Opts) -> Self {
+    /// This extracts the bits of an [`Opts`] struct relevant to the [`run_watcher`] session
+    /// without cloning or taking ownership of the entire thing.
+    pub fn from_cli(opts: &Opts) -> Self {
         Self {
-            watch: &opts.watch.paths,
-            watch_restart: &opts.watch.restart_paths,
+            watch: opts.watch.paths.clone(),
+            watch_restart: opts.watch.restart_paths.clone(),
             debounce: opts.watch.debounce,
             poll: opts.watch.poll,
-            extra_extensions: &opts.watch.extensions,
+            extra_extensions: opts.watch.extensions.clone(),
         }
     }
-}
 
-/// A [`watchexec`] watcher which waits for file changes and sends reload events to the contained
-/// `ghci` session.
-pub struct Watcher {
-    /// The inner `Watchexec` struct.
+    /// Iterate over all the watched paths in this option.
     ///
-    /// This field isn't read, but it has to be here or the watcher stops working. Dropping this
-    /// drops the watcher tasks too.
-    #[allow(dead_code)]
-    inner: Arc<Watchexec>,
-    /// A handle to wait on the file watcher task.
-    pub handle: JoinHandle<Result<(), watchexec::error::CriticalError>>,
-}
-
-impl Watcher {
-    /// Create a new [`Watcher`] from a [`Ghci`] session.
-    pub fn new(ghci: Ghci, opts: WatcherOpts) -> miette::Result<Self> {
-        let mut init_config = InitConfig::default();
-        init_config.on_error(|error_hook: ErrorHook| async move {
-            match error_hook.error {
-                RuntimeError::Exit => {
-                    // Graceful exit.
-                }
-                RuntimeError::Handler { err, .. } => {
-                    // The `RuntimeError` display isn't great for these errors, it prefixes some
-                    // nonsense like `handler error while action worker`. Let's just print our
-                    // contained error.
-                    tracing::error!("{}", err);
-                }
-                err => {
-                    // Some other error.
-                    tracing::error!("{}", err);
-                }
-            }
-            Ok::<(), RuntimeError>(())
-        });
-
-        let action_handler = ActionHandler { ghci };
-
-        let mut runtime_config = RuntimeConfig::default();
-        runtime_config
-            .pathset(opts.watch.iter().chain(opts.watch_restart))
-            .action_throttle(opts.debounce)
-            .on_action(action_handler);
-
-        if let Some(interval) = opts.poll {
-            runtime_config.file_watcher(watchexec::fs::Watcher::Poll(interval));
-        }
-
-        let watcher = Watchexec::new(init_config, runtime_config.clone())?;
-
-        let watcher_handle = watcher.main();
-
-        Ok(Self {
-            inner: watcher,
-            handle: watcher_handle,
-        })
+    /// Some of the paths will trigger restarts, but that's not important for the watcher.
+    fn watch_paths(&self) -> impl Iterator<Item = &NormalPath> {
+        self.watch.iter().chain(self.watch_restart.iter())
     }
 }
 
-struct ActionHandler {
-    ghci: Ghci,
+/// A [`notify`] watcher which waits for file changes and sends reload events to the contained
+/// `ghci` session.
+pub async fn run_watcher(
+    handle: ShutdownHandle,
+    ghci_sender: mpsc::Sender<GhciEvent>,
+    opts: WatcherOpts,
+) -> miette::Result<()> {
+    if opts.poll.is_some() {
+        run_debouncer::<PollWatcher>(handle, ghci_sender, opts).await
+    } else {
+        run_debouncer::<RecommendedWatcher>(handle, ghci_sender, opts).await
+    }
 }
 
-impl ActionHandler {
-    #[instrument(skip_all, level = "debug")]
-    async fn on_action(&mut self, action: Action) -> miette::Result<()> {
-        let signals = action
-            .events
-            .iter()
-            .flat_map(Event::signals)
-            .collect::<Vec<_>>();
+async fn run_debouncer<T: notify::Watcher>(
+    mut handle: ShutdownHandle,
+    ghci_sender: mpsc::Sender<GhciEvent>,
+    opts: WatcherOpts,
+) -> miette::Result<()> {
+    let mut config = notify::Config::default();
+    if let Some(interval) = opts.poll {
+        config = config.with_poll_interval(interval);
+    }
 
-        if signals.iter().any(|sig| sig == &Signal::Interrupt) {
-            tracing::debug!("Received SIGINT, exiting.");
-            action.outcome(Outcome::Exit);
-            return Ok(());
+    let event_handler = EventHandler {
+        handle: Handle::current(),
+        ghci_sender,
+        shutdown: handle.clone(),
+    };
+
+    let cache = FileIdMap::new();
+
+    // `tick_rate` defaults to 1/4 of the debounce duration.
+    let tick_rate = None;
+
+    let mut debouncer: Debouncer<T, FileIdMap> = notify_debouncer_full::new_debouncer_opt(
+        opts.debounce,
+        tick_rate,
+        event_handler,
+        cache,
+        config,
+    )
+    .into_diagnostic()?;
+
+    {
+        let watcher = debouncer.watcher();
+        for path in opts.watch_paths() {
+            watcher
+                .watch(path.as_std_path(), RecursiveMode::Recursive)
+                .into_diagnostic()?;
         }
+        let mut cache = debouncer.cache();
+        for path in opts.watch_paths() {
+            cache.add_root(path.as_std_path(), RecursiveMode::Recursive);
+        }
+    }
 
-        tracing::trace!(events = ?action.events, "Got events");
+    tracing::debug!("notify watcher started");
+
+    // Wait for a shutdown request, either from another subsystem or from an error in the handler.
+    let _ = handle.on_shutdown_requested().await;
+
+    block_in_place(|| debouncer.stop());
+
+    Ok(())
+}
+
+struct EventHandler {
+    handle: Handle,
+    ghci_sender: mpsc::Sender<GhciEvent>,
+    shutdown: ShutdownHandle,
+}
+
+impl EventHandler {
+    async fn handle_event_async(&self, event: DebounceEventResult) {
+        if let Err(err) = self.handle_event_inner(event).await {
+            tracing::error!("{err:?}");
+            let _ = self.shutdown.request_shutdown();
+        }
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    async fn handle_event_inner(&self, event: DebounceEventResult) -> miette::Result<()> {
+        let events = match event {
+            Ok(events) => events,
+            Err(errors) => {
+                for err in errors {
+                    tracing::error!("{err}");
+                }
+                return Err(miette!("Watching files failed"));
+            }
+        };
+
+        tracing::trace!(?events, "Got events");
 
         // TODO: On Linux, sometimes we get a "new directory" event but none of the events for
         // files inside of it. When we get new directories, we should paw through them with
         // `walkdir` or something to check for files.
-        let events = file_events_from_action(&action)?;
+        let events = file_events_from_action(events)?;
         if events.is_empty() {
             tracing::debug!("No relevant file events");
-        } else if let Err(err) = self.ghci.reload(events).await {
-            tracing::error!("{err:?}");
-            action.outcome(Outcome::Exit);
+        } else {
+            self.ghci_sender
+                .send(GhciEvent::Reload { events })
+                .await
+                .into_diagnostic()?;
         }
 
         Ok(())
     }
 }
 
-impl Handler<Action> for ActionHandler {
-    fn handle(&mut self, action: Action) -> Result<(), Box<dyn Error>> {
-        // This implementation is copied from the `watchexec` `Handler` impl for closures... no
-        // clue why I can't get it to work without this -- rustc complains my closure implements
-        // `FnOnce`, not `FnMut`.
-
-        // This will always be called within the watchexec context, which runs within tokio
-        block_in_place(|| {
-            Handle::current()
-                .block_on(self.on_action(action))
-                // The `as _` here seems to cast from a `MietteDiagnostic` to a `dyn Error`.
-                .map_err(|e| Box::new(miette::MietteDiagnostic::new(format!("{e:?}"))) as _)
-        })
+impl DebounceEventHandler for EventHandler {
+    fn handle_event(&mut self, event: DebounceEventResult) {
+        self.handle.block_on(self.handle_event_async(event))
     }
 }

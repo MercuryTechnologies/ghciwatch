@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use camino::Utf8Path;
+use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
@@ -126,7 +127,9 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         if test_commands.is_empty() {
             tracing::debug!("No test command provided, not running tests");
+            return Ok(());
         }
+
         self.set_mode(stdout, Mode::Testing).await?;
         for test_command in test_commands {
             tracing::debug!(command = %test_command, "Running user test command");
@@ -183,6 +186,19 @@ impl GhciStdin {
             .into_diagnostic()?;
 
         stdout.show_targets(show_paths).await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
+        self.stdin
+            .write_all(b":quit\n")
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to tell ghci to `:quit`")?;
+        stdout
+            .quit()
+            .await
+            .wrap_err("Failed to wait for ghci to quit")
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
