@@ -142,6 +142,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_BUILD_TARGET: x86_64-unknown-linux-musl
         run: |
           nix run .#cargo -- publish
 
