@@ -327,13 +327,6 @@ impl Ghci {
     pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
         let actions = self.get_reload_actions(events).await?;
 
-        if actions.needs_action() {
-            for command in &self.opts.hooks.before_reload_ghci {
-                tracing::info!(%command, "Running before-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
-        }
-
         if !actions.needs_restart.is_empty() {
             tracing::info!(
                 "Restarting ghci due to deleted/moved modules:\n{}",
@@ -348,6 +341,13 @@ impl Ghci {
             let _ = std::mem::replace(self, new);
             for command in &self.opts.hooks.after_restart_ghci {
                 tracing::info!(%command, "Running after-restart command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
+            }
+        }
+
+        if actions.needs_add_or_reload() {
+            for command in &self.opts.hooks.before_reload_ghci {
+                tracing::info!(%command, "Running before-reload command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
             }
         }
@@ -647,10 +647,5 @@ impl ReloadActions {
     /// Do any modules need to be added or reloaded?
     fn needs_add_or_reload(&self) -> bool {
         !self.needs_add.is_empty() || !self.needs_reload.is_empty()
-    }
-
-    /// Is an action needed in response? That is, are there any modules to reload?
-    fn needs_action(&self) -> bool {
-        self.needs_add_or_reload() || !self.needs_restart.is_empty()
     }
 }

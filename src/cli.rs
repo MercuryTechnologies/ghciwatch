@@ -144,6 +144,9 @@ pub struct HookOpts {
     pub after_startup_ghci: Vec<GhciCommand>,
 
     /// `ghci` commands to run before reloading `ghci`.
+    ///
+    /// These are run when modules are change on disk; this does not necessarily correspond to a
+    /// `:reload` command.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub before_reload_ghci: Vec<GhciCommand>,
 
