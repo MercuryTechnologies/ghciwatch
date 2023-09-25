@@ -325,12 +325,14 @@ impl Ghci {
     /// This may fully restart the `ghci` process.
     #[instrument(skip_all, level = "debug")]
     pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
-        for command in &self.opts.hooks.before_reload_ghci {
-            tracing::info!(%command, "Running before-reload command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
-
         let actions = self.get_reload_actions(events).await?;
+
+        if actions.needs_action() {
+            for command in &self.opts.hooks.before_reload_ghci {
+                tracing::info!(%command, "Running before-reload command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
+            }
+        }
 
         if !actions.needs_restart.is_empty() {
             tracing::info!(
@@ -378,12 +380,12 @@ impl Ghci {
                 .await?;
         }
 
-        for command in &self.opts.hooks.after_reload_ghci {
-            tracing::info!(%command, "Running after-reload command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
-
         if actions.needs_add_or_reload() {
+            for command in &self.opts.hooks.after_reload_ghci {
+                tracing::info!(%command, "Running after-reload command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
+            }
+
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
@@ -645,5 +647,10 @@ impl ReloadActions {
     /// Do any modules need to be added or reloaded?
     fn needs_add_or_reload(&self) -> bool {
         !self.needs_add.is_empty() || !self.needs_reload.is_empty()
+    }
+
+    /// Is an action needed in response? That is, are there any modules to reload?
+    fn needs_action(&self) -> bool {
+        self.needs_add_or_reload() || !self.needs_restart.is_empty()
     }
 }
