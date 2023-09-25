@@ -1,7 +1,7 @@
 ---
 # See: https://github.com/marketplace/actions/labeler
 patch:
-  - 'ghcid-ng/src/**/*.rs'
+  - 'src/**/*.rs'
   - '**/Cargo.toml'
   - '**/Cargo.lock'
   - 'flake.nix'
