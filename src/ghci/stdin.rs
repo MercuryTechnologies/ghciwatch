@@ -46,6 +46,29 @@ impl GhciStdin {
         stdout.prompt(None).await
     }
 
+    /// Run a [`GhciCommand`].
+    ///
+    /// The command may be multiple lines.
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn run_command(
+        &mut self,
+        stdout: &mut GhciStdout,
+        command: &GhciCommand,
+    ) -> miette::Result<Vec<GhcMessage>> {
+        let mut ret = Vec::new();
+
+        for line in command.lines() {
+            self.stdin
+                .write_all(line.as_bytes())
+                .await
+                .into_diagnostic()?;
+            self.stdin.write_all(b"\n").await.into_diagnostic()?;
+            ret.extend(stdout.prompt(None).await?);
+        }
+
+        Ok(ret)
+    }
+
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
     pub async fn initialize(
         &mut self,
@@ -64,8 +87,8 @@ impl GhciStdin {
         .await?;
 
         for command in setup_commands {
-            tracing::debug!(%command, "Running user intialization command");
-            self.write_line(stdout, &format!("{command}\n")).await?;
+            tracing::debug!(%command, "Running after-startup command");
+            self.run_command(stdout, command).await?;
         }
 
         Ok(())
@@ -81,18 +104,18 @@ impl GhciStdin {
     pub async fn test(
         &mut self,
         stdout: &mut GhciStdout,
-        test_command: Option<GhciCommand>,
+        test_commands: &[GhciCommand],
     ) -> miette::Result<()> {
-        if let Some(test_command) = test_command {
-            self.set_mode(stdout, Mode::Testing).await?;
-            tracing::debug!(command = %test_command, "Running user test command");
-            tracing::info!("Running tests");
-            let start_time = Instant::now();
-            self.write_line(stdout, &format!("{test_command}\n"))
-                .await?;
-            tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
-        } else {
+        if test_commands.is_empty() {
             tracing::debug!("No test command provided, not running tests");
+        }
+        self.set_mode(stdout, Mode::Testing).await?;
+        for test_command in test_commands {
+            tracing::debug!(command = %test_command, "Running user test command");
+            tracing::info!("Running tests: {test_command}");
+            let start_time = Instant::now();
+            self.run_command(stdout, test_command).await?;
+            tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
         }
 
         Ok(())
@@ -179,14 +202,7 @@ impl GhciStdin {
             .into_diagnostic()?;
         stdout.prompt(None).await?;
 
-        for line in command.as_ref().lines() {
-            self.stdin
-                .write_all(line.as_bytes())
-                .await
-                .into_diagnostic()?;
-            self.stdin.write_all(b"\n").await.into_diagnostic()?;
-            stdout.prompt(None).await?;
-        }
+        self.run_command(stdout, command).await?;
 
         self.stdin
             .write_all(format!(":module - *{module}\n").as_bytes())

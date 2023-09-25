@@ -25,22 +25,6 @@ pub struct Opts {
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
 
-    /// A `ghci` command which runs tests, like `TestMain.testMain`. If given, this command will be
-    /// run after reloads.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub test_ghci: Option<GhciCommand>,
-
-    /// Shell commands to run before starting or restarting `ghci`.
-    ///
-    /// This can be used to regenerate `.cabal` files with `hpack`.
-    #[arg(long, value_name = "SHELL_COMMAND")]
-    pub before_startup_shell: Vec<ClonableCommand>,
-
-    /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
-    /// the command-line arguments for tests.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub after_startup_ghci: Vec<GhciCommand>,
-
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
     #[arg(long)]
     pub errors: Option<Utf8PathBuf>,
@@ -51,6 +35,10 @@ pub struct Opts {
     /// and `<$ -}` and evaluates them after reloads.
     #[arg(long)]
     pub enable_eval: bool,
+
+    /// Lifecycle hooks and commands to run at various points.
+    #[command(flatten)]
+    pub hooks: HookOpts,
 
     /// Options to modify file watching.
     #[command(flatten)]
@@ -130,6 +118,58 @@ pub struct LoggingOpts {
     /// Path to write JSON logs to.
     #[arg(long, value_name = "PATH")]
     pub log_json: Option<Utf8PathBuf>,
+}
+
+/// Lifecycle hooks.
+///
+/// These are commands (mostly `ghci` commands) to run at various points in the `ghcid-ng`
+/// lifecycle.
+#[derive(Debug, Clone, clap::Args)]
+#[clap(next_help_heading = "Lifecycle hooks")]
+pub struct HookOpts {
+    /// `ghci` commands which runs tests, like `TestMain.testMain`. If given, these commands will be
+    /// run after reloads.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub test_ghci: Vec<GhciCommand>,
+
+    /// Shell commands to run before starting or restarting `ghci`.
+    ///
+    /// This can be used to regenerate `.cabal` files with `hpack`.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub before_startup_shell: Vec<ClonableCommand>,
+
+    /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
+    /// the command-line arguments for tests.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub after_startup_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run before reloading `ghci`.
+    ///
+    /// These are run when modules are change on disk; this does not necessarily correspond to a
+    /// `:reload` command.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub before_reload_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run after reloading `ghci`.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub after_reload_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run before restarting `ghci`.
+    ///
+    /// See `--after-restart-ghci` for more details.
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub before_restart_ghci: Vec<GhciCommand>,
+
+    /// `ghci` commands to run after restarting `ghci`.
+    ///
+    /// `ghci` cannot reload after files are deleted due to a bug, so `ghcid-ng` has to restart the
+    /// underlying `ghci` session when this happens. Note that the `--before-restart-ghci` and
+    /// `--after-restart-ghci` commands will therefore run in different `ghci` sessions without
+    /// shared context.
+    ///
+    /// See: https://gitlab.haskell.org/ghc/ghc/-/issues/9648
+    #[arg(long, value_name = "GHCI_COMMAND")]
+    pub after_restart_ghci: Vec<GhciCommand>,
 }
 
 impl Opts {

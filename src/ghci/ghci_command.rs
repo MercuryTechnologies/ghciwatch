@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::ops::Deref;
 
 /// A `ghci` command.
 ///
@@ -41,6 +42,14 @@ impl From<GhciCommand> for String {
 
 impl AsRef<str> for GhciCommand {
     fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for GhciCommand {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
