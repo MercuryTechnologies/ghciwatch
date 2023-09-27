@@ -11,6 +11,7 @@ use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
 use crate::command::ClonableCommand;
 use crate::ghci::GhciCommand;
+use crate::normal_path::NormalPath;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
 #[derive(Debug, Clone, Parser)]
@@ -26,14 +27,14 @@ pub struct Opts {
     pub command: Option<ClonableCommand>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
-    #[arg(long)]
+    #[arg(long, alias = "outputfile")]
     pub errors: Option<Utf8PathBuf>,
 
     /// Enable evaluating commands.
     ///
     /// This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>`
     /// and `<$ -}` and evaluates them after reloads.
-    #[arg(long)]
+    #[arg(long, alias = "allow-eval")]
     pub enable_eval: bool,
 
     /// Lifecycle hooks and commands to run at various points.
@@ -74,7 +75,21 @@ pub struct WatchOpts {
 
     /// A path to watch for changes. Can be given multiple times.
     #[arg(long = "watch")]
-    pub paths: Vec<Utf8PathBuf>,
+    pub paths: Vec<NormalPath>,
+
+    /// Restart the ghci session when these paths change.
+    /// Defaults to `.ghci` and any `.cabal` file.
+    /// Can be given multiple times.
+    #[arg(long = "watch-restart")]
+    pub restart_paths: Vec<NormalPath>,
+
+    /// Reload when files with this extension change. Can be used to add non-Haskell source files
+    /// (like files included with Template Haskell, such as model definitions) to the build.
+    /// Unlike Haskell source files, files with these extensions will only trigger `:reload`s and
+    /// will never be `:add`ed to the ghci session.
+    /// Can be given multiple times.
+    #[arg(long = "watch-extension")]
+    pub extensions: Vec<String>,
 }
 
 // TODO: Possibly set `RUST_LIB_BACKTRACE` from `RUST_BACKTRACE` as well, so that `full`
@@ -129,17 +144,20 @@ pub struct LoggingOpts {
 pub struct HookOpts {
     /// `ghci` commands which runs tests, like `TestMain.testMain`. If given, these commands will be
     /// run after reloads.
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub test_ghci: Vec<GhciCommand>,
 
     /// Shell commands to run before starting or restarting `ghci`.
     ///
     /// This can be used to regenerate `.cabal` files with `hpack`.
+    /// Can be given multiple times.
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub before_startup_shell: Vec<ClonableCommand>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub after_startup_ghci: Vec<GhciCommand>,
 
@@ -147,20 +165,24 @@ pub struct HookOpts {
     ///
     /// These are run when modules are change on disk; this does not necessarily correspond to a
     /// `:reload` command.
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub before_reload_ghci: Vec<GhciCommand>,
 
     /// `ghci` commands to run after reloading `ghci`.
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub after_reload_ghci: Vec<GhciCommand>,
 
     /// `ghci` commands to run before restarting `ghci`.
     ///
     /// See `--after-restart-ghci` for more details.
+    /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub before_restart_ghci: Vec<GhciCommand>,
 
     /// `ghci` commands to run after restarting `ghci`.
+    /// Can be given multiple times.
     ///
     /// `ghci` cannot reload after files are deleted due to a bug, so `ghcid-ng` has to restart the
     /// underlying `ghci` session when this happens. Note that the `--before-restart-ghci` and
@@ -175,13 +197,15 @@ pub struct HookOpts {
 impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
-    pub fn init(&mut self) {
+    pub fn init(&mut self) -> miette::Result<()> {
         if self.watch.paths.is_empty() {
-            self.watch.paths.push("src".into());
+            self.watch.paths.push(NormalPath::from_cwd("src")?);
         }
 
         // These help our libraries (particularly `color-eyre`) see these options.
         // The options are provided mostly for documentation.
         std::env::set_var("RUST_BACKTRACE", self.logging.backtrace.to_string());
+
+        Ok(())
     }
 }

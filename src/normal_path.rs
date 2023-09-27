@@ -10,6 +10,7 @@ use std::path::Path;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::miette;
+use miette::Context;
 use miette::IntoDiagnostic;
 use path_absolutize::Absolutize;
 
@@ -40,6 +41,16 @@ impl NormalPath {
             None => None,
         };
         Ok(Self { normal, relative })
+    }
+
+    /// Create a new normalized path relative to the current working directory.
+    pub fn from_cwd(original: impl AsRef<Path>) -> miette::Result<Self> {
+        Self::new(
+            original,
+            std::env::current_dir()
+                .into_diagnostic()
+                .wrap_err("Failed to get current directory")?,
+        )
     }
 
     /// Get a reference to the absolute (normalized) path, borrowed as a [`Utf8Path`].
@@ -100,6 +111,12 @@ impl From<NormalPath> for Utf8PathBuf {
 impl AsRef<Utf8Path> for NormalPath {
     fn as_ref(&self) -> &Utf8Path {
         &self.normal
+    }
+}
+
+impl AsRef<Path> for NormalPath {
+    fn as_ref(&self) -> &Path {
+        self.normal.as_std_path()
     }
 }
 

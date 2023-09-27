@@ -13,12 +13,12 @@ use ghcid_ng::watcher::Watcher;
 use ghcid_ng::watcher::WatcherOpts;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
-use tap::Tap;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
-    let opts = cli::Opts::parse().tap_mut(|opts| opts.init());
+    let mut opts = cli::Opts::parse();
+    opts.init()?;
     tracing::TracingOpts::from_cli(&opts).install()?;
 
     ::tracing::warn!(

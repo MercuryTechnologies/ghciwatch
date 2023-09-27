@@ -303,15 +303,13 @@ impl GhcidNg {
     /// Wait until `ghcid-ng` reloads the `ghci` session due to changed modules.
     pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
-        self.assert_logged("Reloading ghci due to changed modules")
-            .await
-            .map(|_| ())
+        self.assert_logged("^Reloading ghci:\n").await.map(|_| ())
     }
 
     /// Wait until `ghcid-ng` adds new modules to the `ghci` session.
     pub async fn wait_until_add(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are being added.
-        self.assert_logged("Adding new modules to ghci")
+        self.assert_logged("^Adding modules to ghci:\n")
             .await
             .map(|_| ())
     }
@@ -319,9 +317,7 @@ impl GhcidNg {
     /// Wait until `ghcid-ng` restarts the `ghci` session.
     pub async fn wait_until_restart(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules have been deleted/moved.
-        self.assert_logged("Restarting ghci due to deleted/moved modules")
-            .await
-            .map(|_| ())
+        self.assert_logged("^Restarting ghci:\n").await.map(|_| ())
     }
 
     /// Get a path relative to the project root.

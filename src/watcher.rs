@@ -4,7 +4,6 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
-use camino::Utf8PathBuf;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 use tokio::task::JoinHandle;
@@ -22,16 +21,21 @@ use watchexec_signals::Signal;
 use crate::cli::Opts;
 use crate::event_filter::file_events_from_action;
 use crate::ghci::Ghci;
+use crate::normal_path::NormalPath;
 
 /// Options for constructing a [`Watcher`]. This is like a lower-effort builder interface, mostly
 /// provided because Rust tragically lacks named arguments.
 pub struct WatcherOpts<'opts> {
     /// The paths to watch for changes.
-    pub watch: &'opts [Utf8PathBuf],
+    pub watch: &'opts [NormalPath],
+    /// Paths to watch for changes and restart the `ghci` session on.
+    pub watch_restart: &'opts [NormalPath],
     /// Debounce duration for filesystem events.
     pub debounce: Duration,
     /// If given, use the polling file watcher with the given duration as the poll interval.
     pub poll: Option<Duration>,
+    /// Extra file extensions to reload on.
+    pub extra_extensions: &'opts [String],
 }
 
 impl<'opts> WatcherOpts<'opts> {
@@ -42,8 +46,10 @@ impl<'opts> WatcherOpts<'opts> {
     pub fn from_cli(opts: &'opts Opts) -> Self {
         Self {
             watch: &opts.watch.paths,
+            watch_restart: &opts.watch.restart_paths,
             debounce: opts.watch.debounce,
             poll: opts.watch.poll,
+            extra_extensions: &opts.watch.extensions,
         }
     }
 }
@@ -71,7 +77,7 @@ impl Watcher {
 
         let mut runtime_config = RuntimeConfig::default();
         runtime_config
-            .pathset(opts.watch)
+            .pathset(opts.watch.iter().chain(opts.watch_restart))
             .action_throttle(opts.debounce)
             .on_action(action_handler);
 

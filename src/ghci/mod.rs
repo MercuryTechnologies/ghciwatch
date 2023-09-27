@@ -54,6 +54,7 @@ use crate::command;
 use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::ghci::parse::ShowPaths;
+use crate::haskell_source_file::is_haskell_source_file;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::sync_sentinel::SyncSentinel;
@@ -86,6 +87,11 @@ pub struct GhciOpts {
     pub enable_eval: bool,
     /// Lifecycle hooks, mostly `ghci` commands to run at certain points.
     pub hooks: HookOpts,
+    /// Restart the `ghci` session when these paths are changed.
+    pub restart_paths: Vec<NormalPath>,
+    /// Reload the `ghci` session when files with these extensions are changed, in addition to
+    /// Haskell source files.
+    pub extra_extensions: Vec<String>,
 }
 
 impl GhciOpts {
@@ -106,6 +112,8 @@ impl GhciOpts {
             error_path: opts.errors.clone(),
             enable_eval: opts.enable_eval,
             hooks: opts.hooks.clone(),
+            restart_paths: opts.watch.restart_paths.clone(),
+            extra_extensions: opts.watch.extensions.clone(),
         })
     }
 }
@@ -286,29 +294,48 @@ impl Ghci {
         let mut needs_reload = Vec::new();
         let mut needs_add = Vec::new();
         for event in events {
-            match event {
-                FileEvent::Remove(path) => {
-                    // `ghci` can't cope with removed modules, so we need to fully restart the
-                    // `ghci` process in case any modules are removed or renamed.
-                    //
-                    // https://gitlab.haskell.org/ghc/ghc/-/issues/11596
-                    //
-                    // TODO: I should investigate if `:unadd` works for some classes of removed
-                    // modules.
-                    tracing::debug!(%path, "Needs restart");
-                    needs_restart.push(self.relative_path(path)?);
-                }
-                FileEvent::Modify(path) => {
-                    let path = self.relative_path(path)?;
-                    if self.targets.contains_source_path(path.absolute())? {
-                        // We can `:reload` paths in the target set.
-                        tracing::debug!(%path, "Needs reload");
-                        needs_reload.push(path);
-                    } else {
-                        // Otherwise we need to `:add` the new paths.
-                        tracing::debug!(%path, "Needs add");
-                        needs_add.push(path);
-                    }
+            let path = event.as_path();
+            let path = self.relative_path(path)?;
+            // Restart on `.cabal` files, `.ghci` files, and any paths under the `restart_paths`.
+            if path.extension().map(|ext| ext == "cabal").unwrap_or(false)
+                || path
+                    .file_name()
+                    .map(|name| name == ".ghci")
+                    .unwrap_or(false)
+                || self
+                    .opts
+                    .restart_paths
+                    .iter()
+                    .any(|restart_path| path.starts_with(restart_path))
+                // `ghci` can't cope with removed modules, so we need to fully restart the
+                // `ghci` process in case any modules are removed or renamed.
+                //
+                // https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                //
+                // TODO: I should investigate if `:unadd` works for some classes of removed
+                // modules.
+                || (matches!(event, FileEvent::Remove(_)) && is_haskell_source_file(&path))
+            {
+                // Restart for this path.
+                tracing::debug!(%path, "Needs restart");
+                needs_restart.push(path);
+            } else if path
+                .extension()
+                .map(|ext| self.opts.extra_extensions.contains(&ext.to_owned()))
+                .unwrap_or(false)
+            {
+                // Extra extensions are always reloaded, never added.
+                tracing::debug!(%path, "Needs reload");
+                needs_reload.push(path);
+            } else if matches!(event, FileEvent::Modify(_)) && is_haskell_source_file(&path) {
+                if self.targets.contains_source_path(path.absolute())? {
+                    // We can `:reload` paths in the target set.
+                    tracing::debug!(%path, "Needs reload");
+                    needs_reload.push(path);
+                } else {
+                    // Otherwise we need to `:add` the new paths.
+                    tracing::debug!(%path, "Needs add");
+                    needs_add.push(path);
                 }
             }
         }
@@ -329,7 +356,7 @@ impl Ghci {
 
         if !actions.needs_restart.is_empty() {
             tracing::info!(
-                "Restarting ghci due to deleted/moved modules:\n{}",
+                "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
             for command in &self.opts.hooks.before_restart_ghci {
@@ -356,7 +383,7 @@ impl Ghci {
 
         if !actions.needs_add.is_empty() {
             tracing::info!(
-                "Adding new modules to ghci:\n{}",
+                "Adding modules to ghci:\n{}",
                 format_bulleted_list(&actions.needs_add)
             );
             for path in &actions.needs_add {
@@ -369,7 +396,7 @@ impl Ghci {
 
         if !actions.needs_reload.is_empty() {
             tracing::info!(
-                "Reloading ghci due to changed modules:\n{}",
+                "Reloading ghci:\n{}",
                 format_bulleted_list(&actions.needs_reload)
             );
             let messages = self.stdin.reload(&mut self.stdout).await?;
