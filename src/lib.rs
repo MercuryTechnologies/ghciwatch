@@ -17,6 +17,7 @@ pub mod clap;
 pub mod cli;
 pub mod command;
 pub mod event_filter;
+mod format_bulleted_list;
 pub mod ghci;
 pub mod haskell_show;
 pub mod haskell_source_file;
@@ -27,6 +28,8 @@ pub mod sync_sentinel;
 pub mod textwrap;
 pub mod tracing;
 pub mod watcher;
+
+pub(crate) use format_bulleted_list::format_bulleted_list;
 
 #[cfg(test)]
 mod fake_reader;
