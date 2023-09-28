@@ -13,6 +13,7 @@ use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use itertools::Itertools;
+use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use tokio::io::AsyncBufReadExt;
@@ -325,6 +326,11 @@ impl Ghci {
     /// This may fully restart the `ghci` process.
     #[instrument(skip_all, level = "debug")]
     pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
+        // Check if `ghci` has exited.
+        if let Some(status) = self.process.try_wait().into_diagnostic()? {
+            return Err(miette!("ghci exited: {status}"));
+        }
+
         let actions = self.get_reload_actions(events).await?;
 
         if !actions.needs_restart.is_empty() {

@@ -65,8 +65,13 @@ impl GhciStderr {
                 Some(event) = self.receiver.recv() => {
                     self.dispatch(event).await?;
                 }
+                else => {
+                    // Graceful exit.
+                    break;
+                }
             }
         }
+        Ok(())
     }
 
     async fn dispatch(&mut self, event: StderrEvent) -> miette::Result<()> {
