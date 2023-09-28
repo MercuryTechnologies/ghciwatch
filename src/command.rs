@@ -9,10 +9,6 @@ use std::process::Stdio;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
-use nix::sys::signal;
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
-use tokio::process::Child;
 use tokio::process::Command;
 
 /// Format a [`Command`] as a string, quoting arguments and program names with
@@ -45,27 +41,6 @@ pub fn from_string(shell_command: &str) -> miette::Result<ClonableCommand> {
             ..Default::default()
         }),
     }
-}
-
-/// Send a signal to a child process.
-pub fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
-    signal::kill(
-        Pid::from_raw(
-            child
-                .id()
-                .ok_or_else(|| miette!("Command has no pid, likely because it has already exited"))?
-                .try_into()
-                .into_diagnostic()
-                .wrap_err("Failed to convert pid type")?,
-        ),
-        signal,
-    )
-    .into_diagnostic()
-}
-
-/// Partially-applied form of [`send_signal`].
-pub fn send_sigterm(child: &Child) -> miette::Result<()> {
-    send_signal(child, Signal::SIGTERM)
 }
 
 /// Like [`std::process::Stdio`], but it implements [`Clone`].

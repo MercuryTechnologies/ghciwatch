@@ -6,11 +6,11 @@
 
 use clap::Parser;
 use ghcid_ng::cli;
-use ghcid_ng::ghci::Ghci;
-use ghcid_ng::ghci::GhciOpts;
-use ghcid_ng::tracing;
-use ghcid_ng::watcher::Watcher;
-use ghcid_ng::watcher::WatcherOpts;
+use ghcid_ng::Ghci;
+use ghcid_ng::GhciOpts;
+use ghcid_ng::TracingOpts;
+use ghcid_ng::Watcher;
+use ghcid_ng::WatcherOpts;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 
@@ -19,7 +19,7 @@ async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let mut opts = cli::Opts::parse();
     opts.init()?;
-    tracing::TracingOpts::from_cli(&opts).install()?;
+    TracingOpts::from_cli(&opts).install()?;
 
     ::tracing::warn!(
         "This is a prerelease alpha version of `ghcid-ng`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."

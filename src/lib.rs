@@ -11,25 +11,30 @@
 
 #![deny(missing_docs)]
 
-pub mod aho_corasick;
-pub mod buffers;
-pub mod clap;
+mod aho_corasick;
+mod buffers;
+mod clap;
 pub mod cli;
-pub mod command;
-pub mod event_filter;
+mod command;
+mod event_filter;
 mod format_bulleted_list;
-pub mod ghci;
-pub mod haskell_show;
-pub mod haskell_source_file;
-pub mod incremental_reader;
-pub mod lines;
-pub mod normal_path;
-pub mod sync_sentinel;
-pub mod textwrap;
-pub mod tracing;
-pub mod watcher;
+mod ghci;
+mod haskell_show;
+mod haskell_source_file;
+mod incremental_reader;
+mod normal_path;
+mod sync_sentinel;
+mod textwrap;
+mod tracing;
+mod watcher;
 
 pub(crate) use format_bulleted_list::format_bulleted_list;
+
+pub use ghci::Ghci;
+pub use ghci::GhciOpts;
+pub use tracing::TracingOpts;
+pub use watcher::Watcher;
+pub use watcher::WatcherOpts;
 
 #[cfg(test)]
 mod fake_reader;
