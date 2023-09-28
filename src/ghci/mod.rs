@@ -12,7 +12,6 @@ use std::time::Instant;
 use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use itertools::Itertools;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
@@ -54,6 +53,7 @@ use crate::cli::Opts;
 use crate::command;
 use crate::command::ClonableCommand;
 use crate::event_filter::FileEvent;
+use crate::format_bulleted_list;
 use crate::ghci::parse::ShowPaths;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::incremental_reader::IncrementalReader;
@@ -653,15 +653,6 @@ impl Display for Mode {
             Mode::Compiling => write!(f, "compilation"),
             Mode::Testing => write!(f, "test"),
         }
-    }
-}
-
-fn format_bulleted_list(items: impl IntoIterator<Item = impl Display>) -> String {
-    let mut items = items.into_iter().peekable();
-    if items.peek().is_none() {
-        String::new()
-    } else {
-        format!("• {}", items.join("\n• "))
     }
 }
 
