@@ -437,7 +437,7 @@ impl Ghci {
     /// Sync the input and output streams of this `ghci` session. This will block until all input
     /// written to the `ghci` process's stdin has been read and processed.
     #[instrument(skip_all, level = "debug")]
-    pub async fn sync(&mut self) -> miette::Result<()> {
+    async fn sync(&mut self) -> miette::Result<()> {
         let (sentinel, receiver) = SyncSentinel::new(&self.sync_count);
         self.stdin.sync(&mut self.stdout, sentinel).await?;
         receiver.await.into_diagnostic()?;
@@ -446,7 +446,7 @@ impl Ghci {
 
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
-    pub async fn test(&mut self) -> miette::Result<()> {
+    async fn test(&mut self) -> miette::Result<()> {
         self.stdin
             .test(&mut self.stdout, &self.opts.hooks.test_ghci)
             .await?;
@@ -455,7 +455,7 @@ impl Ghci {
 
     /// Run the eval commands, if enabled.
     #[instrument(skip_all, level = "debug")]
-    pub async fn eval(&mut self) -> miette::Result<()> {
+    async fn eval(&mut self) -> miette::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
         }
