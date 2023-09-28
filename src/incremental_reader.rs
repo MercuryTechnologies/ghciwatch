@@ -71,14 +71,9 @@ where
     ///
     /// TODO: Should this even use `aho_corasick`? Might be overkill, and with the automaton
     /// construction cost it might not even be more efficient.
-    pub async fn read_until(
-        &mut self,
-        end_marker: &AhoCorasick,
-        writing: WriteBehavior,
-        buffer: &mut [u8],
-    ) -> miette::Result<String> {
+    pub async fn read_until(&mut self, opts: &mut ReadOpts<'_>) -> miette::Result<String> {
         loop {
-            if let Some(lines) = self.try_read_until(end_marker, writing, buffer).await? {
+            if let Some(lines) = self.try_read_until(opts).await? {
                 return Ok(lines);
             }
         }
@@ -89,30 +84,28 @@ where
     /// returned. Otherwise, nothing is returned.
     pub async fn try_read_until(
         &mut self,
-        end_marker: &AhoCorasick,
-        writing: WriteBehavior,
-        buffer: &mut [u8],
+        opts: &mut ReadOpts<'_>,
     ) -> miette::Result<Option<String>> {
-        if let Some(chunk) = self.take_chunk_from_buffer(end_marker) {
+        if let Some(chunk) = self.take_chunk_from_buffer(opts) {
             tracing::trace!(data = chunk.len(), "Got data from buffer");
             return Ok(Some(chunk));
         }
 
-        match self.reader.read(buffer).await {
+        match self.reader.read(opts.buffer).await {
             Ok(0) => {
                 // EOF
                 Err(miette!("End-of-file reached"))
             }
             Ok(n) => {
-                let decoded = std::str::from_utf8(&buffer[..n])
+                let decoded = std::str::from_utf8(&opts.buffer[..n])
                     .into_diagnostic()
                     .wrap_err_with(|| {
                         format!(
                             "Read invalid UTF-8: {:?}",
-                            String::from_utf8_lossy(&buffer[..n])
+                            String::from_utf8_lossy(&opts.buffer[..n])
                         )
                     })?;
-                match self.consume_str(decoded, end_marker, writing).await? {
+                match self.consume_str(decoded, opts).await? {
                     Some(lines) => {
                         tracing::trace!(data = decoded, "Decoded data");
                         tracing::trace!(lines = lines.len(), "Got chunk");
@@ -138,8 +131,7 @@ where
     async fn consume_str(
         &mut self,
         mut data: &str,
-        end_marker: &AhoCorasick,
-        writing: WriteBehavior,
+        opts: &ReadOpts<'_>,
     ) -> miette::Result<Option<String>> {
         // Proof of this function's corectness: just trust me
 
@@ -155,11 +147,11 @@ where
                     ret = match ret {
                         Some(lines) => Some(lines),
                         None => {
-                            match end_marker.find_at_start(&self.line) {
+                            match opts.find(opts.end_marker, &self.line) {
                                 Some(_match) => {
                                     // If we found an `end_marker` in `self.line`, our chunk is
                                     // `self.lines`.
-                                    Some(self.take_lines(writing).await?)
+                                    Some(self.take_lines(opts.writing).await?)
                                 }
                                 None => None,
                             }
@@ -179,22 +171,22 @@ where
                             // We already have a chunk to return, so we can just add the current
                             // line to `self.lines` and continue to process the remaining data in
                             // `rest`.
-                            self.finish_line(writing).await?;
+                            self.finish_line(opts.writing).await?;
                             Some(lines)
                         }
                         None => {
                             // We don't have a chunk to return yet, so check for an `end_marker`.
-                            match end_marker.find_at_start(&self.line) {
+                            match opts.find(opts.end_marker, &self.line) {
                                 Some(_match) => {
                                     // If we found an `end_marker` in `self.line`, our chunk is
                                     // `self.lines`.
-                                    Some(self.take_lines(writing).await?)
+                                    Some(self.take_lines(opts.writing).await?)
                                 }
                                 None => {
                                     // We didn't find an `end_marker`, so add the current line to
                                     // `self.lines` and continue to process the remaining data in
                                     // `rest.
-                                    self.finish_line(writing).await?;
+                                    self.finish_line(opts.writing).await?;
                                     None
                                 }
                             }
@@ -260,12 +252,12 @@ where
     /// seen, the lines before the marker are returned. Otherwise, nothing is returned.
     ///
     /// Does _not_ read from the underlying reader.
-    fn take_chunk_from_buffer(&mut self, end_marker: &AhoCorasick) -> Option<String> {
+    fn take_chunk_from_buffer(&mut self, opts: &ReadOpts<'_>) -> Option<String> {
         // Do any of the lines in `self.lines` start with `end_marker`?
         if let Some(span) = self
             .lines
             .line_spans()
-            .find(|span| end_marker.find_at_start(span.as_str()).is_some())
+            .find(|span| opts.find(opts.end_marker, span.as_str()).is_some())
         {
             // Suppose this is our original `self.lines`, with newlines indicated by `|`:
             //
@@ -290,7 +282,7 @@ where
         }
 
         // Does the current line in `self.line` start with `end_marker`?
-        if end_marker.find_at_start(&self.line).is_some() {
+        if opts.find(opts.end_marker, &self.line).is_some() {
             let chunk = std::mem::replace(
                 &mut self.lines,
                 String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
@@ -336,6 +328,38 @@ pub enum WriteBehavior {
     Hide,
 }
 
+/// Determines where an [`IncrementalReader`] matches an [`AhoCorasick`] end marker.
+#[derive(Clone, Copy, Debug)]
+pub enum FindAt {
+    /// Match only at the start of a line.
+    LineStart,
+    /// Match anywhere in a line.
+    Anywhere,
+}
+
+/// Options for performing a read from an [`IncrementalReader`].
+#[derive(Debug)]
+pub struct ReadOpts<'a> {
+    /// The end marker to look for.
+    pub end_marker: &'a AhoCorasick,
+    /// Where the end marker should be looked for.
+    pub find: FindAt,
+    /// How to write output to the wrapped writer.
+    pub writing: WriteBehavior,
+    /// A buffer to read input into. This is used to avoid allocating additional buffers; no
+    /// particular constraints are placed on this buffer.
+    pub buffer: &'a mut [u8],
+}
+
+impl<'a> ReadOpts<'a> {
+    fn find(&self, marker: &AhoCorasick, input: &str) -> Option<aho_corasick::Match> {
+        match self.find {
+            FindAt::LineStart => marker.find_at_start(input),
+            FindAt::Anywhere => marker.find_anywhere(input),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
@@ -365,7 +389,51 @@ mod tests {
 
         assert_eq!(
             reader
-                .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
+                .read_until(&mut ReadOpts {
+                    end_marker: &end_marker,
+                    find: FindAt::LineStart,
+                    writing: WriteBehavior::Hide,
+                    buffer: &mut buffer,
+                })
+                .await
+                .unwrap(),
+            indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                "
+            )
+        );
+    }
+
+    /// Same as `test_read_until` but with `FindAt::Anywhere`.
+    #[tokio::test]
+    async fn test_read_until_find_anywhere() {
+        let fake_reader = FakeReader::with_str_chunks([indoc!(
+            "Build profile: -w ghc-9.6.1 -O0
+            In order, the following will be built (use -v for more details):
+             - mwb-0 (lib:test-dev) (ephemeral targets)
+            Preprocessing library 'test-dev' for mwb-0..
+            GHCi, version 9.6.1: https://www.haskell.org/ghc/  :? for help
+            Loaded GHCi configuration from .ghci-mwb
+            Ok, 5699 modules loaded.
+            ghci> "
+        )]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["https://www.haskell.org/ghc/"]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        assert_eq!(
+            reader
+                .read_until(&mut ReadOpts {
+                    end_marker: &end_marker,
+                    find: FindAt::Anywhere,
+                    writing: WriteBehavior::Hide,
+                    buffer: &mut buffer,
+                })
                 .await
                 .unwrap(),
             indoc!(
@@ -404,7 +472,64 @@ mod tests {
 
         assert_eq!(
             reader
-                .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
+                .read_until(&mut ReadOpts {
+                    end_marker: &end_marker,
+                    find: FindAt::LineStart,
+                    writing: WriteBehavior::Hide,
+                    buffer: &mut buffer
+                })
+                .await
+                .unwrap(),
+            indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                "
+            )
+        );
+
+        eprintln!("{:?}", reader.buffer());
+        assert_eq!(
+            reader.buffer(),
+            indoc!(
+                "Loaded GHCi configuration from .ghci-mwb
+                Ok, 5699 modules loaded.
+                ghci> "
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_until_with_data_in_buffer_find_anywhere() {
+        let fake_reader = FakeReader::default();
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        reader
+            .push_to_buffer(indoc!(
+                "
+                Build profile: -w ghc-9.6.1 -O0
+                In order, the following will be built (use -v for more details):
+                 - mwb-0 (lib:test-dev) (ephemeral targets)
+                Preprocessing library 'test-dev' for mwb-0..
+                GHCi, version 9.6.1: https://www.haskell.org/ghc/  :? for help
+                Loaded GHCi configuration from .ghci-mwb
+                Ok, 5699 modules loaded.
+                ghci> "
+            ))
+            .await;
+
+        let end_marker = AhoCorasick::from_anchored_patterns(["https://www.haskell.org/ghc/"]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        assert_eq!(
+            reader
+                .read_until(&mut ReadOpts {
+                    end_marker: &end_marker,
+                    find: FindAt::Anywhere,
+                    writing: WriteBehavior::Hide,
+                    buffer: &mut buffer
+                })
                 .await
                 .unwrap(),
             indoc!(
@@ -462,7 +587,12 @@ mod tests {
 
         assert_eq!(
             reader
-                .read_until(&end_marker, WriteBehavior::Hide, &mut buffer)
+                .read_until(&mut ReadOpts {
+                    end_marker: &end_marker,
+                    find: FindAt::LineStart,
+                    writing: WriteBehavior::Hide,
+                    buffer: &mut buffer
+                })
                 .await
                 .unwrap(),
             indoc!(
