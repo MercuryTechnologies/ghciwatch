@@ -22,10 +22,10 @@ thread_local! {
     /// This is used to select the correct GHC version to run.
     pub(crate) static GHC_VERSION: RefCell<String> = RefCell::new(String::new());
 
-    /// The GHC process for this test.
+    /// The `ghcid-ng` process for this test.
     ///
     /// This is set so that we can make sure to kill it when the test ends.
-    pub(crate) static GHC_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
+    pub(crate) static GHCID_NG_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
 }
 
 /// Wraps an asynchronous test with startup/cleanup code.
@@ -35,7 +35,7 @@ thread_local! {
 ///
 /// Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
 ///
-/// Finally, we wait for the [`GHC_PROCESS`] to exit and clean up the temporary directory `GhcidNg`
+/// Finally, we wait for the [`GHCID_NG_PROCESS`] to exit and clean up the temporary directory `GhcidNg`
 /// created.
 pub async fn wrap_test(
     test: impl Future<Output = ()> + Send + 'static,
@@ -100,13 +100,13 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 
 /// Perform end-of-test cleanup.
 ///
-/// 1. Kill the [`GHC_PROCESS`].
+/// 1. Kill the [`GHCID_NG_PROCESS`].
 /// 2. Remove the [`TEMPDIR`] from the filesystem.
 async fn cleanup() {
-    let child = GHC_PROCESS.with(|child| child.take());
+    let child = GHCID_NG_PROCESS.with(|child| child.take());
     match child {
         None => {
-            panic!("`GHC_PROCESS` is not set");
+            panic!("`GHCID_NG_PROCESS` is not set");
         }
         Some(mut child) => {
             send_signal(&child, Signal::SIGINT).expect("Failed to send SIGINT to `ghcid-ng`");
@@ -190,11 +190,11 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
     Ok(tempdir.into_path())
 }
 
-/// Set [`GHC_PROCESS`] to the given [`Child`].
+/// Set [`GHCID_NG_PROCESS`] to the given [`Child`].
 ///
-/// Fails if [`GHC_PROCESS`] is already set.
-pub(crate) fn set_ghc_process(child: Child) -> miette::Result<()> {
-    GHC_PROCESS.with(|maybe_child| {
+/// Fails if [`GHCID_NG_PROCESS`] is already set.
+pub(crate) fn set_ghcid_ng_process(child: Child) -> miette::Result<()> {
+    GHCID_NG_PROCESS.with(|maybe_child| {
         if maybe_child.borrow().is_some() {
             return Err(miette!(
                 "`GhcidNg` can only be constructed once per `#[test_harness::test]` function"
