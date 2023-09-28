@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use watchexec::action::Action;
@@ -9,8 +10,6 @@ use watchexec::event::filekind::FileEventKind;
 use watchexec::event::filekind::ModifyKind;
 use watchexec::event::Event;
 use watchexec::event::Tag;
-
-use crate::haskell_source_file::is_haskell_source_file;
 
 /*
 
@@ -80,6 +79,16 @@ pub enum FileEvent {
     Remove(Utf8PathBuf),
 }
 
+impl FileEvent {
+    /// Get the contained path.
+    pub fn as_path(&self) -> &Utf8Path {
+        match self {
+            FileEvent::Modify(path) => path.as_path(),
+            FileEvent::Remove(path) => path.as_path(),
+        }
+    }
+}
+
 /// Process the events contained in an [`Action`] into a list of [`FileEvent`]s.
 pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>> {
     // First, build up a map from paths to events tagged with that path.
@@ -100,14 +109,6 @@ pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>
     let mut ret = Vec::new();
 
     for (path, events) in events_by_path.iter() {
-        if !is_haskell_source_file(path) {
-            // If the path doesn't have a Haskell source extension, we don't need to process it.
-            // In the future, we'll want something more sophisticated here -- we'll need to reload
-            // for non-Haskell files or even run commands when non-Haskell files change -- but this
-            // is fine for a first pass.
-            continue;
-        }
-
         let mut exists = false;
         let mut created = false;
         let mut modified = false;
