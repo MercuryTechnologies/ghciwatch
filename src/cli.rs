@@ -12,6 +12,7 @@ use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
 use crate::clonable_command::ClonableCommand;
 use crate::ghci::GhciCommand;
+use crate::ignore::GlobMatcher;
 use crate::normal_path::NormalPath;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
@@ -74,23 +75,47 @@ pub struct WatchOpts {
     )]
     pub debounce: Duration,
 
-    /// A path to watch for changes. Can be given multiple times.
+    /// A path to watch for changes. Directories are watched recursively. Can be given multiple times.
     #[arg(long = "watch")]
     pub paths: Vec<NormalPath>,
 
-    /// Restart the ghci session when these paths change.
-    /// Defaults to `.ghci` and any `.cabal` file.
-    /// Can be given multiple times.
-    #[arg(long = "watch-restart")]
-    pub restart_paths: Vec<NormalPath>,
+    /// Reload the `ghci` session when paths matching this glob change. Can be given multiple
+    /// times. The last matching glob will determine if a reload is triggered.
+    ///
+    /// By default, only changes to Haskell source files trigger reloads. If you'd like to exclude
+    /// some files from that, you can add an ignore glob here, like `!src/my-special-dir/**/*.hs`.
+    ///
+    /// Globs provided here have precisely the same semantics as a single line in a `gitignore`
+    /// file (`man gitignore`), where the meaning of `!` is inverted: namely, `!` at the beginning
+    /// of a glob will ignore a file.
+    #[arg(long = "reload-glob")]
+    pub reload_globs: Vec<String>,
 
-    /// Reload when files with this extension change. Can be used to add non-Haskell source files
-    /// (like files included with Template Haskell, such as model definitions) to the build.
-    /// Unlike Haskell source files, files with these extensions will only trigger `:reload`s and
-    /// will never be `:add`ed to the ghci session.
-    /// Can be given multiple times.
-    #[arg(long = "watch-extension")]
-    pub extensions: Vec<String>,
+    /// Restart the `ghci` session when paths matching this glob change. Can be given multiple
+    /// times.
+    ///
+    /// By default, only changes to `.cabal` or `.ghci` files or Haskell source files being
+    /// moved/removed will trigger restarts.
+    ///
+    /// Due to a `ghci` bug, the `ghci` session must be restarted when Haskell modules are removed
+    /// or renamed: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+    ///
+    /// See `--reload-globs` for more details.
+    #[allow(rustdoc::bare_urls)]
+    #[arg(long = "restart-glob")]
+    pub restart_globs: Vec<String>,
+}
+
+impl WatchOpts {
+    /// Build the specified globs into a matcher.
+    pub fn reload_globs(&self) -> miette::Result<GlobMatcher> {
+        GlobMatcher::from_globs(self.reload_globs.iter())
+    }
+
+    /// Build the specified globs into a matcher.
+    pub fn restart_globs(&self) -> miette::Result<GlobMatcher> {
+        GlobMatcher::from_globs(self.restart_globs.iter())
+    }
 }
 
 // TODO: Possibly set `RUST_LIB_BACKTRACE` from `RUST_BACKTRACE` as well, so that `full`

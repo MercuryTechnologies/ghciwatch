@@ -11,7 +11,6 @@ use clap::builder::PathBufValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
 use miette::miette;
-use miette::Context;
 use miette::IntoDiagnostic;
 use path_absolutize::Absolutize;
 
@@ -48,12 +47,7 @@ impl NormalPath {
 
     /// Create a new normalized path relative to the current working directory.
     pub fn from_cwd(original: impl AsRef<Path>) -> miette::Result<Self> {
-        Self::new(
-            original,
-            std::env::current_dir()
-                .into_diagnostic()
-                .wrap_err("Failed to get current directory")?,
-        )
+        Self::new(original, crate::current_dir()?)
     }
 
     /// Get a reference to the absolute (normalized) path, borrowed as a [`Utf8Path`].

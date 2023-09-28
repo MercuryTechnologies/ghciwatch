@@ -26,14 +26,10 @@ use crate::shutdown::ShutdownHandle;
 pub struct WatcherOpts {
     /// The paths to watch for changes.
     pub watch: Vec<NormalPath>,
-    /// Paths to watch for changes and restart the `ghci` session on.
-    pub watch_restart: Vec<NormalPath>,
     /// Debounce duration for filesystem events.
     pub debounce: Duration,
     /// If given, use the polling file watcher with the given duration as the poll interval.
     pub poll: Option<Duration>,
-    /// Extra file extensions to reload on.
-    pub extra_extensions: Vec<String>,
 }
 
 impl WatcherOpts {
@@ -44,18 +40,9 @@ impl WatcherOpts {
     pub fn from_cli(opts: &Opts) -> Self {
         Self {
             watch: opts.watch.paths.clone(),
-            watch_restart: opts.watch.restart_paths.clone(),
             debounce: opts.watch.debounce,
             poll: opts.watch.poll,
-            extra_extensions: opts.watch.extensions.clone(),
         }
-    }
-
-    /// Iterate over all the watched paths in this option.
-    ///
-    /// Some of the paths will trigger restarts, but that's not important for the watcher.
-    fn watch_paths(&self) -> impl Iterator<Item = &NormalPath> {
-        self.watch.iter().chain(self.watch_restart.iter())
     }
 }
 
@@ -106,13 +93,13 @@ async fn run_debouncer<T: notify::Watcher>(
 
     {
         let watcher = debouncer.watcher();
-        for path in opts.watch_paths() {
+        for path in &opts.watch {
             watcher
                 .watch(path.as_std_path(), RecursiveMode::Recursive)
                 .into_diagnostic()?;
         }
         let mut cache = debouncer.cache();
-        for path in opts.watch_paths() {
+        for path in &opts.watch {
             cache.add_root(path.as_std_path(), RecursiveMode::Recursive);
         }
     }
@@ -162,6 +149,7 @@ impl EventHandler {
         if events.is_empty() {
             tracing::debug!("No relevant file events");
         } else {
+            tracing::trace!(?events, "Processed events");
             self.ghci_sender
                 .send(GhciEvent::Reload { events })
                 .await

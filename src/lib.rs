@@ -18,10 +18,12 @@ mod clap;
 pub mod cli;
 mod clonable_command;
 mod command_ext;
+mod cwd;
 mod event_filter;
 mod format_bulleted_list;
 mod ghci;
 mod haskell_source_file;
+mod ignore;
 mod incremental_reader;
 mod normal_path;
 mod shutdown;
@@ -29,6 +31,8 @@ mod textwrap;
 mod tracing;
 mod watcher;
 
+pub(crate) use cwd::current_dir;
+pub(crate) use cwd::current_dir_utf8;
 pub(crate) use format_bulleted_list::format_bulleted_list;
 
 pub use ghci::manager::run_ghci;

@@ -35,12 +35,19 @@ impl ModuleSet {
     }
 
     /// Determine if a module with the given source path is contained in this module set.
-    pub fn contains_source_path<P>(&self, path: &P) -> miette::Result<bool>
+    pub fn contains_source_path<P>(&self, path: &P) -> bool
     where
         NormalPath: Borrow<P>,
         P: Hash + Eq + ?Sized,
     {
-        Ok(self.set.contains(path))
+        self.set.contains(path)
+    }
+
+    /// Add a source path to this module set.
+    ///
+    /// Returns whether the value was newly inserted.
+    pub fn insert_source_path(&mut self, path: NormalPath) -> bool {
+        self.set.insert(path)
     }
 
     /// Iterate over the source paths in this module set.

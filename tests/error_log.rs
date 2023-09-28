@@ -106,7 +106,7 @@ async fn can_write_error_log_compilation_errors() {
         .unwrap();
 
     session
-        .wait_until_add()
+        .wait_until_reload()
         .await
         .expect("ghciwatch reloads on changes");
 
