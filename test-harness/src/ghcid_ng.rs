@@ -174,7 +174,7 @@ impl GhcidNg {
             else => {}
         }
 
-        crate::internal::set_ghc_process(child)?;
+        crate::internal::set_ghcid_ng_process(child)?;
 
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
 
