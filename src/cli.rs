@@ -9,7 +9,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
-use crate::command::ClonableCommand;
+use crate::clonable_command::ClonableCommand;
 use crate::ghci::GhciCommand;
 use crate::normal_path::NormalPath;
 

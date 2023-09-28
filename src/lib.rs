@@ -15,7 +15,8 @@ mod aho_corasick;
 mod buffers;
 mod clap;
 pub mod cli;
-mod command;
+mod clonable_command;
+mod command_ext;
 mod event_filter;
 mod format_bulleted_list;
 mod ghci;
@@ -38,3 +39,5 @@ pub use watcher::WatcherOpts;
 
 #[cfg(test)]
 mod fake_reader;
+
+pub(crate) use command_ext::CommandExt;

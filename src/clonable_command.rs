@@ -1,47 +1,17 @@
-//! Shell commands: parsing, formatting, signalling, and so on.
-
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
+use std::str::FromStr;
 
+use clap::builder::StringValueParser;
+use clap::builder::TypedValueParser;
+use clap::builder::ValueParserFactory;
 use miette::miette;
+use miette::Context;
 use miette::IntoDiagnostic;
-use miette::WrapErr;
 use tokio::process::Command;
-
-/// Format a [`Command`] as a string, quoting arguments and program names with
-/// [`shell_words::quote`].
-pub fn format(command: &Command) -> String {
-    let program = command.as_std().get_program().to_string_lossy();
-
-    let args = command.as_std().get_args().map(|arg| arg.to_string_lossy());
-
-    let tokens = std::iter::once(program).chain(args);
-
-    shell_words::join(tokens)
-}
-
-/// Construct a [`Command`] by parsing a string of shell-quoted arguments.
-pub fn from_string(shell_command: &str) -> miette::Result<ClonableCommand> {
-    let tokens = shell_words::split(shell_command)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to split shell command: {shell_command:?}"))?;
-
-    match &*tokens {
-        [] => Err(miette!("Command has no program: {shell_command:?}")),
-        [program] => Ok(ClonableCommand {
-            program: program.into(),
-            ..Default::default()
-        }),
-        [program, args @ ..] => Ok(ClonableCommand {
-            program: program.into(),
-            args: args.iter().map(Into::into).collect(),
-            ..Default::default()
-        }),
-    }
-}
 
 /// Like [`std::process::Stdio`], but it implements [`Clone`].
 ///
@@ -165,5 +135,58 @@ impl ClonableCommand {
     /// Create a new [`Command`] from this command's configuration.
     pub fn as_tokio(&self) -> Command {
         self.as_std().into()
+    }
+}
+
+impl FromStr for ClonableCommand {
+    type Err = miette::Report;
+
+    fn from_str(shell_command: &str) -> Result<Self, Self::Err> {
+        let tokens = shell_words::split(shell_command)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to split shell command: {shell_command:?}"))?;
+
+        match &*tokens {
+            [] => Err(miette!("Command has no program: {shell_command:?}")),
+            [program] => Ok(ClonableCommand {
+                program: program.into(),
+                ..Default::default()
+            }),
+            [program, args @ ..] => Ok(ClonableCommand {
+                program: program.into(),
+                args: args.iter().map(Into::into).collect(),
+                ..Default::default()
+            }),
+        }
+    }
+}
+
+/// [`clap`] parser for [`ClonableCommand`] values.
+#[derive(Default, Clone)]
+pub struct ClonableCommandParser {
+    inner: StringValueParser,
+}
+
+impl TypedValueParser for ClonableCommandParser {
+    type Value = ClonableCommand;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        self.inner.parse_ref(cmd, arg, value).and_then(|str| {
+            str.parse::<ClonableCommand>()
+                .map_err(|err| crate::clap::value_validation_error(arg, &str, format!("{err:?}")))
+        })
+    }
+}
+
+impl ValueParserFactory for ClonableCommand {
+    type Parser = ClonableCommandParser;
+
+    fn value_parser() -> Self::Parser {
+        Self::Parser::default()
     }
 }
