@@ -8,8 +8,10 @@ pub use tracing_json::Event;
 mod tracing_reader;
 
 mod matcher;
+pub use matcher::BaseMatcher;
 pub use matcher::IntoMatcher;
 pub use matcher::Matcher;
+pub use matcher::OrMatcher;
 
 pub mod fs;
 

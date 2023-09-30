@@ -12,11 +12,13 @@ use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::process::Command;
 
+use crate::matcher::Matcher;
+use crate::matcher::OptionMatcher;
 use crate::tracing_reader::TracingReader;
+use crate::BaseMatcher;
 use crate::Event;
 use crate::GhcVersion;
 use crate::IntoMatcher;
-use crate::Matcher;
 
 /// Where to write `ghciwatch` logs written by integration tests, relative to the temporary
 /// directory created for the test.
@@ -196,13 +198,13 @@ impl GhciWatch {
     /// regular `matcher` is found.
     ///
     /// Errors if waiting for the event takes longer than the given `timeout`.
-    pub async fn assert_logged_with_timeout(
+    pub async fn assert_logged_with_timeout<M: Matcher>(
         &mut self,
-        negative_matcher: Option<Matcher>,
+        mut negative_matcher: OptionMatcher<M>,
         matcher: impl IntoMatcher,
         timeout_duration: Duration,
     ) -> miette::Result<Event> {
-        let matcher = matcher.into_matcher()?;
+        let mut matcher = matcher.into_matcher()?;
 
         match tokio::time::timeout(timeout_duration, async {
             loop {
@@ -211,12 +213,10 @@ impl GhciWatch {
                         return Err(err);
                     }
                     Ok(event) => {
-                        if matcher.matches(&event) {
+                        if matcher.matches(&event)? {
                             return Ok(event);
-                        } else if let Some(negative_matcher) = &negative_matcher {
-                            if negative_matcher.matches(&event) {
-                                return Err(miette!("Found a log event matching {negative_matcher}"));
-                            }
+                        } else if negative_matcher.matches(&event)? {
+                            return Err(miette!("Found a log event matching {negative_matcher}"));
                         }
                     }
                 }
@@ -234,7 +234,7 @@ impl GhciWatch {
 
     /// Wait until a matching log event is found, with a default 10-second timeout.
     pub async fn assert_logged(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
-        self.assert_logged_with_timeout(None, matcher, Duration::from_secs(10))
+        self.assert_logged_with_timeout(OptionMatcher::none(), matcher, Duration::from_secs(10))
             .await
     }
 
@@ -248,17 +248,17 @@ impl GhciWatch {
         matcher: impl IntoMatcher,
     ) -> miette::Result<Event> {
         self.assert_logged_with_timeout(
-            Some(negative_matcher.into_matcher()?),
+            OptionMatcher::some(negative_matcher.into_matcher()?),
             matcher,
             Duration::from_secs(10),
         )
         .await
     }
 
-    /// Wait until `ghciwatch` completes its initial load.
+    /// Wait until `ghcidwatch` completes its initial load and is ready to receive file events.
     pub async fn wait_until_started(&mut self) -> miette::Result<Event> {
         self.assert_logged_with_timeout(
-            None,
+            OptionMatcher::none(),
             r"ghci started in \d+\.\d+m?s",
             Duration::from_secs(60),
         )
@@ -287,7 +287,7 @@ impl GhciWatch {
         // _before_ the filesystem worker is started (hence it is not yet ready to notice file
         // events). Therefore, we wait for "applying changes to the watcher".
         self.assert_logged(
-            Matcher::message("applying changes to the watcher").in_module("watchexec::fs"),
+            BaseMatcher::message("applying changes to the watcher").in_module("watchexec::fs"),
         )
         .await
         .wrap_err("watchexec filesystem worker didn't start in time")

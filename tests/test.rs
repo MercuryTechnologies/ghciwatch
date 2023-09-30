@@ -1,8 +1,8 @@
 use expect_test::expect;
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatchBuilder;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch --test ...` can run a test suite.
 #[test]
@@ -24,7 +24,7 @@ async fn can_run_test_suite_on_reload() {
         .expect("Can touch file");
 
     session
-        .assert_logged(Matcher::span_close().in_span("error_log_write"))
+        .assert_logged(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
     session

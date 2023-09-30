@@ -2,6 +2,7 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
@@ -25,13 +26,13 @@ async fn can_eval_commands() {
         .await
         .expect("ghciwatch didn't start in time");
 
-    let eval_message = Matcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
+    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
     session
         .assert_logged(&eval_message)
         .await
         .expect("ghciwatch evals commands");
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "exampleexample"))
+        .assert_logged(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
         .await
         .expect("ghciwatch evals commands");
 
@@ -45,7 +46,7 @@ async fn can_eval_commands() {
     session
         .assert_not_logged(
             &eval_message,
-            Matcher::span_close()
+            BaseMatcher::span_close()
                 .in_span("reload")
                 .in_module("ghciwatch::ghci"),
         )
@@ -79,14 +80,15 @@ async fn can_load_new_eval_commands_multiline() {
         .await
         .unwrap();
 
-    let eval_message = Matcher::message(&format!(r"MyModule.hs:\d+:\d+: {}", regex::escape(cmd)));
+    let eval_message =
+        BaseMatcher::message(&format!(r"MyModule.hs:\d+:\d+: {}", regex::escape(cmd)));
     session
         .assert_logged(&eval_message)
         .await
         .expect("ghciwatch evals commands");
     session
         .assert_logged(
-            Matcher::message("Read line").with_field("line", r#"^"exampleexampleexample"$"#),
+            BaseMatcher::message("Read line").with_field("line", r#"^"exampleexampleexample"$"#),
         )
         .await
         .expect("ghciwatch evals commands");
@@ -101,7 +103,7 @@ async fn can_load_new_eval_commands_multiline() {
     session
         .assert_not_logged(
             &eval_message,
-            Matcher::span_close()
+            BaseMatcher::span_close()
                 .in_span("reload")
                 .in_module("ghciwatch::ghci"),
         )

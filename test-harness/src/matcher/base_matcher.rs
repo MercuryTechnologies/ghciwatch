@@ -6,17 +6,18 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::Event;
+use crate::Matcher;
 
 /// An [`Event`] matcher.
 #[derive(Clone)]
-pub struct Matcher {
+pub struct BaseMatcher {
     message: Regex,
     target: Option<String>,
     spans: Vec<String>,
     fields: HashMap<String, Regex>,
 }
 
-impl Matcher {
+impl BaseMatcher {
     /// Construct a query for events with messages matching the given regex.
     ///
     /// ### Panics
@@ -88,75 +89,9 @@ impl Matcher {
         );
         self
     }
-
-    /// Determines if this query matches the given event.
-    pub fn matches(&self, event: &Event) -> bool {
-        if !self.message.is_match(&event.message) {
-            return false;
-        }
-
-        if !self.spans.is_empty() {
-            let mut spans = event.spans();
-            for expected_name in &self.spans {
-                loop {
-                    match spans.next() {
-                        Some(span) => {
-                            if &span.name == expected_name {
-                                // Found this expected span, move on to the next one.
-                                break;
-                            }
-                            // Otherwise, this span isn't the expected one, but the next span might
-                            // be.
-                        }
-                        None => {
-                            // We still expect to see another span, but there's no spans left in
-                            // the event.
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(target) = &self.target {
-            if target != &event.target {
-                return false;
-            }
-        }
-
-        for (name, value_regex) in &self.fields {
-            let value = event.fields.get(name);
-            match value {
-                None => {
-                    // We expected the field to be present.
-                    return false;
-                }
-                Some(value) => {
-                    match value {
-                        Value::Null
-                        | Value::Bool(_)
-                        | Value::Number(_)
-                        | Value::Array(_)
-                        | Value::Object(_) => {
-                            // We expected the value to be a string.
-                            return false;
-                        }
-                        Value::String(value) => {
-                            if !value_regex.is_match(value) {
-                                // We expected the regex to match.
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        true
-    }
 }
 
-impl Display for Matcher {
+impl Display for BaseMatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.message.as_str())?;
 
@@ -183,41 +118,86 @@ impl Display for Matcher {
     }
 }
 
-/// A type that can be converted into a `Matcher` and used for searching log events.
-pub trait IntoMatcher {
-    /// Convert the object into a `Matcher`.
-    fn into_matcher(self) -> miette::Result<Matcher>;
-}
+impl Matcher for BaseMatcher {
+    fn matches(&mut self, event: &Event) -> miette::Result<bool> {
+        if !self.message.is_match(&event.message) {
+            return Ok(false);
+        }
 
-impl IntoMatcher for Matcher {
-    fn into_matcher(self) -> miette::Result<Matcher> {
-        Ok(self)
-    }
-}
+        if !self.spans.is_empty() {
+            let mut spans = event.spans();
+            for expected_name in &self.spans {
+                loop {
+                    match spans.next() {
+                        Some(span) => {
+                            if &span.name == expected_name {
+                                // Found this expected span, move on to the next one.
+                                break;
+                            }
+                            // Otherwise, this span isn't the expected one, but the next span might
+                            // be.
+                        }
+                        None => {
+                            // We still expect to see another span, but there's no spans left in
+                            // the event.
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+        }
 
-impl IntoMatcher for &Matcher {
-    fn into_matcher(self) -> miette::Result<Matcher> {
-        Ok(self.clone())
-    }
-}
+        if let Some(target) = &self.target {
+            if target != &event.target {
+                return Ok(false);
+            }
+        }
 
-impl IntoMatcher for &str {
-    fn into_matcher(self) -> miette::Result<Matcher> {
-        Ok(Matcher::message(self))
+        for (name, value_regex) in &self.fields {
+            let value = event.fields.get(name);
+            match value {
+                None => {
+                    // We expected the field to be present.
+                    return Ok(false);
+                }
+                Some(value) => {
+                    match value {
+                        Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::Array(_)
+                        | Value::Object(_) => {
+                            // We expected the value to be a string.
+                            return Ok(false);
+                        }
+                        Value::String(value) => {
+                            if !value_regex.is_match(value) {
+                                // We expected the regex to match.
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(true)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
     use tracing::Level;
 
     use crate::tracing_json::Span;
+    use crate::IntoMatcher;
 
     use super::*;
 
     #[test]
     fn test_matcher_message() {
-        let matcher = r"ghci started in \d+\.\d+s".into_matcher().unwrap();
+        let mut matcher = r"ghci started in \d+\.\d+s".into_matcher().unwrap();
         let mut event = Event {
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
             level: Level::INFO,
@@ -233,19 +213,19 @@ mod tests {
                 rest: Default::default(),
             }],
         };
-        assert!(matcher.matches(&event));
+        assert!(matcher.matches(&event).unwrap());
         event.message = "ghci started in 123.4s".to_owned();
-        assert!(matcher.matches(&event));
+        assert!(matcher.matches(&event).unwrap());
         event.message = "ghci started in 0.45689s".to_owned();
-        assert!(matcher.matches(&event));
+        assert!(matcher.matches(&event).unwrap());
 
         event.message = "ghci started in two seconds".to_owned();
-        assert!(!matcher.matches(&event));
+        assert!(!matcher.matches(&event).unwrap());
     }
 
     #[test]
     fn test_matcher_spans_and_target() {
-        let matcher = Matcher::span_close()
+        let mut matcher = BaseMatcher::span_close()
             .in_module("ghciwatch::ghci")
             .in_spans(["on_action", "reload"]);
         let event = Event {
@@ -257,57 +237,69 @@ mod tests {
             span: Some(Span::new("reload")),
             spans: vec![Span::new("on_action"), Span::new("reload")],
         };
-        assert!(matcher.matches(&event));
+        assert!(matcher.matches(&event).unwrap());
 
         // Other spans between the expected ones.
-        assert!(matcher.matches(&Event {
-            span: Some(Span::new("puppy")),
-            spans: vec![
-                Span::new("root"),
-                Span::new("on_action"), // <- expected
-                Span::new("dog"),
-                Span::new("something"),
-                Span::new("reload"), // <- expected
-                Span::new("doggy"),
-                Span::new("puppy"),
-            ],
-            ..event.clone()
-        }));
+        assert!(matcher
+            .matches(&Event {
+                span: Some(Span::new("puppy")),
+                spans: vec![
+                    Span::new("root"),
+                    Span::new("on_action"), // <- expected
+                    Span::new("dog"),
+                    Span::new("something"),
+                    Span::new("reload"), // <- expected
+                    Span::new("doggy"),
+                    Span::new("puppy"),
+                ],
+                ..event.clone()
+            })
+            .unwrap());
 
         // Different message.
-        assert!(!matcher.matches(&Event {
-            message: "new".to_owned(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                message: "new".to_owned(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // The `span` field is irrelevant for log events.
-        assert!(matcher.matches(&Event {
-            span: None,
-            ..event.clone()
-        }));
+        assert!(matcher
+            .matches(&Event {
+                span: None,
+                ..event.clone()
+            })
+            .unwrap());
 
         // Missing parent span.
-        assert!(!matcher.matches(&Event {
-            spans: vec![],
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                spans: vec![],
+                ..event.clone()
+            })
+            .unwrap());
 
         // Different target (nested).
-        assert!(!matcher.matches(&Event {
-            target: "ghciwatch::ghci::stderr".to_owned(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                target: "ghciwatch::ghci::stderr".to_owned(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Different target (parent).
-        assert!(!matcher.matches(&Event {
-            target: "ghciwatch".to_owned(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                target: "ghciwatch".to_owned(),
+                ..event.clone()
+            })
+            .unwrap());
     }
 
     #[test]
     fn test_matcher_fields() {
-        let matcher = Matcher::message("").with_field("puppy", "dog+y");
+        let mut matcher = BaseMatcher::message("").with_field("puppy", "dog+y");
         let event = Event {
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
             level: Level::INFO,
@@ -324,67 +316,83 @@ mod tests {
             }],
         };
 
-        assert!(matcher.matches(&Event {
-            fields: [("puppy".to_owned(), Value::String("dogy".to_owned()))].into(),
-            ..event.clone()
-        }));
+        assert!(matcher
+            .matches(&Event {
+                fields: [("puppy".to_owned(), Value::String("dogy".to_owned()))].into(),
+                ..event.clone()
+            })
+            .unwrap());
 
-        assert!(matcher.matches(&Event {
-            fields: [(
-                "puppy".to_owned(),
-                Value::String("a good dogggy!".to_owned())
-            )]
-            .into(),
-            ..event.clone()
-        }));
+        assert!(matcher
+            .matches(&Event {
+                fields: [(
+                    "puppy".to_owned(),
+                    Value::String("a good dogggy!".to_owned())
+                )]
+                .into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Missing field.
-        assert!(!matcher.matches(&event));
+        assert!(!matcher.matches(&event).unwrap());
 
         // Unsupported type.
-        assert!(!matcher.matches(&Event {
-            fields: [("puppy".to_owned(), Value::Bool(false))].into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [("puppy".to_owned(), Value::Bool(false))].into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Unsupported type.
-        assert!(!matcher.matches(&Event {
-            fields: [("puppy".to_owned(), Value::Null)].into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [("puppy".to_owned(), Value::Null)].into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Unsupported type.
-        assert!(!matcher.matches(&Event {
-            fields: [(
-                "puppy".to_owned(),
-                Value::Number(serde_json::value::Number::from_f64(1.0).unwrap())
-            )]
-            .into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [(
+                    "puppy".to_owned(),
+                    Value::Number(serde_json::value::Number::from_f64(1.0).unwrap())
+                )]
+                .into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Unsupported type.
-        assert!(!matcher.matches(&Event {
-            fields: [("puppy".to_owned(), Value::Array(Default::default()))].into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [("puppy".to_owned(), Value::Array(Default::default()))].into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Unsupported type.
-        assert!(!matcher.matches(&Event {
-            fields: [("puppy".to_owned(), Value::Object(Default::default()))].into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [("puppy".to_owned(), Value::Object(Default::default()))].into(),
+                ..event.clone()
+            })
+            .unwrap());
 
         // Wrong field name.
-        assert!(!matcher.matches(&Event {
-            fields: [("pupy".to_owned(), Value::String("doggy".to_owned()))].into(),
-            ..event.clone()
-        }));
+        assert!(!matcher
+            .matches(&Event {
+                fields: [("pupy".to_owned(), Value::String("doggy".to_owned()))].into(),
+                ..event.clone()
+            })
+            .unwrap());
     }
 
     #[test]
     fn test_matcher_in_span() {
-        assert!(Matcher::span_close()
+        assert!(BaseMatcher::span_close()
             .in_span("error_log_write")
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
@@ -406,6 +414,7 @@ mod tests {
                     .into(),
                 }),
                 spans: vec![Span::new("on_action"), Span::new("reload"),]
-            }));
+            })
+            .unwrap());
     }
 }
