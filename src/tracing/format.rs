@@ -38,7 +38,7 @@ pub struct EventFormatter {
     /// If this variable is `true`, we skip the blank line before to prevent printing two blank
     /// lines in a row.
     ///
-    /// This variable is mutated whenever [`format_event`] is called.
+    /// This variable is mutated whenever [`EventFormatter::format_event`] is called.
     last_event_was_long: AtomicBool,
 }
 

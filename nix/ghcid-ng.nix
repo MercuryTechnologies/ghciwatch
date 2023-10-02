@@ -99,7 +99,11 @@
         cargoClippyExtraArgs = "--all-targets -- --deny warnings";
         inherit GHC_VERSIONS;
       });
-    ghcid-ng-doc = craneLib.cargoDoc commonArgs;
+    ghcid-ng-doc = craneLib.cargoDoc (commonArgs
+      // {
+        cargoDocExtraArgs = "--document-private-items";
+        RUSTDOCFLAGS = "-D warnings";
+      });
     ghcid-ng-fmt = craneLib.cargoFmt commonArgs;
     ghcid-ng-audit = craneLib.cargoAudit (commonArgs
       // {

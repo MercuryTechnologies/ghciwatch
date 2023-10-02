@@ -146,7 +146,7 @@ pub fn parse_position_range(input: &mut &str) -> PResult<PositionRange> {
 /// Parse an "unhelpful" source location like `<no location info>` followed by a colon. There's a
 /// few of these.
 ///
-/// See: https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Types/SrcLoc.hs#L251-L253
+/// See: <https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Types/SrcLoc.hs#L251-L253>
 pub fn parse_unhelpful_position<'i>(input: &mut &'i str) -> PResult<&'i str> {
     alt((
         "<no location info>:",
