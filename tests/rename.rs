@@ -1,7 +1,7 @@
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch` can restart correctly when modules are removed and added (i.e., renamed)
 /// at the same time.
@@ -25,7 +25,7 @@ async fn can_compile_renamed_module() {
         .expect("ghciwatch restarts on module move");
 
     session
-        .assert_logged(Matcher::message("Compilation failed").in_span("reload"))
+        .wait_for_log(BaseMatcher::compilation_failed())
         .await
         .unwrap();
 
@@ -39,7 +39,7 @@ async fn can_compile_renamed_module() {
         .expect("ghciwatch reloads on module change");
 
     session
-        .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::compilation_succeeded())
         .await
         .unwrap();
 }

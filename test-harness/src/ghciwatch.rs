@@ -259,7 +259,7 @@ impl GhciWatch {
     pub async fn wait_until_started(&mut self) -> miette::Result<Event> {
         self.assert_logged_with_timeout(
             OptionMatcher::none(),
-            r"ghci started in \d+\.\d+m?s",
+            BaseMatcher::ghci_started(),
             Duration::from_secs(60),
         )
         .await
@@ -268,29 +268,9 @@ impl GhciWatch {
 
     /// Wait until `ghciwatch` is ready to receive file events.
     pub async fn wait_until_watcher_started(&mut self) -> miette::Result<Event> {
-        // Only _after_ `ghci` starts up do we initialize the file watcher.
-        // `watchexec` sends a few events when it starts up:
-        //
-        // DEBUG watchexec::watchexec: handing over main task handle
-        // DEBUG watchexec::watchexec: starting main task
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="action"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="fs"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="signal"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="keyboard"}
-        // DEBUG watchexec::fs: launching filesystem worker
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="error_hook"}
-        // DEBUG watchexec::fs: creating new watcher {kind="Poll(100ms)"}
-        // DEBUG watchexec::signal: launching unix signal worker
-        // DEBUG watchexec::fs: applying changes to the watcher {to_drop="[]", to_watch="[WatchedPath(\"src\")]"}
-        //
-        // "launching filesystem worker" is tempting, but the phrasing implies the event is emitted
-        // _before_ the filesystem worker is started (hence it is not yet ready to notice file
-        // events). Therefore, we wait for "applying changes to the watcher".
-        self.assert_logged(
-            BaseMatcher::message("applying changes to the watcher").in_module("watchexec::fs"),
-        )
-        .await
-        .wrap_err("watchexec filesystem worker didn't start in time")
+        self.assert_logged(BaseMatcher::watcher_started())
+            .await
+            .wrap_err("notify watcher didn't start in time")
     }
 
     /// Wait until `ghciwatch` completes its initial load and is ready to receive file events.
@@ -303,13 +283,15 @@ impl GhciWatch {
     /// Wait until `ghciwatch` reloads the `ghci` session due to changed modules.
     pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
-        self.assert_logged("^Reloading ghci:\n").await.map(|_| ())
+        self.assert_logged(BaseMatcher::ghci_reload())
+            .await
+            .map(|_| ())
     }
 
     /// Wait until `ghciwatch` adds new modules to the `ghci` session.
     pub async fn wait_until_add(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are being added.
-        self.assert_logged("^Adding modules to ghci:\n")
+        self.assert_logged(BaseMatcher::ghci_add())
             .await
             .map(|_| ())
     }
@@ -317,7 +299,9 @@ impl GhciWatch {
     /// Wait until `ghciwatch` restarts the `ghci` session.
     pub async fn wait_until_restart(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules have been deleted/moved.
-        self.assert_logged("^Restarting ghci:\n").await.map(|_| ())
+        self.assert_logged(BaseMatcher::ghci_restart())
+            .await
+            .map(|_| ())
     }
 
     /// Get a path relative to the project root.
