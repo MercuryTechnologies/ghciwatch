@@ -1,4 +1,6 @@
 //! Test harness library for `ghcid-ng` integration tests.
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 mod tracing_json;
 pub use tracing_json::Event;

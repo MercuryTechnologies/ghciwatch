@@ -1,3 +1,8 @@
+//! `#[test]` attribute macro for `ghcid-ng` integration tests.
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 use proc_macro::TokenStream;
 
 use quote::quote;

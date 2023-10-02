@@ -19,11 +19,13 @@ use path_absolutize::Absolutize;
 
 /// A normalized [`Utf8PathBuf`] in tandem with a relative path.
 ///
-/// Normalized paths are absolute paths with dots removed; see [`path_dedot`] and
+/// Normalized paths are absolute paths with dots removed; see [`path_dedot`][path_dedot] and
 /// [`path_absolutize`] for more details.
 ///
 /// These paths are [`Display`]ed as the relative path but compared ([`Hash`], [`Eq`], [`Ord`]) as
 /// the normalized path.
+///
+/// [path_dedot]: https://docs.rs/path-dedot/latest/path_dedot/
 #[derive(Debug, Clone)]
 pub struct NormalPath {
     normal: Utf8PathBuf,

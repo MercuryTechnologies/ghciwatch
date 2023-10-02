@@ -1,4 +1,5 @@
 //! Command-line argument parser and argument access.
+#![allow(rustdoc::bare_urls)]
 
 use std::time::Duration;
 
@@ -100,7 +101,6 @@ pub struct WatchOpts {
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "Logging options")]
 pub struct LoggingOpts {
-    #[allow(rustdoc::bare_urls)]
     /// Tracing filter.
     ///
     /// Can be any of "error", "warn", "info", "debug", or "trace". Supports more granular
