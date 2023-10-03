@@ -27,3 +27,7 @@ pub use ghciwatch::GhciWatchBuilder;
 
 mod ghc_version;
 pub use ghc_version::GhcVersion;
+
+mod checkpoint;
+pub use checkpoint::Checkpoint;
+pub use checkpoint::CheckpointIndex;

@@ -24,11 +24,11 @@ async fn can_run_test_suite_on_reload() {
         .expect("Can touch file");
 
     session
-        .assert_logged(BaseMatcher::span_close().in_span("error_log_write"))
+        .wait_for_log(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
     session
-        .assert_logged("Finished running tests")
+        .wait_for_log("Finished running tests")
         .await
         .expect("ghciwatch runs the test suite");
 

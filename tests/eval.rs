@@ -28,11 +28,13 @@ async fn can_eval_commands() {
 
     let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
     session
-        .assert_logged(&eval_message)
+        .assert_logged_or_wait(&eval_message)
         .await
         .expect("ghciwatch evals commands");
     session
-        .assert_logged(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
+        .assert_logged_or_wait(
+            BaseMatcher::message("Read line").with_field("line", "exampleexample"),
+        )
         .await
         .expect("ghciwatch evals commands");
 
@@ -44,12 +46,7 @@ async fn can_eval_commands() {
         .expect("ghciwatch reloads");
 
     session
-        .assert_not_logged(
-            &eval_message,
-            BaseMatcher::span_close()
-                .in_span("reload")
-                .in_module("ghciwatch::ghci"),
-        )
+        .wait_for_log(BaseMatcher::reload_completes().but_not(eval_message))
         .await
         .unwrap();
 }
@@ -83,11 +80,11 @@ async fn can_load_new_eval_commands_multiline() {
     let eval_message =
         BaseMatcher::message(&format!(r"MyModule.hs:\d+:\d+: {}", regex::escape(cmd)));
     session
-        .assert_logged(&eval_message)
+        .wait_for_log(&eval_message)
         .await
         .expect("ghciwatch evals commands");
     session
-        .assert_logged(
+        .wait_for_log(
             BaseMatcher::message("Read line").with_field("line", r#"^"exampleexampleexample"$"#),
         )
         .await
@@ -101,12 +98,7 @@ async fn can_load_new_eval_commands_multiline() {
         .expect("ghciwatch reloads");
 
     session
-        .assert_not_logged(
-            &eval_message,
-            BaseMatcher::span_close()
-                .in_span("reload")
-                .in_module("ghciwatch::ghci"),
-        )
+        .wait_for_log(BaseMatcher::reload_completes().but_not(eval_message))
         .await
         .unwrap();
 }

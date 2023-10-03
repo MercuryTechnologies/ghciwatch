@@ -1,32 +1,47 @@
 use std::fmt::Display;
 
+use miette::miette;
+
 use crate::Event;
 use crate::Matcher;
 
-/// A [`Matcher`] that can match either of two other matchers.
-pub struct OrMatcher<A, B>(pub A, pub B);
+/// Wraps two matchers. The first matcher is used as normal, except if the negative matcher
+/// matches an event, [`Matcher::matches`] errors.
+pub struct NegativeMatcher<M, N> {
+    inner: M,
+    negative: N,
+}
 
-impl<A, B> Display for OrMatcher<A, B>
+impl<M, N> NegativeMatcher<M, N> {
+    /// Construct a matcher that matches if `inner` matches and errors if `negative` matches.
+    pub fn new(inner: M, negative: N) -> Self {
+        Self { inner, negative }
+    }
+}
+
+impl<A, B> Display for NegativeMatcher<A, B>
 where
     A: Display,
     B: Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} or {}", self.0, self.1)
+        write!(f, "{} but not {}", self.inner, self.negative)
     }
 }
 
-impl<A, B> Matcher for OrMatcher<A, B>
+impl<A, B> Matcher for NegativeMatcher<A, B>
 where
     A: Display + Matcher,
     B: Display + Matcher,
 {
     fn matches(&mut self, event: &Event) -> miette::Result<bool> {
-        // There may be some overlap in the events these matchers require to complete, so we
-        // eagerly evaluate both matchers before combining the boolean result.
-        let match_a = self.0.matches(event)?;
-        let match_b = self.1.matches(event)?;
-        Ok(match_a || match_b)
+        if self.negative.matches(event)? {
+            Err(miette!("Log event matched {}: {}", self.negative, event))
+        } else if self.inner.matches(event)? {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -40,11 +55,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_or_matcher() {
-        let mut matcher = "puppy"
-            .into_matcher()
-            .unwrap()
-            .or("doggy".into_matcher().unwrap());
+    fn test_negative_matcher() {
         let event = Event {
             message: "puppy".to_owned(),
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),
@@ -61,12 +72,17 @@ mod tests {
             }],
         };
 
+        let mut matcher = "puppy"
+            .into_matcher()
+            .unwrap()
+            .but_not("doggy".into_matcher().unwrap());
+
         assert!(matcher.matches(&event).unwrap());
         assert!(matcher
             .matches(&Event {
                 message: "doggy".to_owned(),
                 ..event
             })
-            .unwrap());
+            .is_err());
     }
 }

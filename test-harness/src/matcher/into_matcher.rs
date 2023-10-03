@@ -1,3 +1,5 @@
+use miette::Diagnostic;
+
 use crate::BaseMatcher;
 use crate::Matcher;
 
@@ -34,5 +36,17 @@ impl IntoMatcher for &str {
 
     fn into_matcher(self) -> miette::Result<Self::Matcher> {
         Ok(BaseMatcher::message(self))
+    }
+}
+
+impl<M, E> IntoMatcher for Result<M, E>
+where
+    M: IntoMatcher,
+    E: Diagnostic + Send + Sync + 'static,
+{
+    type Matcher = <M as IntoMatcher>::Matcher;
+
+    fn into_matcher(self) -> miette::Result<Self::Matcher> {
+        self.map_err(|err| miette::Report::new(err))?.into_matcher()
     }
 }

@@ -41,7 +41,10 @@ mod tests {
 
     #[test]
     fn test_and_matcher() {
-        let mut matcher = "puppy".into_matcher().unwrap().and("doggy").unwrap();
+        let mut matcher = "puppy"
+            .into_matcher()
+            .unwrap()
+            .and("doggy".into_matcher().unwrap());
         let event = Event {
             message: "puppy".to_owned(),
             timestamp: "2023-08-25T22:14:30.067641Z".to_owned(),

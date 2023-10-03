@@ -18,7 +18,7 @@ async fn can_start_with_failed_modules() {
     let module_path = session.path(module_path);
 
     session
-        .assert_logged("Compilation failed")
+        .wait_for_log("Compilation failed")
         .await
         .expect("ghciwatch fails to load with errors");
 
@@ -29,7 +29,7 @@ async fn can_start_with_failed_modules() {
         .unwrap();
 
     session
-        .assert_logged("Compilation succeeded")
+        .wait_for_log("Compilation succeeded")
         .await
         .expect("ghciwatch reloads fixed modules");
 }

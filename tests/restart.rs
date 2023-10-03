@@ -51,7 +51,7 @@ async fn can_restart_after_module_move() {
         .expect("ghciwatch restarts ghci");
 
     session
-        .assert_logged(
+        .wait_for_log(
             BaseMatcher::message("Compiling")
                 .in_span("reload")
                 .with_field("module", r"My\.CoolModule"),
@@ -60,7 +60,7 @@ async fn can_restart_after_module_move() {
         .unwrap();
 
     session
-        .assert_logged(BaseMatcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }

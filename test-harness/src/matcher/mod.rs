@@ -23,6 +23,9 @@ pub use option_matcher::OptionMatcher;
 mod never_matcher;
 pub use never_matcher::NeverMatcher;
 
+mod negative_matcher;
+pub use negative_matcher::NegativeMatcher;
+
 /// A type which can match log events.
 pub trait Matcher: Display {
     /// Feeds an event to the matcher and determines if the matcher has finished.
@@ -32,25 +35,22 @@ pub trait Matcher: Display {
 
     /// Construct a matcher that matches when this matcher or the `other` matcher have
     /// finished matching.
-    fn or<O>(self, other: O) -> miette::Result<OrMatcher<Self, <O as IntoMatcher>::Matcher>>
+    fn or<O>(self, other: O) -> OrMatcher<Self, O>
     where
-        O: IntoMatcher,
+        O: Matcher,
         Self: Sized,
     {
-        Ok(OrMatcher(self, other.into_matcher()?))
+        OrMatcher(self, other)
     }
 
     /// Construct a matcher that matches when this matcher and the `other` matcher have
     /// finished matching.
-    fn and<O>(
-        self,
-        other: O,
-    ) -> miette::Result<AndMatcher<FusedMatcher<Self>, FusedMatcher<<O as IntoMatcher>::Matcher>>>
+    fn and<O>(self, other: O) -> AndMatcher<FusedMatcher<Self>, FusedMatcher<O>>
     where
-        O: IntoMatcher,
+        O: Matcher,
         Self: Sized,
     {
-        Ok(AndMatcher(self.fused(), other.into_matcher()?.fused()))
+        AndMatcher(self.fused(), other.fused())
     }
 
     /// Construct a matcher that stops calling [`Matcher::matches`] on this matcher after it
@@ -60,6 +60,16 @@ pub trait Matcher: Display {
         Self: Sized,
     {
         FusedMatcher::new(self)
+    }
+
+    /// Construct a matcher that matches when this matcher matches and errors when the `other`
+    /// matcher matches.
+    fn but_not<O>(self, other: O) -> NegativeMatcher<Self, O>
+    where
+        O: Matcher,
+        Self: Sized,
+    {
+        NegativeMatcher::new(self, other)
     }
 }
 

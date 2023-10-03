@@ -66,7 +66,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch loads new modules");
 
     session
-        .assert_logged(BaseMatcher::span_close().in_span("error_log_write"))
+        .wait_for_log(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 
@@ -111,7 +111,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch reloads on changes");
 
     session
-        .assert_logged(BaseMatcher::span_close().in_span("error_log_write"))
+        .wait_for_log(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 
