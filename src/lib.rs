@@ -32,6 +32,7 @@ mod watcher;
 pub(crate) use format_bulleted_list::format_bulleted_list;
 
 pub use ghci::manager::run_ghci;
+pub use ghci::Ghci;
 pub use ghci::GhciOpts;
 pub use shutdown::ShutdownError;
 pub use shutdown::ShutdownHandle;
