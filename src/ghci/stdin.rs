@@ -191,7 +191,7 @@ impl GhciStdin {
         stdout.show_paths().await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip_all, level = "debug")]
     pub async fn show_targets(
         &mut self,
         stdout: &mut GhciStdout,
