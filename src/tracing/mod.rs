@@ -13,7 +13,7 @@ use tracing_subscriber::Layer;
 
 use crate::cli::Opts;
 
-mod format;
+mod human;
 
 /// Options for initializing the [`tracing`] logging framework. This is like a lower-effort builder
 /// interface, mostly provided because Rust tragically lacks named arguments.
@@ -46,15 +46,13 @@ impl<'opts> TracingOpts<'opts> {
             .iter()
             .fold(FmtSpan::NONE, |result, item| result | item.clone());
 
-        let fmt_layer = fmt::layer()
+        let human_layer = human::HumanLayer::default()
             .with_span_events(fmt_span.clone())
-            .fmt_fields(format::SpanFieldFormatter::default())
-            .event_format(format::EventFormatter::default())
             .with_filter(env_filter);
 
         let registry = tracing_subscriber::registry();
 
-        let registry = registry.with(fmt_layer);
+        let registry = registry.with(human_layer);
 
         match &self.json_log_path {
             Some(path) => {
