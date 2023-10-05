@@ -20,7 +20,7 @@ use crate::ghci::GhciCommand;
 use super::lines::rest_of_line;
 use super::lines::until_newline;
 
-/// A (Haskell) command for `ghcid-ng` to evaluate in `ghci`.
+/// A (Haskell) command for `ghciwatch` to evaluate in `ghci`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalCommand {
     /// The Haskell code or `ghci` command to evaluate.

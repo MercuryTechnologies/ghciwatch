@@ -1,4 +1,4 @@
-//! Parsing [`watchexec::event::Event`]s into changes `ghcid-ng` can respond to.
+//! Parsing [`watchexec::event::Event`]s into changes `ghciwatch` can respond to.
 
 use std::collections::HashMap;
 

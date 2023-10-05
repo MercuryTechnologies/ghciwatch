@@ -1,4 +1,4 @@
-//! `#[test]` attribute macro for `ghcid-ng` integration tests.
+//! `#[test]` attribute macro for `ghciwatch` integration tests.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]

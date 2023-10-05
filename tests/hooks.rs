@@ -1,16 +1,16 @@
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNgBuilder;
+use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
-/// Test that `ghcid-ng` can run its lifecycle hooks.
+/// Test that `ghciwatch` can run its lifecycle hooks.
 ///
 /// The strategy here is to set a bunch of hooks that print simple messages. We use multiple hooks
 /// just to test that it's allowed. Then we trigger the events that make the hooks run and confirm
 /// that the hooks run.
 #[test]
 async fn can_run_hooks() {
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args([
             "--after-startup-ghci",
             "putStrLn \"after-startup-1\"",
@@ -35,7 +35,7 @@ async fn can_run_hooks() {
         ])
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
 
     session
         .assert_logged(

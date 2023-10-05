@@ -85,7 +85,7 @@
     };
 
   checks = {
-    ghcid-ng-tests = craneLib.cargoNextest (commonArgs
+    ghciwatch-tests = craneLib.cargoNextest (commonArgs
       // {
         buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
         NEXTEST_PROFILE = "ci";
@@ -94,18 +94,18 @@
         # Provide GHC versions to use to the integration test suite.
         inherit GHC_VERSIONS;
       });
-    ghcid-ng-clippy = craneLib.cargoClippy (commonArgs
+    ghciwatch-clippy = craneLib.cargoClippy (commonArgs
       // {
         cargoClippyExtraArgs = "--all-targets -- --deny warnings";
         inherit GHC_VERSIONS;
       });
-    ghcid-ng-doc = craneLib.cargoDoc (commonArgs
+    ghciwatch-doc = craneLib.cargoDoc (commonArgs
       // {
         cargoDocExtraArgs = "--document-private-items";
         RUSTDOCFLAGS = "-D warnings";
       });
-    ghcid-ng-fmt = craneLib.cargoFmt commonArgs;
-    ghcid-ng-audit = craneLib.cargoAudit (commonArgs
+    ghciwatch-fmt = craneLib.cargoFmt commonArgs;
+    ghciwatch-audit = craneLib.cargoAudit (commonArgs
       // {
         inherit advisory-db;
       });
@@ -140,11 +140,11 @@ in
   craneLib.buildPackage (commonArgs
     // {
       # Don't run tests; we'll do that in a separate derivation.
-      # This will allow people to install and depend on `ghcid-ng`
+      # This will allow people to install and depend on `ghciwatch`
       # without downloading a half dozen different versions of GHC.
       doCheck = false;
 
-      # Only build `ghcid-ng`, not the test macros.
+      # Only build `ghciwatch`, not the test macros.
       cargoBuildCommand = "cargoWithProfile build";
 
       passthru = {

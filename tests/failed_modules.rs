@@ -1,28 +1,28 @@
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNgBuilder;
+use test_harness::GhciWatchBuilder;
 
-/// Test that `ghcid-ng` can start with compile errors.
+/// Test that `ghciwatch` can start with compile errors.
 ///
-/// This is a regression test for [#43](https://github.com/MercuryTechnologies/ghcid-ng/issues/43).
+/// This is a regression test for [#43](https://github.com/MercuryTechnologies/ghciwatch/issues/43).
 #[test]
 async fn can_start_with_failed_modules() {
     let module_path = "src/MyModule.hs";
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .before_start(move |path| async move {
             fs::replace(path.join(module_path), "example :: String", "example :: ()").await
         })
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     let module_path = session.path(module_path);
 
     session
         .assert_logged("Compilation failed")
         .await
-        .expect("ghcid-ng fails to load with errors");
+        .expect("ghciwatch fails to load with errors");
 
-    session.wait_until_ready().await.expect("ghcid-ng loads");
+    session.wait_until_ready().await.expect("ghciwatch loads");
 
     fs::replace(&module_path, "example :: ()", "example :: String")
         .await
@@ -31,5 +31,5 @@ async fn can_start_with_failed_modules() {
     session
         .assert_logged("Compilation succeeded")
         .await
-        .expect("ghcid-ng reloads fixed modules");
+        .expect("ghciwatch reloads fixed modules");
 }

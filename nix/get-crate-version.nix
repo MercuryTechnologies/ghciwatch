@@ -12,11 +12,11 @@ writeShellApplication {
   ];
 
   text = ''
-    # Gets the version of `ghcid-ng` in `Cargo.toml` using
+    # Gets the version of `ghciwatch` in `Cargo.toml` using
     # `cargo metadata` and `jq`.
 
     VERSION=$(cargo metadata --format-version 1 \
-        | jq -r '.packages[] | select(.name == "ghcid-ng") | .version')
+        | jq -r '.packages[] | select(.name == "ghciwatch") | .version')
 
     echo "Version in \`Cargo.toml\` is $VERSION" 1>&2
 

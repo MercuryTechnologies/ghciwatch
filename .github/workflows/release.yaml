@@ -93,9 +93,9 @@ jobs:
       - name: Create macOS universal executable
         if: runner.os == 'macOS'
         run: |
-          lipo -create -output target/release/ghcid-ng-macos \
-            target/x86_64-apple-darwin/release/ghcid-ng \
-            target/aarch64-apple-darwin/release/ghcid-ng
+          lipo -create -output target/release/ghciwatch-macos \
+            target/x86_64-apple-darwin/release/ghciwatch \
+            target/aarch64-apple-darwin/release/ghciwatch
 
       - uses: cachix/install-nix-action@v22
         if: runner.os == 'Linux'
@@ -113,21 +113,21 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p target/
-          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghcid-ng)
-          cp "$RESULT/bin/ghcid-ng" target/ghcid-ng-x86_64-linux
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch)
+          cp "$RESULT/bin/ghciwatch" target/ghciwatch-x86_64-linux
 
       - name: Build (Linux, aarch64)
         if: runner.os == 'Linux'
         run: |
-          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghcid-ng-aarch64-linux)
-          cp "$RESULT/bin/ghcid-ng" target/ghcid-ng-aarch64-linux
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch-aarch64-linux)
+          cp "$RESULT/bin/ghciwatch" target/ghciwatch-aarch64-linux
 
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
         if: runner.os == 'macOS'
         with:
           name: macos
-          path: target/release/ghcid-ng-macos
+          path: target/release/ghciwatch-macos
 
       - name: Upload Linux executables
         uses: actions/upload-artifact@v3
@@ -135,8 +135,8 @@ jobs:
         with:
           name: linux
           path: |
-            target/ghcid-ng-x86_64-linux
-            target/ghcid-ng-aarch64-linux
+            target/ghciwatch-x86_64-linux
+            target/ghciwatch-aarch64-linux
 
       - name: Publish to crates.io
         if: runner.os == 'Linux'
@@ -170,9 +170,9 @@ jobs:
         #     - uses: actions/upload-artifact@v3
         #       with:
         #         name: linux
-        #         path: target/release/ghcid-ng-aarch64-linux
+        #         path: target/release/ghciwatch-aarch64-linux
         #
-        # will be downloaded to `linux/ghcid-ng-aarch64-linux`.
+        # will be downloaded to `linux/ghciwatch-aarch64-linux`.
         uses: actions/download-artifact@v3
 
       - name: Create release
@@ -186,9 +186,9 @@ jobs:
           generate_release_notes: true
           tag_name: v${{ needs.version.outputs.version }}
           files: |
-            macos/ghcid-ng-macos
-            linux/ghcid-ng-x86_64-linux
-            linux/ghcid-ng-aarch64-linux
+            macos/ghciwatch-macos
+            linux/ghciwatch-x86_64-linux
+            linux/ghciwatch-aarch64-linux
 
       - name: Comment on PR with link to the release
         uses: peter-evans/create-or-update-comment@v2

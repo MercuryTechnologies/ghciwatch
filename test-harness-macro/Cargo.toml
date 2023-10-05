@@ -3,7 +3,7 @@ name = "test-harness-macro"
 version = "0.1.0"
 edition = "2021"
 
-description = "Test attribute for ghcid-ng"
+description = "Test attribute for ghciwatch"
 
 publish = false
 

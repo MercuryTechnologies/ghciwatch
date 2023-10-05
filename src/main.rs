@@ -1,16 +1,16 @@
-//! `ghcid-ng` is a `ghci`-based file watcher and recompiler for Haskell projects, leveraging
+//! `ghciwatch` is a `ghci`-based file watcher and recompiler for Haskell projects, leveraging
 //! Haskell's interpreted mode for faster reloads.
 //!
-//! `ghcid-ng` watches your modules for changes and reloads them in a `ghci` session, displaying
+//! `ghciwatch` watches your modules for changes and reloads them in a `ghci` session, displaying
 //! any errors.
 
 use clap::Parser;
-use ghcid_ng::cli;
-use ghcid_ng::Ghci;
-use ghcid_ng::GhciOpts;
-use ghcid_ng::TracingOpts;
-use ghcid_ng::Watcher;
-use ghcid_ng::WatcherOpts;
+use ghciwatch::cli;
+use ghciwatch::Ghci;
+use ghciwatch::GhciOpts;
+use ghciwatch::TracingOpts;
+use ghciwatch::Watcher;
+use ghciwatch::WatcherOpts;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 
@@ -22,7 +22,7 @@ async fn main() -> miette::Result<()> {
     TracingOpts::from_cli(&opts).install()?;
 
     ::tracing::warn!(
-        "This is a prerelease alpha version of `ghcid-ng`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."
+        "This is a prerelease alpha version of `ghciwatch`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."
     );
 
     let ghci = Ghci::new(GhciOpts::from_cli(&opts)?)

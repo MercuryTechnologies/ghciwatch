@@ -2,7 +2,7 @@
 name = "test-harness"
 version = "0.1.0"
 edition = "2021"
-description = "Test harness for ghcid-ng"
+description = "Test harness for ghciwatch"
 publish = false
 
 [dependencies]

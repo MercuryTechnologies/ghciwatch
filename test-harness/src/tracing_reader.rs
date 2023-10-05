@@ -21,7 +21,7 @@ impl TracingReader {
     /// Create a new [`TracingReader`].
     ///
     /// This watches for data to be read from the given `path`. When a line is written to `path`
-    /// (by `ghcid-ng`), the `TracingReader` will deserialize the line from JSON into an [`Event`]
+    /// (by `ghciwatch`), the `TracingReader` will deserialize the line from JSON into an [`Event`]
     /// and send it to the given `sender` for another task to receive.
     pub async fn new(path: impl AsRef<Path>) -> miette::Result<Self> {
         let path = path.as_ref();

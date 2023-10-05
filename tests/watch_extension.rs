@@ -1,19 +1,19 @@
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNgBuilder;
+use test_harness::GhciWatchBuilder;
 
-/// Test that `ghcid-ng` can reload when a file with a `--watch-extension` is changed.
+/// Test that `ghciwatch` can reload when a file with a `--watch-extension` is changed.
 #[test]
 async fn can_reload_extra_extension() {
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--watch-extension", "persistentmodels"])
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 
     fs::touch(session.path("src/my_model.persistentmodels"))
         .await
@@ -22,5 +22,5 @@ async fn can_reload_extra_extension() {
     session
         .wait_until_reload()
         .await
-        .expect("ghcid-ng reloads when a `.persistentmodels` file is created");
+        .expect("ghciwatch reloads when a `.persistentmodels` file is created");
 }

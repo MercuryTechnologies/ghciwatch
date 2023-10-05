@@ -2,30 +2,30 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNg;
+use test_harness::GhciWatch;
 
-/// Test that `ghcid-ng` can start up `ghci` and load a session.
+/// Test that `ghciwatch` can start up `ghci` and load a session.
 #[test]
 async fn can_load() {
-    let mut session = GhcidNg::new("tests/data/simple")
+    let mut session = GhciWatch::new("tests/data/simple")
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 }
 
-/// Test that `ghcid-ng` can load new modules.
+/// Test that `ghciwatch` can load new modules.
 #[test]
 async fn can_load_new_module() {
-    let mut session = GhcidNg::new("tests/data/simple")
+    let mut session = GhciWatch::new("tests/data/simple")
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
     fs::write(
         session.path("src/My/Module.hs"),
         indoc!(
@@ -40,5 +40,5 @@ async fn can_load_new_module() {
     session
         .wait_until_add()
         .await
-        .expect("ghcid-ng loads new modules");
+        .expect("ghciwatch loads new modules");
 }

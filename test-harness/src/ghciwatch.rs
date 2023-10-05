@@ -18,20 +18,20 @@ use crate::GhcVersion;
 use crate::IntoMatcher;
 use crate::Matcher;
 
-/// Where to write `ghcid-ng` logs written by integration tests, relative to the temporary
+/// Where to write `ghciwatch` logs written by integration tests, relative to the temporary
 /// directory created for the test.
-pub(crate) const LOG_FILENAME: &str = "ghcid-ng.json";
+pub(crate) const LOG_FILENAME: &str = "ghciwatch.json";
 
-/// Builder for [`GhcidNg`].
-pub struct GhcidNgBuilder {
+/// Builder for [`GhciWatch`].
+pub struct GhciWatchBuilder {
     project_directory: PathBuf,
     args: Vec<OsString>,
     #[allow(clippy::type_complexity)]
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
 }
 
-impl GhcidNgBuilder {
-    /// Create a new builder for a `ghcid-ng` session with the given project directory.
+impl GhciWatchBuilder {
+    /// Create a new builder for a `ghciwatch` session with the given project directory.
     pub fn new(project_directory: impl AsRef<Path>) -> Self {
         Self {
             project_directory: project_directory.as_ref().to_owned(),
@@ -40,13 +40,13 @@ impl GhcidNgBuilder {
         }
     }
 
-    /// Add an argument to the `ghcid-ng` invocation.
+    /// Add an argument to the `ghciwatch` invocation.
     pub fn with_arg(mut self, arg: impl AsRef<OsStr>) -> Self {
         self.args.push(arg.as_ref().to_owned());
         self
     }
 
-    /// Add multiple arguments to the `ghcid-ng` invocation.
+    /// Add multiple arguments to the `ghciwatch` invocation.
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
         self.args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
@@ -54,7 +54,7 @@ impl GhcidNgBuilder {
     }
 
     /// Add a hook to run after project files are copied to the temporary directory but before
-    /// `ghcid-ng` is started.
+    /// `ghciwatch` is started.
     pub fn before_start<F>(mut self, before_start: impl Fn(PathBuf) -> F + Send + 'static) -> Self
     where
         F: Future<Output = miette::Result<()>> + Send + 'static,
@@ -63,27 +63,27 @@ impl GhcidNgBuilder {
         self
     }
 
-    /// Start `ghcid-ng`.
-    pub async fn start(self) -> miette::Result<GhcidNg> {
-        GhcidNg::from_builder(self).await
+    /// Start `ghciwatch`.
+    pub async fn start(self) -> miette::Result<GhciWatch> {
+        GhciWatch::from_builder(self).await
     }
 }
 
-/// `ghcid-ng` session for integration testing.
+/// `ghciwatch` session for integration testing.
 ///
-/// This handles copying a directory of files to a temporary directory, starting a `ghcid-ng`
+/// This handles copying a directory of files to a temporary directory, starting a `ghciwatch`
 /// session, and asynchronously reading a stream of log events from its JSON log output.
-pub struct GhcidNg {
-    /// The current working directory of the `ghcid-ng` session.
+pub struct GhciWatch {
+    /// The current working directory of the `ghciwatch` session.
     cwd: PathBuf,
-    /// A stream of tracing events from `ghcid-ng`.
+    /// A stream of tracing events from `ghciwatch`.
     tracing_reader: TracingReader,
     /// The major version of GHC this test is running under.
     ghc_version: GhcVersion,
 }
 
-impl GhcidNg {
-    async fn from_builder(mut builder: GhcidNgBuilder) -> miette::Result<Self> {
+impl GhciWatch {
+    async fn from_builder(mut builder: GhciWatchBuilder) -> miette::Result<Self> {
         let full_ghc_version = crate::internal::get_ghc_version()?;
         let ghc_version = full_ghc_version.parse()?;
         let tempdir = crate::internal::set_tempdir()?;
@@ -111,8 +111,8 @@ impl GhcidNg {
 
         let log_path = tempdir.join(LOG_FILENAME);
 
-        tracing::info!("Starting ghcid-ng");
-        let mut command = Command::new(test_bin::get_test_bin("ghcid-ng").get_program());
+        tracing::info!("Starting ghciwatch");
+        let mut command = Command::new(test_bin::get_test_bin("ghciwatch").get_program());
         command
             .arg("--log-json")
             .arg(&log_path)
@@ -125,8 +125,8 @@ impl GhcidNg {
                 "hpack --force .",
                 "--tracing-filter",
                 &[
-                    "ghcid_ng::watcher=trace",
-                    "ghcid_ng=debug",
+                    "ghciwatch::watcher=trace",
+                    "ghciwatch=debug",
                     "watchexec=debug",
                     "watchexec::fs=trace",
                 ].join(","),
@@ -150,31 +150,31 @@ impl GhcidNg {
         let mut child = command
             .spawn()
             .into_diagnostic()
-            .wrap_err("Failed to start `ghcid-ng`")?;
+            .wrap_err("Failed to start `ghciwatch`")?;
 
-        // Wait for `ghcid-ng` to create the `log_path`
+        // Wait for `ghciwatch` to create the `log_path`
         let creates_log_path =
             tokio::time::timeout(Duration::from_secs(10), crate::fs::wait_for_path(&log_path));
         tokio::select! {
             child_result = child.wait() => {
                 return match child_result {
                     Err(err) => {
-                        Err(err).into_diagnostic().wrap_err("ghcid-ng failed to execute")
+                        Err(err).into_diagnostic().wrap_err("ghciwatch failed to execute")
                     }
                     Ok(status) => {
-                        Err(miette!("ghcid-ng exited: {status}"))
+                        Err(miette!("ghciwatch exited: {status}"))
                     }
                 }
             }
             log_path_result = creates_log_path => {
                 if log_path_result.is_err() {
-                    return Err(miette!("`ghcid-ng` didn't create log path {log_path:?} fast enough"));
+                    return Err(miette!("`ghciwatch` didn't create log path {log_path:?} fast enough"));
                 }
             }
             else => {}
         }
 
-        crate::internal::set_ghcid_ng_process(child)?;
+        crate::internal::set_ghciwatch_process(child)?;
 
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
 
@@ -185,9 +185,9 @@ impl GhcidNg {
         })
     }
 
-    /// Start a new `ghcid-ng` session in a copy of the given path.
+    /// Start a new `ghciwatch` session in a copy of the given path.
     pub async fn new(project_directory: impl AsRef<Path>) -> miette::Result<Self> {
-        GhcidNgBuilder::new(project_directory).start().await
+        GhciWatchBuilder::new(project_directory).start().await
     }
 
     /// Wait until a matching log event is found.
@@ -255,7 +255,7 @@ impl GhcidNg {
         .await
     }
 
-    /// Wait until `ghcid-ng` completes its initial load.
+    /// Wait until `ghciwatch` completes its initial load.
     pub async fn wait_until_started(&mut self) -> miette::Result<Event> {
         self.assert_logged_with_timeout(
             None,
@@ -263,10 +263,10 @@ impl GhcidNg {
             Duration::from_secs(60),
         )
         .await
-        .wrap_err("ghcid-ng didn't start in time")
+        .wrap_err("ghciwatch didn't start in time")
     }
 
-    /// Wait until `ghcid-ng` is ready to receive file events.
+    /// Wait until `ghciwatch` is ready to receive file events.
     pub async fn wait_until_watcher_started(&mut self) -> miette::Result<Event> {
         // Only _after_ `ghci` starts up do we initialize the file watcher.
         // `watchexec` sends a few events when it starts up:
@@ -293,20 +293,20 @@ impl GhcidNg {
         .wrap_err("watchexec filesystem worker didn't start in time")
     }
 
-    /// Wait until `ghcid-ng` completes its initial load and is ready to receive file events.
+    /// Wait until `ghciwatch` completes its initial load and is ready to receive file events.
     pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
         self.wait_until_started().await?;
         self.wait_until_watcher_started().await?;
         Ok(())
     }
 
-    /// Wait until `ghcid-ng` reloads the `ghci` session due to changed modules.
+    /// Wait until `ghciwatch` reloads the `ghci` session due to changed modules.
     pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
         self.assert_logged("^Reloading ghci:\n").await.map(|_| ())
     }
 
-    /// Wait until `ghcid-ng` adds new modules to the `ghci` session.
+    /// Wait until `ghciwatch` adds new modules to the `ghci` session.
     pub async fn wait_until_add(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are being added.
         self.assert_logged("^Adding modules to ghci:\n")
@@ -314,7 +314,7 @@ impl GhcidNg {
             .map(|_| ())
     }
 
-    /// Wait until `ghcid-ng` restarts the `ghci` session.
+    /// Wait until `ghciwatch` restarts the `ghci` session.
     pub async fn wait_until_restart(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules have been deleted/moved.
         self.assert_logged("^Restarting ghci:\n").await.map(|_| ())
@@ -347,7 +347,7 @@ async fn write_cabal_config(home: &Path) -> miette::Result<()> {
 /// Check that `ghc-{ghc_version} --version` executes successfully.
 ///
 /// This is a nice check that the given GHC version is present in the environment, to fail tests
-/// early without waiting for `ghcid-ng` to fail.
+/// early without waiting for `ghciwatch` to fail.
 async fn check_ghc_version(home: &Path, ghc_version: &str) -> miette::Result<()> {
     let _output = Command::new(format!("ghc-{ghc_version}"))
         .env("HOME", home)

@@ -223,7 +223,7 @@ mod tests {
             level: Level::INFO,
             message: "ghci started in 2.44s".to_owned(),
             fields: Default::default(),
-            target: "ghcid_ng::ghci".to_owned(),
+            target: "ghciwatch::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
                 rest: Default::default(),
@@ -246,14 +246,14 @@ mod tests {
     #[test]
     fn test_matcher_spans_and_target() {
         let matcher = Matcher::span_close()
-            .in_module("ghcid_ng::ghci")
+            .in_module("ghciwatch::ghci")
             .in_spans(["on_action", "reload"]);
         let event = Event {
             timestamp: "2023-08-25T22:14:30.993920Z".to_owned(),
             level: Level::DEBUG,
             message: "close".to_owned(),
             fields: Default::default(),
-            target: "ghcid_ng::ghci".to_owned(),
+            target: "ghciwatch::ghci".to_owned(),
             span: Some(Span::new("reload")),
             spans: vec![Span::new("on_action"), Span::new("reload")],
         };
@@ -294,13 +294,13 @@ mod tests {
 
         // Different target (nested).
         assert!(!matcher.matches(&Event {
-            target: "ghcid_ng::ghci::stderr".to_owned(),
+            target: "ghciwatch::ghci::stderr".to_owned(),
             ..event.clone()
         }));
 
         // Different target (parent).
         assert!(!matcher.matches(&Event {
-            target: "ghcid_ng".to_owned(),
+            target: "ghciwatch".to_owned(),
             ..event.clone()
         }));
     }
@@ -313,7 +313,7 @@ mod tests {
             level: Level::INFO,
             message: "ghci started in 2.44s".to_owned(),
             fields: Default::default(),
-            target: "ghcid_ng::ghci".to_owned(),
+            target: "ghciwatch::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
                 rest: Default::default(),
@@ -396,7 +396,7 @@ mod tests {
                     ("time.idle".into(), "246µs".into()),
                 ]
                 .into(),
-                target: "ghcid_ng::ghci::error_log".into(),
+                target: "ghciwatch::ghci::error_log".into(),
                 span: Some(Span {
                     name: "error_log_write".into(),
                     rest: [(

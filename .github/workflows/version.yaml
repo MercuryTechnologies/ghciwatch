@@ -5,7 +5,7 @@
 #
 # Are you here because I left Mercury and now my personal access token is
 # invalid for workflows, breaking CI? You'll want to go to
-#     https://github.com/MercuryTechnologies/ghcid-ng/settings/secrets/actions
+#     https://github.com/MercuryTechnologies/ghciwatch/settings/secrets/actions
 # and update the `REPO_GITHUB_TOKEN` secret to a new, valid token.
 
 on:

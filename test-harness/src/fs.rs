@@ -1,4 +1,4 @@
-//! Filesystem utilities for writing integration tests for `ghcid-ng`.
+//! Filesystem utilities for writing integration tests for `ghciwatch`.
 
 use std::fmt::Debug;
 use std::path::Path;

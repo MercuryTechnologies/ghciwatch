@@ -16,7 +16,7 @@ publish = false # Don't do `cargo publish`.
 
 # Define the root package: https://doc.rust-lang.org/cargo/reference/workspaces.html#root-package
 [package]
-name = "ghcid-ng"
+name = "ghciwatch"
 version = "0.3.7"
 edition = "2021"
 authors = [
@@ -24,8 +24,8 @@ authors = [
 ]
 description = "ghci-based file watcher and recompiler for Haskell projects"
 readme = "README.md"
-homepage = "https://github.com/MercuryTechnologies/ghcid-ng"
-repository = "https://github.com/MercuryTechnologies/ghcid-ng"
+homepage = "https://github.com/MercuryTechnologies/ghciwatch"
+repository = "https://github.com/MercuryTechnologies/ghciwatch"
 license = "MIT"
 keywords = ["haskell", "ghci", "watchexec"]
 categories = ["command-line-utilities", "development-tools"]
