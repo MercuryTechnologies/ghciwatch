@@ -34,6 +34,7 @@ impl ShowPaths {
         if is_haskell_source_file(target_path) {
             // The target is already a path.
             if let Some(path) = self.target_path_to_path(target_path) {
+                tracing::trace!(%path, %target, "Target is path");
                 return Ok(path);
             }
         } else {
@@ -45,6 +46,7 @@ impl ShowPaths {
                 path.set_extension(haskell_source_extension);
 
                 if let Some(path) = self.target_path_to_path(&path) {
+                    tracing::trace!(%path, %target, "Found path for target");
                     return Ok(path);
                 }
             }

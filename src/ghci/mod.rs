@@ -380,6 +380,9 @@ impl Ghci {
                 tracing::info!(%command, "Running after-restart command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
             }
+            // Once we restart, everything is freshly loaded. We don't need to add or
+            // reload any other modules.
+            return Ok(());
         }
 
         if actions.needs_add_or_reload() {
@@ -551,6 +554,11 @@ impl Ghci {
     /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
     async fn add_module(&mut self, path: &NormalPath) -> miette::Result<Option<CompilationResult>> {
+        if self.targets.contains_source_path(path.absolute())? {
+            tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
+            return Ok(None);
+        }
+
         let messages = self
             .stdin
             .add_module(&mut self.stdout, path.relative())
@@ -662,6 +670,7 @@ impl Display for Mode {
 /// Actions needed to perform a reload.
 ///
 /// See [`Ghci::reload`].
+#[derive(Debug)]
 struct ReloadActions {
     /// Paths to modules which need a full `ghci` restart.
     needs_restart: Vec<NormalPath>,
