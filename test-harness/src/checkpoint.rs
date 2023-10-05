@@ -25,8 +25,8 @@ use crate::Event;
 pub struct Checkpoint(pub(crate) usize);
 
 impl Checkpoint {
-    /// Convert this checkpoint into an index.
-    pub fn into_index(self) -> usize {
+    /// Get the underlying `usize` from this checkpoint.
+    pub fn into_inner(self) -> usize {
         self.0
     }
 }
@@ -50,7 +50,7 @@ impl CheckpointIndex for Checkpoint {
     type Index = RangeInclusive<usize>;
 
     fn into_index(self) -> Self::Index {
-        let index = self.into_index();
+        let index = self.into_inner();
         index..=index
     }
 }
@@ -59,7 +59,7 @@ impl CheckpointIndex for Range<Checkpoint> {
     type Index = Range<usize>;
 
     fn into_index(self) -> Self::Index {
-        self.start.into_index()..self.end.into_index()
+        self.start.into_inner()..self.end.into_inner()
     }
 }
 
@@ -67,7 +67,7 @@ impl CheckpointIndex for RangeFrom<Checkpoint> {
     type Index = RangeFrom<usize>;
 
     fn into_index(self) -> Self::Index {
-        self.start.into_index()..
+        self.start.into_inner()..
     }
 }
 
@@ -83,7 +83,7 @@ impl CheckpointIndex for RangeInclusive<Checkpoint> {
     type Index = RangeInclusive<usize>;
 
     fn into_index(self) -> Self::Index {
-        self.start().into_index()..=self.end().into_index()
+        self.start().into_inner()..=self.end().into_inner()
     }
 }
 
@@ -91,7 +91,7 @@ impl CheckpointIndex for RangeTo<Checkpoint> {
     type Index = RangeTo<usize>;
 
     fn into_index(self) -> Self::Index {
-        ..self.end.into_index()
+        ..self.end.into_inner()
     }
 }
 
@@ -99,6 +99,6 @@ impl CheckpointIndex for RangeToInclusive<Checkpoint> {
     type Index = RangeToInclusive<usize>;
 
     fn into_index(self) -> Self::Index {
-        ..=self.end.into_index()
+        ..=self.end.into_inner()
     }
 }
