@@ -161,24 +161,24 @@ mod tests {
                 .parse(indoc!(
                     "
                     current working directory:
-                      /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple
                     module import search paths:
-                      /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev
                       test
                       src
-                      /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen
-                      /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen
                     "
                 ))
                 .unwrap(),
             ShowPaths {
-                cwd: Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple"),
+                cwd: Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple"),
                 search_paths: vec![
-                      Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev"),
-                      Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/test"),
-                      Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/src"),
-                      Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen"),
-                      Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/test"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/src"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen"),
                 ],
             }
         );
@@ -188,13 +188,13 @@ mod tests {
                 .parse(indoc!(
                     "
                     current working directory:
-                      /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple
                     module import search paths: none
                     "
                 ))
                 .unwrap(),
             ShowPaths {
-                cwd: Utf8PathBuf::from("/Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple"),
+                cwd: Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple"),
                 search_paths: vec![],
             }
         );
@@ -205,7 +205,7 @@ mod tests {
             .parse(indoc!(
                 "
                 current working directory:
-                  /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple
+                  /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple
                 module import search paths: none
                   /Foo/bar
                 "
@@ -217,7 +217,7 @@ mod tests {
             .parse(indoc!(
                 "
                 current working directory:
-                  /Users/wiggles/ghcid-ng/ghcid-ng/tests/data/simple
+                  /Users/wiggles/ghciwatch/ghciwatch/tests/data/simple
                 module import search paths:
                   /Foo/bar
                 /Foo/bar
@@ -229,13 +229,13 @@ mod tests {
     #[test]
     fn test_path_to_module() {
         let paths = ShowPaths {
-            cwd: Utf8PathBuf::from("/Users/wiggles/ghcid-ng/"),
+            cwd: Utf8PathBuf::from("/Users/wiggles/ghciwatch/"),
             search_paths: vec![],
         };
 
         assert_eq!(
             paths
-                .path_to_module(Utf8Path::new("/Users/wiggles/ghcid-ng/Foo/Bar/Baz.hs"))
+                .path_to_module(Utf8Path::new("/Users/wiggles/ghciwatch/Foo/Bar/Baz.hs"))
                 .unwrap(),
             "Foo.Bar.Baz"
         );

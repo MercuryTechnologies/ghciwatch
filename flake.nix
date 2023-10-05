@@ -74,8 +74,8 @@
 
         pkgs = makePkgs {};
 
-        make-ghcid-ng = pkgs:
-          pkgs.callPackage ./nix/ghcid-ng.nix {} {
+        make-ghciwatch = pkgs:
+          pkgs.callPackage ./nix/ghciwatch.nix {} {
             # GHC versions to include in the environment for integration tests.
             # Keep this in sync with `./test-harness/src/ghc_version.rs`.
             ghcVersions = [
@@ -86,15 +86,15 @@
             ];
           };
 
-        ghcid-ng = make-ghcid-ng pkgs;
+        ghciwatch = make-ghciwatch pkgs;
       in {
-        inherit (ghcid-ng) checks;
+        inherit (ghciwatch) checks;
 
         packages =
           {
-            inherit ghcid-ng;
-            default = ghcid-ng;
-            ghcid-ng-tests = ghcid-ng.checks.ghcid-ng-tests;
+            inherit ghciwatch;
+            default = ghciwatch;
+            ghciwatch-tests = ghciwatch.checks.ghciwatch-tests;
 
             get-crate-version = pkgs.callPackage ./nix/get-crate-version.nix {};
             make-release-commit = pkgs.callPackage ./nix/make-release-commit.nix {};
@@ -109,17 +109,17 @@
             };
           }
           // (pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-            # ghcid-ng cross-compiled to aarch64-linux.
-            ghcid-ng-aarch64-linux = let
+            # ghciwatch cross-compiled to aarch64-linux.
+            ghciwatch-aarch64-linux = let
               crossPkgs = makePkgs {crossSystem = "aarch64-linux";};
             in
-              (make-ghcid-ng crossPkgs).overrideAttrs (old: {
+              (make-ghciwatch crossPkgs).overrideAttrs (old: {
                 CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
                 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${crossPkgs.stdenv.cc.targetPrefix}cc";
               });
           });
 
-        apps.default = flake-utils.lib.mkApp {drv = ghcid-ng;};
+        apps.default = flake-utils.lib.mkApp {drv = ghciwatch;};
 
         devShells.default = pkgs.craneLib.devShell {
           checks = self.checks.${localSystem};
@@ -128,7 +128,7 @@
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           # Provide GHC versions to use to the integration test suite.
-          inherit (ghcid-ng) GHC_VERSIONS;
+          inherit (ghciwatch) GHC_VERSIONS;
 
           # Extra development tools (cargo and rustc are included by default).
           packages = [

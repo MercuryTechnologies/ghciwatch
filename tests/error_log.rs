@@ -4,48 +4,48 @@ use indoc::indoc;
 use test_harness::fs;
 use test_harness::test;
 use test_harness::GhcVersion::*;
-use test_harness::GhcidNgBuilder;
+use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
-/// Test that `ghcid-ng --errors ...` can write the error log.
+/// Test that `ghciwatch --errors ...` can write the error log.
 #[test]
 async fn can_write_error_log() {
     let error_path = "ghcid.txt";
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--errors", error_path])
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     let error_path = session.path(error_path);
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
     let error_contents = fs::read(&error_path)
         .await
-        .expect("ghcid-ng writes ghcid.txt");
+        .expect("ghciwatch writes ghcid.txt");
     expect![[r#"
         All good (4 modules)
     "#]]
     .assert_eq(&error_contents);
 }
 
-/// Test that `ghcid-ng --errors ...` can write compilation errors.
+/// Test that `ghciwatch --errors ...` can write compilation errors.
 /// Then, test that it can reload when modules are changed and will correctly rewrite the error log
 /// once it's fixed.
 #[test]
 async fn can_write_error_log_compilation_errors() {
     let error_path = "ghcid.txt";
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--errors", error_path])
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     let error_path = session.path(error_path);
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 
     let new_module = session.path("src/My/Module.hs");
 
@@ -63,16 +63,16 @@ async fn can_write_error_log_compilation_errors() {
     session
         .wait_until_add()
         .await
-        .expect("ghcid-ng loads new modules");
+        .expect("ghciwatch loads new modules");
 
     session
         .assert_logged(Matcher::span_close().in_span("error_log_write"))
         .await
-        .expect("ghcid-ng writes ghcid.txt");
+        .expect("ghciwatch writes ghcid.txt");
 
     let error_contents = fs::read(&error_path)
         .await
-        .expect("ghcid-ng writes ghcid.txt");
+        .expect("ghciwatch writes ghcid.txt");
 
     let expected = match session.ghc_version() {
         Ghc90 | Ghc92 | Ghc94 => expect![[r#"
@@ -108,16 +108,16 @@ async fn can_write_error_log_compilation_errors() {
     session
         .wait_until_add()
         .await
-        .expect("ghcid-ng reloads on changes");
+        .expect("ghciwatch reloads on changes");
 
     session
         .assert_logged(Matcher::span_close().in_span("error_log_write"))
         .await
-        .expect("ghcid-ng writes ghcid.txt");
+        .expect("ghciwatch writes ghcid.txt");
 
     let error_contents = fs::read(&error_path)
         .await
-        .expect("ghcid-ng writes ghcid.txt");
+        .expect("ghciwatch writes ghcid.txt");
 
     expect![[r#"
         All good (5 modules)

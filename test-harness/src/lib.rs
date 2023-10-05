@@ -1,4 +1,4 @@
-//! Test harness library for `ghcid-ng` integration tests.
+//! Test harness library for `ghciwatch` integration tests.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -15,13 +15,13 @@ pub mod fs;
 
 pub mod internal;
 
-/// Marks a function as an `async` test for use with a [`GhcidNg`] session.
+/// Marks a function as an `async` test for use with a [`GhciWatch`] session.
 ///
 pub use test_harness_macro::test;
 
-mod ghcid_ng;
-pub use ghcid_ng::GhcidNg;
-pub use ghcid_ng::GhcidNgBuilder;
+mod ghciwatch;
+pub use ghciwatch::GhciWatch;
+pub use ghciwatch::GhciWatchBuilder;
 
 mod ghc_version;
 pub use ghc_version::GhcVersion;

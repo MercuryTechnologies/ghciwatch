@@ -45,7 +45,7 @@ impl SyncSentinel {
 
 impl Display for SyncSentinel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "###~GHCID-NG-SYNC-{}~###", self.id)
+        write!(f, "###~GHCIWATCH-SYNC-{}~###", self.id)
     }
 }
 

@@ -1,19 +1,19 @@
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNg;
+use test_harness::GhciWatch;
 use test_harness::Matcher;
 
-/// Test that `ghcid-ng` can restart correctly when modules are removed and added (i.e., renamed)
+/// Test that `ghciwatch` can restart correctly when modules are removed and added (i.e., renamed)
 /// at the same time.
 #[test]
 async fn can_compile_renamed_module() {
-    let mut session = GhcidNg::new("tests/data/simple")
+    let mut session = GhciWatch::new("tests/data/simple")
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 
     let module_path = session.path("src/MyModule.hs");
     let new_module_path = session.path("src/MyCoolModule.hs");
@@ -22,7 +22,7 @@ async fn can_compile_renamed_module() {
     session
         .wait_until_restart()
         .await
-        .expect("ghcid-ng restarts on module move");
+        .expect("ghciwatch restarts on module move");
 
     session
         .assert_logged(Matcher::message("Compilation failed").in_span("reload"))
@@ -36,7 +36,7 @@ async fn can_compile_renamed_module() {
     session
         .wait_until_reload()
         .await
-        .expect("ghcid-ng reloads on module change");
+        .expect("ghciwatch reloads on module change");
 
     session
         .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))

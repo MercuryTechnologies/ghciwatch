@@ -1,12 +1,12 @@
-//! `ghcid-ng` is a `ghci`-based file watcher and recompiler for Haskell projects, leveraging
+//! `ghciwatch` is a `ghci`-based file watcher and recompiler for Haskell projects, leveraging
 //! Haskell's interpreted mode for faster reloads.
 //!
-//! `ghcid-ng` watches your modules for changes and reloads them in a `ghci` session, displaying
+//! `ghciwatch` watches your modules for changes and reloads them in a `ghci` session, displaying
 //! any errors.
 //!
-//! Note that the `ghcid-ng` Rust library is a convenience and shouldn't be depended on. I do not
+//! Note that the `ghciwatch` Rust library is a convenience and shouldn't be depended on. I do not
 //! consider this to be a public/stable API and will make breaking changes here in minor version
-//! bumps. If you'd like a stable `ghcid-ng` Rust API for some reason, let me know and we can maybe
+//! bumps. If you'd like a stable `ghciwatch` Rust API for some reason, let me know and we can maybe
 //! work something out.
 
 #![deny(missing_docs)]

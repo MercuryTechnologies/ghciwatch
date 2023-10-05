@@ -14,7 +14,7 @@ use nix::unistd::Pid;
 use tokio::process::Child;
 
 thread_local! {
-    /// The temporary directory where `ghcid-ng` is run. Note that because tests are run with the
+    /// The temporary directory where `ghciwatch` is run. Note that because tests are run with the
     /// `tokio` current-thread runtime, this is unique per-test.
     pub(crate) static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
 
@@ -22,20 +22,20 @@ thread_local! {
     /// This is used to select the correct GHC version to run.
     pub(crate) static GHC_VERSION: RefCell<String> = RefCell::new(String::new());
 
-    /// The `ghcid-ng` process for this test.
+    /// The `ghciwatch` process for this test.
     ///
     /// This is set so that we can make sure to kill it when the test ends.
-    pub(crate) static GHCID_NG_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
+    pub(crate) static GHCIWATCH_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
 }
 
 /// Wraps an asynchronous test with startup/cleanup code.
 ///
 /// Before the user test code, we set the [`GHC_VERSION`] thread-local variable so that when
-/// we construct a [`super::GhcidNg`] it can use the correct GHC version.
+/// we construct a [`super::GhciWatch`] it can use the correct GHC version.
 ///
 /// Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
 ///
-/// Finally, we wait for the [`GHCID_NG_PROCESS`] to exit and clean up the temporary directory `GhcidNg`
+/// Finally, we wait for the [`GHCIWATCH_PROCESS`] to exit and clean up the temporary directory `GhciWatch`
 /// created.
 pub async fn wrap_test(
     test: impl Future<Output = ()> + Send + 'static,
@@ -77,7 +77,7 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
         tempdir
             .borrow()
             .as_deref()
-            .map(|path| path.join(crate::ghcid_ng::LOG_FILENAME))
+            .map(|path| path.join(crate::ghciwatch::LOG_FILENAME))
             .expect("`test_harness::TEMPDIR` is not set")
     });
 
@@ -100,29 +100,29 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 
 /// Perform end-of-test cleanup.
 ///
-/// 1. Kill the [`GHCID_NG_PROCESS`].
+/// 1. Kill the [`GHCIWATCH_PROCESS`].
 /// 2. Remove the [`TEMPDIR`] from the filesystem.
 async fn cleanup() {
-    let child = GHCID_NG_PROCESS.with(|child| child.take());
+    let child = GHCIWATCH_PROCESS.with(|child| child.take());
     match child {
         None => {
-            panic!("`GHCID_NG_PROCESS` is not set");
+            panic!("`GHCIWATCH_PROCESS` is not set");
         }
         Some(mut child) => {
-            send_signal(&child, Signal::SIGINT).expect("Failed to send SIGINT to `ghcid-ng`");
+            send_signal(&child, Signal::SIGINT).expect("Failed to send SIGINT to `ghciwatch`");
             match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
                 Err(_) => {
-                    tracing::info!("ghcid-ng didn't exit in time, killing");
+                    tracing::info!("ghciwatch didn't exit in time, killing");
                     child
                         .kill()
                         .await
-                        .expect("Failed to kill `ghcid-ng` after test completion");
+                        .expect("Failed to kill `ghciwatch` after test completion");
                 }
                 Ok(Ok(status)) => {
-                    tracing::info!(%status, "ghcid-ng exited");
+                    tracing::info!(%status, "ghciwatch exited");
                 }
                 Ok(Err(err)) => {
-                    tracing::error!("Waiting for ghcid-ng to exit failed: {err}");
+                    tracing::error!("Waiting for ghciwatch to exit failed: {err}");
                 }
             }
         }
@@ -161,7 +161,7 @@ pub(crate) fn get_ghc_version() -> miette::Result<String> {
     let ghc_version = GHC_VERSION.with(|version| version.borrow().to_owned());
     if ghc_version.is_empty() {
         Err(miette!("`GHC_VERSION` is not set"))
-            .wrap_err("`GhcidNg` can only be used in `#[test_harness::test]` functions")
+            .wrap_err("`GhciWatch` can only be used in `#[test_harness::test]` functions")
     } else {
         Ok(ghc_version)
     }
@@ -179,7 +179,7 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
     TEMPDIR.with(|thread_tempdir| {
         if thread_tempdir.borrow().is_some() {
             return Err(miette!(
-                "`GhcidNg` can only be constructed once per `#[test_harness::test]` function"
+                "`GhciWatch` can only be constructed once per `#[test_harness::test]` function"
             ));
         }
         *thread_tempdir.borrow_mut() = Some(tempdir.path().to_path_buf());
@@ -190,14 +190,14 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
     Ok(tempdir.into_path())
 }
 
-/// Set [`GHCID_NG_PROCESS`] to the given [`Child`].
+/// Set [`GHCIWATCH_PROCESS`] to the given [`Child`].
 ///
-/// Fails if [`GHCID_NG_PROCESS`] is already set.
-pub(crate) fn set_ghcid_ng_process(child: Child) -> miette::Result<()> {
-    GHCID_NG_PROCESS.with(|maybe_child| {
+/// Fails if [`GHCIWATCH_PROCESS`] is already set.
+pub(crate) fn set_ghciwatch_process(child: Child) -> miette::Result<()> {
+    GHCIWATCH_PROCESS.with(|maybe_child| {
         if maybe_child.borrow().is_some() {
             return Err(miette!(
-                "`GhcidNg` can only be constructed once per `#[test_harness::test]` function"
+                "`GhciWatch` can only be constructed once per `#[test_harness::test]` function"
             ));
         }
 

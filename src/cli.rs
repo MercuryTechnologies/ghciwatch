@@ -21,7 +21,7 @@ use crate::normal_path::NormalPath;
 pub struct Opts {
     /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
-    /// This is used to launch the underlying `ghci` session that `ghcid-ng` controls.
+    /// This is used to launch the underlying `ghci` session that `ghciwatch` controls.
     ///
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
     #[arg(long, value_name = "SHELL_COMMAND")]
@@ -111,8 +111,8 @@ pub struct LoggingOpts {
     ///
     /// See: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
     ///
-    /// A nice value is "ghcid_ng=debug".
-    #[arg(long, default_value = "ghcid_ng=info")]
+    /// A nice value is "ghciwatch=debug".
+    #[arg(long, default_value = "ghciwatch=info")]
     pub tracing_filter: String,
 
     /// How to display backtraces in error messages.
@@ -137,7 +137,7 @@ pub struct LoggingOpts {
 
 /// Lifecycle hooks.
 ///
-/// These are commands (mostly `ghci` commands) to run at various points in the `ghcid-ng`
+/// These are commands (mostly `ghci` commands) to run at various points in the `ghciwatch`
 /// lifecycle.
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "Lifecycle hooks")]
@@ -184,7 +184,7 @@ pub struct HookOpts {
     /// `ghci` commands to run after restarting `ghci`.
     /// Can be given multiple times.
     ///
-    /// `ghci` cannot reload after files are deleted due to a bug, so `ghcid-ng` has to restart the
+    /// `ghci` cannot reload after files are deleted due to a bug, so `ghciwatch` has to restart the
     /// underlying `ghci` session when this happens. Note that the `--before-restart-ghci` and
     /// `--after-restart-ghci` commands will therefore run in different `ghci` sessions without
     /// shared context.

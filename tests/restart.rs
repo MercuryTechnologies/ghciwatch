@@ -2,20 +2,20 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
-use test_harness::GhcidNg;
-use test_harness::GhcidNgBuilder;
+use test_harness::GhciWatch;
+use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
-/// Test that `ghcid-ng` can restart `ghci` after a module is moved.
+/// Test that `ghciwatch` can restart `ghci` after a module is moved.
 #[test]
 async fn can_restart_after_module_move() {
-    let mut session = GhcidNg::new("tests/data/simple")
+    let mut session = GhciWatch::new("tests/data/simple")
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 
     let module_path = session.path("src/My/Module.hs");
     fs::write(
@@ -32,7 +32,7 @@ async fn can_restart_after_module_move() {
     session
         .wait_until_add()
         .await
-        .expect("ghcid-ng loads new modules");
+        .expect("ghciwatch loads new modules");
 
     {
         // Rename the module and fix the module name to match the new path.
@@ -49,7 +49,7 @@ async fn can_restart_after_module_move() {
     session
         .wait_until_restart()
         .await
-        .expect("ghcid-ng restarts ghci");
+        .expect("ghciwatch restarts ghci");
 
     session
         .assert_logged(
@@ -66,24 +66,24 @@ async fn can_restart_after_module_move() {
         .unwrap();
 }
 
-/// Test that `ghcid-ng` can restart after a custom `--watch-restart` path changes.
+/// Test that `ghciwatch` can restart after a custom `--watch-restart` path changes.
 #[test]
 async fn can_restart_on_custom_file_change() {
-    let mut session = GhcidNgBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--watch-restart", "package.yaml"])
         .start()
         .await
-        .expect("ghcid-ng starts");
+        .expect("ghciwatch starts");
 
     session
         .wait_until_ready()
         .await
-        .expect("ghcid-ng loads ghci");
+        .expect("ghciwatch loads ghci");
 
     fs::touch(session.path("package.yaml")).await.unwrap();
 
     session
         .wait_until_restart()
         .await
-        .expect("ghcid-ng restarts when package.yaml changes");
+        .expect("ghciwatch restarts when package.yaml changes");
 }
