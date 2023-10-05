@@ -12,7 +12,6 @@ use crate::incremental_reader::FindAt;
 use crate::incremental_reader::IncrementalReader;
 use crate::incremental_reader::ReadOpts;
 use crate::incremental_reader::WriteBehavior;
-use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::parse_ghc_messages;
 use super::parse::parse_show_paths;
@@ -96,35 +95,6 @@ impl GhciStdout {
         };
 
         Ok(result)
-    }
-
-    #[instrument(skip_all, level = "trace")]
-    pub async fn sync(&mut self, sentinel: SyncSentinel) -> miette::Result<()> {
-        // Read until the sync marker...
-        let sync_pattern = AhoCorasick::from_anchored_patterns([sentinel.to_string()]);
-        let data = self
-            .reader
-            .read_until(&mut ReadOpts {
-                end_marker: &sync_pattern,
-                find: FindAt::LineStart,
-                writing: WriteBehavior::NoFinalLine,
-                buffer: &mut self.buffer,
-            })
-            .await?;
-        // Then make sure to consume the prompt on the next line, and then we'll be caught up.
-        let _ = self
-            .reader
-            .read_until(&mut ReadOpts {
-                end_marker: &self.prompt_patterns,
-                find: FindAt::LineStart,
-                writing: WriteBehavior::Hide,
-                buffer: &mut self.buffer,
-            })
-            .await?;
-        tracing::debug!(data, "Synced with ghci");
-
-        sentinel.finish();
-        Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]

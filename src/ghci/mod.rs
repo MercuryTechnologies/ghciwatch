@@ -6,7 +6,6 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
@@ -57,7 +56,6 @@ use crate::ghci::parse::ShowPaths;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
-use crate::sync_sentinel::SyncSentinel;
 use crate::CommandExt;
 
 use self::parse::parse_eval_commands;
@@ -134,9 +132,6 @@ pub struct Ghci {
     stdout: GhciStdout,
     /// Writer for `ghcid`-compatible output, useful for editor integration for diagnostics.
     error_log: ErrorLog,
-    /// Count of 'sync' events sent. This lets us sync stdin/stdout -- we write a message to stdin
-    /// instructing `ghci` to print a sentinel string, and wait to read that string on `stdout`.
-    sync_count: AtomicUsize,
     /// The set of targets for this `ghci` session, from `:show targets`.
     ///
     /// Targets that fail to compile don't show up in `:show modules` and aren't, technically
@@ -236,7 +231,6 @@ impl Ghci {
             stdin,
             stdout,
             error_log,
-            sync_count: AtomicUsize::new(0),
             targets: Default::default(),
             eval_commands: Default::default(),
             search_paths: ShowPaths {
@@ -273,8 +267,6 @@ impl Ghci {
             .await?;
         ret.process_ghc_messages(messages).await?;
 
-        // Sync up for any prompts.
-        ret.sync().await?;
         // Get the initial list of targets.
         ret.refresh_targets().await?;
         // Get the initial list of eval commands.
@@ -435,18 +427,6 @@ impl Ghci {
             }
         }
 
-        self.sync().await?;
-
-        Ok(())
-    }
-
-    /// Sync the input and output streams of this `ghci` session. This will block until all input
-    /// written to the `ghci` process's stdin has been read and processed.
-    #[instrument(skip_all, level = "debug")]
-    async fn sync(&mut self) -> miette::Result<()> {
-        let (sentinel, receiver) = SyncSentinel::new(&self.sync_count);
-        self.stdin.sync(&mut self.stdout, sentinel).await?;
-        receiver.await.into_diagnostic()?;
         Ok(())
     }
 

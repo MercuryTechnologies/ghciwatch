@@ -9,9 +9,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tracing::instrument;
 
-use crate::haskell_show::HaskellShow;
 use crate::incremental_reader::FindAt;
-use crate::sync_sentinel::SyncSentinel;
 
 use super::parse::GhcMessage;
 use super::parse::ModuleSet;
@@ -157,26 +155,6 @@ impl GhciStdin {
         //
         // https://downloads.haskell.org/ghc/latest/docs/users_guide/ghci.html#ghci-cmd-:load
         self.write_line(stdout, &format!(":add {path}\n")).await
-    }
-
-    #[instrument(skip(self, stdout), level = "trace")]
-    pub async fn sync(
-        &mut self,
-        stdout: &mut GhciStdout,
-        sentinel: SyncSentinel,
-    ) -> miette::Result<()> {
-        self.set_mode(stdout, Mode::Internal).await?;
-
-        self.stdin
-            .write_all(
-                format!("{IO_MODULE_NAME}.putStrLn {}\n", sentinel.haskell_show()).as_bytes(),
-            )
-            .await
-            .into_diagnostic()?;
-
-        stdout.sync(sentinel).await?;
-
-        Ok(())
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
