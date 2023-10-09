@@ -88,7 +88,7 @@ impl Eq for NormalPath {}
 
 impl PartialOrd for NormalPath {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        PartialOrd::partial_cmp(&self.normal, &other.normal)
+        Some(self.cmp(other))
     }
 }
 

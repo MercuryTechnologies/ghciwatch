@@ -98,7 +98,7 @@ pub fn file_events_from_action(action: &Action) -> miette::Result<Vec<FileEvent>
         for tag in event.tags.iter() {
             if let Tag::Path { path, .. } = tag {
                 let path = path.to_owned().try_into().into_diagnostic()?;
-                let entry = events_by_path.entry(path).or_insert_with(Vec::new);
+                let entry = events_by_path.entry(path).or_default();
                 entry.push(event);
                 // No need to look at the rest of the tags.
                 break;
