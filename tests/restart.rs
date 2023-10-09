@@ -4,6 +4,7 @@ use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
+use test_harness::GhciWatchBuilder;
 
 /// Test that `ghciwatch` can restart `ghci` after a module is moved.
 #[test]

@@ -35,12 +35,59 @@ impl BaseMatcher {
 
     /// Construct a query for new span events, denoted by a `new` message.
     pub fn span_new() -> Self {
-        Self::message("new")
+        Self::message("^new$")
     }
 
     /// Construct a query for span close events, denoted by a `close` message.
     pub fn span_close() -> Self {
-        Self::message("close")
+        Self::message("^close$")
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
+    /// successfully.
+    pub fn compilation_succeeded() -> Self {
+        Self::message("^Compilation succeeded$").in_span("reload")
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
+    /// unsuccessfully.
+    pub fn compilation_failed() -> Self {
+        Self::message("^Compilation failed$").in_span("reload")
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` compiles the given
+    /// module.
+    ///
+    /// The module is given by name (`My.Module`), not path (`src/My/Module.hs`).
+    pub fn module_compiling(module: &str) -> Self {
+        Self::message("^Compiling$")
+            .in_span("reload")
+            .with_field("module", &regex::escape(module))
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` session is reloaded.
+    pub fn reload() -> Self {
+        Self::message("^Reloading ghci:\n")
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` session finishes
+    /// responding to changed file events. This may or may not include reloading, restarting, or
+    /// adding modules. (E.g., if all the changed files are ignored, a 'reload' may be a no-op.)
+    pub fn reload_completes() -> Self {
+        Self::span_close()
+            .in_span("reload")
+            .in_module("ghciwatch::ghci")
+    }
+
+    /// Utility for constructing a matcher that waits until a module is added to the inner `ghci`
+    /// session.
+    pub fn module_add() -> Self {
+        Self::message("^Adding modules to ghci:\n")
+    }
+
+    /// Utility for constructing a matcher that waits until the inner `ghci` session is restarted.
+    pub fn restart() -> Self {
+        Self::message("^Restarting ghci:\n")
     }
 
     /// Require that matching events be in a span with the given name.
@@ -138,11 +185,11 @@ impl Display for BaseMatcher {
         write!(f, "{:?}", self.message.as_str())?;
 
         if let Some(target) = &self.target {
-            write!(f, " in module {target}")?;
+            write!(f, " in module {target:?}")?;
         }
 
         if !self.spans.is_empty() {
-            write!(f, " in spans {}", self.spans.join(", "))?;
+            write!(f, " in spans {:?}", self.spans.join(", "))?;
         }
 
         if !self.fields.is_empty() {
