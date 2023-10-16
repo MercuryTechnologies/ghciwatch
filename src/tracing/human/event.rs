@@ -1,7 +1,5 @@
 use std::fmt;
 use std::fmt::Debug;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 
 use tracing::field::Field;
 use tracing::field::Visit;
@@ -18,7 +16,6 @@ use super::HumanLayer;
 
 #[derive(Debug)]
 pub struct HumanEvent {
-    last_event_was_long: AtomicBool,
     style: EventStyle,
     /// Spans, in root-to-current (outside-in) order.
     spans: Vec<SpanInfo>,
@@ -26,9 +23,8 @@ pub struct HumanEvent {
 }
 
 impl HumanEvent {
-    pub fn new(level: Level, last_event_was_long: AtomicBool, spans: Vec<SpanInfo>) -> Self {
+    pub fn new(level: Level, spans: Vec<SpanInfo>) -> Self {
         Self {
-            last_event_was_long,
             style: EventStyle::new(level),
             fields: HumanFields::new_event(),
             spans,
@@ -70,17 +66,6 @@ impl fmt::Display for HumanEvent {
 
         let lines = options.wrap(&message_colored);
 
-        // If there's more than one line of message, add a blank line before and after the message.
-        // This doesn't account for fields, but I think that's fine?
-        let add_blank_lines = lines.len() > 1;
-        // Store `add_blank_lines` and fetch the previous value:
-        let last_event_was_long = self
-            .last_event_was_long
-            .swap(add_blank_lines, Ordering::SeqCst);
-        if add_blank_lines && !last_event_was_long {
-            writeln!(f)?;
-        };
-
         // Write the actual message, line by line.
         for line in &lines {
             writeln!(f, "{line}")?;
@@ -108,11 +93,6 @@ impl fmt::Display for HumanEvent {
                 self.style.style_span(span),
             )?;
         }
-
-        // If there's more than one line of output, add a blank line before and after the message.
-        if add_blank_lines {
-            writeln!(f)?;
-        };
 
         Ok(())
     }

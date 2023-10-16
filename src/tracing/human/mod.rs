@@ -1,7 +1,5 @@
 use std::fmt;
 use std::fmt::Debug;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 
 use itertools::Itertools;
 use tracing::span;
@@ -27,15 +25,6 @@ use tracing_subscriber::registry::Scope;
 
 #[derive(Debug)]
 pub struct HumanLayer {
-    /// We print blank lines before and after long log messages to help visually separate them.
-    ///
-    /// This becomes an issue if two long log messages are printed one after another.
-    ///
-    /// If this variable is `true`, we skip the blank line before to prevent printing two blank
-    /// lines in a row.
-    ///
-    /// This variable is mutated whenever a [`HumanEvent`] is displayed.
-    last_event_was_long: AtomicBool,
     /// Which span events to emit.
     span_events: FmtSpan,
 }
@@ -43,7 +32,6 @@ pub struct HumanLayer {
 impl Default for HumanLayer {
     fn default() -> Self {
         Self {
-            last_event_was_long: Default::default(),
             span_events: FmtSpan::NONE,
         }
     }
@@ -62,7 +50,6 @@ impl HumanLayer {
     {
         HumanEvent::new(
             level,
-            AtomicBool::new(self.last_event_was_long.load(Ordering::SeqCst)),
             scope
                 .map(|scope| event::SpanInfo::from_scope(scope))
                 .unwrap_or_default(),
