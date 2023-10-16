@@ -428,9 +428,8 @@ impl GhciWatch {
     /// Wait until `ghciwatch` reloads the `ghci` session due to changed modules.
     pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
-        self.wait_for_log(BaseMatcher::ghci_reload())
-            .await
-            .map(|_| ())
+        self.wait_for_log(BaseMatcher::ghci_reload()).await?;
+        Ok(())
     }
 
     /// Wait until `ghciwatch` adds new modules to the `ghci` session.
