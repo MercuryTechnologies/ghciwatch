@@ -30,13 +30,13 @@ thread_local! {
 
 /// Wraps an asynchronous test with startup/cleanup code.
 ///
-/// Before the user test code, we set the [`GHC_VERSION`] thread-local variable so that when
+/// Before the user test code, we set the `GHC_VERSION` thread-local variable so that when
 /// we construct a [`super::GhciWatch`] it can use the correct GHC version.
 ///
 /// Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
 ///
-/// Finally, we wait for the [`GHCIWATCH_PROCESS`] to exit and clean up the temporary directory `GhciWatch`
-/// created.
+/// Finally, we wait for the process set by [`set_ghciwatch_process`] to exit and clean up the
+/// temporary directory `GhciWatch` created.
 pub async fn wrap_test(
     test: impl Future<Output = ()> + Send + 'static,
     ghc_version: &'static str,
@@ -100,7 +100,7 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 
 /// Perform end-of-test cleanup.
 ///
-/// 1. Kill the [`GHCIWATCH_PROCESS`].
+/// 1. Kill the process set by [`set_ghciwatch_process`].
 /// 2. Remove the [`TEMPDIR`] from the filesystem.
 async fn cleanup() {
     let child = GHCIWATCH_PROCESS.with(|child| child.take());
@@ -156,7 +156,7 @@ async fn cleanup() {
     }
 }
 
-/// Get the GHC version as given by [`GHC_VERSION`].
+/// Get the GHC version for this thread as given by `GHC_VERSION`.
 pub(crate) fn get_ghc_version() -> miette::Result<String> {
     let ghc_version = GHC_VERSION.with(|version| version.borrow().to_owned());
     if ghc_version.is_empty() {
@@ -190,9 +190,9 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
     Ok(tempdir.into_path())
 }
 
-/// Set [`GHCIWATCH_PROCESS`] to the given [`Child`].
+/// Set the `GHCIWATCH_PROCESS` for the current thread to the given [`Child`].
 ///
-/// Fails if [`GHCIWATCH_PROCESS`] is already set.
+/// Fails if the `GHCIWATCH_PROCESS` is already set.
 pub(crate) fn set_ghciwatch_process(child: Child) -> miette::Result<()> {
     GHCIWATCH_PROCESS.with(|maybe_child| {
         if maybe_child.borrow().is_some() {

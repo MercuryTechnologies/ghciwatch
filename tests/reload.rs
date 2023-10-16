@@ -2,8 +2,8 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch` can start up and then reload on changes.
 #[test]
@@ -32,8 +32,8 @@ async fn can_reload() {
         .await
         .expect("ghciwatch reloads on changes");
     session
-        .assert_logged(
-            Matcher::span_close()
+        .wait_for_log(
+            BaseMatcher::span_close()
                 .in_module("ghciwatch::ghci")
                 .in_spans(["on_action", "reload"]),
         )
@@ -69,7 +69,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghciwatch loads new modules");
     session
-        .assert_logged(Matcher::message("Compilation failed").in_spans(["reload", "add_module"]))
+        .wait_for_log(BaseMatcher::message("Compilation failed").in_spans(["reload", "add_module"]))
         .await
         .unwrap();
 
@@ -82,7 +82,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghciwatch reloads on changes");
     session
-        .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }

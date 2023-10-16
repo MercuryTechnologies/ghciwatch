@@ -2,9 +2,9 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
 use test_harness::GhciWatchBuilder;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch` can restart `ghci` after a module is moved.
 #[test]
@@ -52,8 +52,8 @@ async fn can_restart_after_module_move() {
         .expect("ghciwatch restarts ghci");
 
     session
-        .assert_logged(
-            Matcher::message("Compiling")
+        .wait_for_log(
+            BaseMatcher::message("Compiling")
                 .in_span("reload")
                 .with_field("module", r"My\.CoolModule"),
         )
@@ -61,7 +61,7 @@ async fn can_restart_after_module_move() {
         .unwrap();
 
     session
-        .assert_logged(Matcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::message("Compilation succeeded").in_span("reload"))
         .await
         .unwrap();
 }

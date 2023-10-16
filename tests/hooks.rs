@@ -1,7 +1,7 @@
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhciWatchBuilder;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch` can run its lifecycle hooks.
 ///
@@ -38,26 +38,26 @@ async fn can_run_hooks() {
         .expect("ghciwatch starts");
 
     session
-        .assert_logged(
-            Matcher::message("Running after-startup command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-startup command")
                 .with_field("command", "putStrLn \"after-startup-1\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-startup-1$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-startup-1$"))
         .await
         .unwrap();
 
     session
-        .assert_logged(
-            Matcher::message("Running after-startup command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-startup command")
                 .with_field("command", "putStrLn \"after-startup-2\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-startup-2$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-startup-2$"))
         .await
         .unwrap();
 
@@ -67,102 +67,102 @@ async fn can_run_hooks() {
 
     // Before reload
     session
-        .assert_logged(
-            Matcher::message("Running before-reload command")
+        .wait_for_log(
+            BaseMatcher::message("Running before-reload command")
                 .with_field("command", "putStrLn \"before-reload-1\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^before-reload-1$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^before-reload-1$"))
         .await
         .unwrap();
 
     session
-        .assert_logged(
-            Matcher::message("Running before-reload command")
+        .wait_for_log(
+            BaseMatcher::message("Running before-reload command")
                 .with_field("command", "putStrLn \"before-reload-2\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^before-reload-2$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^before-reload-2$"))
         .await
         .unwrap();
 
     // After reload
     session
-        .assert_logged(
-            Matcher::message("Running after-reload command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-reload command")
                 .with_field("command", "putStrLn \"after-reload-1\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-reload-1$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-reload-1$"))
         .await
         .unwrap();
 
     session
-        .assert_logged(
-            Matcher::message("Running after-reload command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-reload command")
                 .with_field("command", "putStrLn \"after-reload-2\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-reload-2$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-reload-2$"))
         .await
         .unwrap();
 
     fs::remove(session.path("src/MyModule.hs")).await.unwrap();
     // Before restart
     session
-        .assert_logged(
-            Matcher::message("Running before-restart command")
+        .wait_for_log(
+            BaseMatcher::message("Running before-restart command")
                 .with_field("command", "putStrLn \"before-restart-1\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^before-restart-1$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^before-restart-1$"))
         .await
         .unwrap();
 
     session
-        .assert_logged(
-            Matcher::message("Running before-restart command")
+        .wait_for_log(
+            BaseMatcher::message("Running before-restart command")
                 .with_field("command", "putStrLn \"before-restart-2\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^before-restart-2$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^before-restart-2$"))
         .await
         .unwrap();
 
     // After restart
     session
-        .assert_logged(
-            Matcher::message("Running after-restart command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-restart command")
                 .with_field("command", "putStrLn \"after-restart-1\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-restart-1$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-restart-1$"))
         .await
         .unwrap();
 
     session
-        .assert_logged(
-            Matcher::message("Running after-restart command")
+        .wait_for_log(
+            BaseMatcher::message("Running after-restart command")
                 .with_field("command", "putStrLn \"after-restart-2\""),
         )
         .await
         .unwrap();
     session
-        .assert_logged(Matcher::message("Read line").with_field("line", "^after-restart-2$"))
+        .wait_for_log(BaseMatcher::message("Read line").with_field("line", "^after-restart-2$"))
         .await
         .unwrap();
 }

@@ -3,9 +3,9 @@ use indoc::indoc;
 
 use test_harness::fs;
 use test_harness::test;
+use test_harness::BaseMatcher;
 use test_harness::GhcVersion::*;
 use test_harness::GhciWatchBuilder;
-use test_harness::Matcher;
 
 /// Test that `ghciwatch --errors ...` can write the error log.
 #[test]
@@ -66,7 +66,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch loads new modules");
 
     session
-        .assert_logged(Matcher::span_close().in_span("error_log_write"))
+        .wait_for_log(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 
@@ -111,7 +111,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch reloads on changes");
 
     session
-        .assert_logged(Matcher::span_close().in_span("error_log_write"))
+        .wait_for_log(BaseMatcher::span_close().in_span("error_log_write"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 
