@@ -1268,6 +1268,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "shell-words",
  "tempfile",
  "test-harness-macro",
  "test_bin",

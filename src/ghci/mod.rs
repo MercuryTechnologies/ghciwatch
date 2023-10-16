@@ -76,11 +76,6 @@ use self::parse::parse_eval_commands;
 /// private-use-area codepoints or something in the future.
 pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
 
-/// The name we import `System.IO` as in `ghci`. This is used to run a few `putStrLn` commands and
-/// similar without messing with the user's namespace. If you have a module in your project named
-/// `GHCIWATCH_IO_INTERNAL__` that's on you.
-pub const IO_MODULE_NAME: &str = "GHCIWATCH_IO_INTERNAL__";
-
 /// Options for constructing a [`Ghci`]. This is like a lower-effort builder interface, mostly provided
 /// because Rust tragically lacks named arguments.
 ///
