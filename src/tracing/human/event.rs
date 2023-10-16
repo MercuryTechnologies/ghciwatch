@@ -26,30 +26,7 @@ pub struct HumanEvent {
 }
 
 impl HumanEvent {
-    pub fn new<S>(
-        level: Level,
-        last_event_was_long: AtomicBool,
-        scope: Option<Scope<'_, S>>,
-    ) -> Self
-    where
-        S: tracing::Subscriber,
-        S: for<'lookup> LookupSpan<'lookup>,
-    {
-        let mut spans = Vec::new();
-        if let Some(scope) = scope {
-            for span in scope.from_root() {
-                let extensions = span.extensions();
-                let fields = &extensions
-                    .get::<FormattedFields<HumanLayer>>()
-                    .expect("A span should always have formatted fields")
-                    .fields;
-                spans.push(SpanInfo {
-                    name: span.name(),
-                    target: span.metadata().target().into(),
-                    fields: fields.to_owned(),
-                });
-            }
-        }
+    pub fn new(level: Level, last_event_was_long: AtomicBool, spans: Vec<SpanInfo>) -> Self {
         Self {
             last_event_was_long,
             style: EventStyle::new(level),
@@ -150,4 +127,32 @@ pub struct SpanInfo {
     target: String,
     /// The span's fields, formatted.
     pub fields: String,
+}
+
+impl SpanInfo {
+    /// Get a list of `SpanInfo`s from a [`Scope`] by traversing its spans from root to leaf
+    /// (outside-in).
+    ///
+    /// This relies on the [`super::HumanLayer`] to insert formatted fields in the span's
+    /// extensions.
+    pub fn from_scope<S>(scope: Scope<'_, S>) -> Vec<Self>
+    where
+        S: tracing::Subscriber,
+        S: for<'lookup> LookupSpan<'lookup>,
+    {
+        let mut spans = Vec::new();
+        for span in scope.from_root() {
+            let extensions = span.extensions();
+            let fields = &extensions
+                .get::<FormattedFields<HumanLayer>>()
+                .expect("A span should always have formatted fields")
+                .fields;
+            spans.push(SpanInfo {
+                name: span.name(),
+                target: span.metadata().target().into(),
+                fields: fields.to_owned(),
+            });
+        }
+        spans
+    }
 }

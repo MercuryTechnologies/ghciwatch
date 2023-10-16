@@ -63,7 +63,9 @@ impl HumanLayer {
         HumanEvent::new(
             level,
             AtomicBool::new(self.last_event_was_long.load(Ordering::SeqCst)),
-            scope,
+            scope
+                .map(|scope| event::SpanInfo::from_scope(scope))
+                .unwrap_or_default(),
         )
     }
 }
