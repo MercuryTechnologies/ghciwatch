@@ -85,10 +85,10 @@ where
         }
     }
 
-    fn on_record(&self, span: &Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
+    fn on_record(&self, id: &Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
         let mut fields = HumanFields::new_span();
         values.record(&mut fields);
-        if let Some(span_ref) = ctx.span(span) {
+        if let Some(span_ref) = ctx.span(id) {
             span_ref
                 .extensions_mut()
                 .insert(FormattedFields::<HumanLayer>::new(
