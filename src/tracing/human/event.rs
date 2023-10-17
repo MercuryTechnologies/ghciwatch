@@ -136,3 +136,256 @@ impl SpanInfo {
         spans
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use expect_test::expect;
+    use expect_test::Expect;
+    use indoc::indoc;
+
+    // /!\   /!\   /!\   /!\   /!\   /!\   /!\   /!\
+    //
+    // NOTE: The tests here have non-printing characters for ANSI terminal escapes in them.
+    //
+    // Be sure to configure your editor to display them!
+    //
+    // /!\   /!\   /!\   /!\   /!\   /!\   /!\   /!\
+
+    fn check(actual: HumanEvent, expected: Expect) {
+        owo_colors::set_override(true);
+        let actual = actual.to_string();
+        expected.assert_eq(&actual);
+    }
+
+    #[test]
+    fn test_simple() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::INFO),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some(
+                        "Checking access to Mercury repositories on GitHub over SSH".to_owned(),
+                    ),
+                    fields: Default::default(),
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [32m• [0mChecking access to Mercury repositories on GitHub over SSH
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_short_format() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::INFO),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("User `nix.conf` is already OK".to_owned()),
+                    fields: vec![(
+                        "path".to_owned(),
+                        "/Users/wiggles/.config/nix/nix.conf".to_owned(),
+                    )],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [32m• [0mUser `nix.conf` is already OK [1mpath[0m=/Users/wiggles/.config/nix/nix.conf
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_short_format_long_field() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::INFO),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("User `nix.conf` is already OK".to_owned()),
+                    fields: vec![(
+                        "path".to_owned(),
+                        // this field is too long to fit on one line, so we use the long format
+                        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            .to_owned(),
+                    )],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [32m• [0mUser `nix.conf` is already OK
+                  [1mpath[0m=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_long_format() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::INFO),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("User `nix.conf` is already OK".to_owned()),
+                    // Multiple fields means we use the long format.
+                    fields: vec![
+                        ("path".to_owned(), "~/.config/nix/nix.conf".to_owned()),
+                        ("user".to_owned(), "puppy".to_owned()),
+                    ],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [32m• [0mUser `nix.conf` is already OK
+                  [1mpath[0m=~/.config/nix/nix.conf
+                  [1muser[0m=puppy
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_long_warning() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::WARN),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some(
+                        indoc!(
+                            "
+                            `nix doctor` found potential issues with your Nix installation:
+                            Running checks against store uri: daemon
+                            [FAIL] Multiple versions of nix found in PATH:
+                              /nix/store/lr32i0bdarx1iqsch4sy24jj1jkfw9vf-nix-2.11.0/bin
+                              /nix/store/s1j8d1x2jlfkb2ckncal8a700hid746p-nix-2.11.0/bin
+
+                            [PASS] All profiles are gcroots.
+                            [PASS] Client protocol matches store protocol.
+                            "
+                        )
+                        .to_owned(),
+                    ),
+                    fields: vec![],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [33m⚠ [0m[33m`nix doctor` found potential issues with your Nix installation:
+                  Running checks against store uri: daemon
+                  [FAIL] Multiple versions of nix found in PATH:
+                    /nix/store/lr32i0bdarx1iqsch4sy24jj1jkfw9vf-nix-2.11.0/bin
+                    /nix/store/s1j8d1x2jlfkb2ckncal8a700hid746p-nix-2.11.0/bin
+
+                  [PASS] All profiles are gcroots.
+                  [PASS] Client protocol matches store protocol.
+                  [0m
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_long_warning_last_was_long() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::WARN),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some(
+                        indoc!(
+                            "
+                            `nix doctor` found potential issues with your Nix installation:
+                            Running checks against store uri: daemon
+                            [FAIL] Multiple versions of nix found in PATH:
+                              /nix/store/lr32i0bdarx1iqsch4sy24jj1jkfw9vf-nix-2.11.0/bin
+                              /nix/store/s1j8d1x2jlfkb2ckncal8a700hid746p-nix-2.11.0/bin
+
+                            [PASS] All profiles are gcroots.
+                            [PASS] Client protocol matches store protocol.
+                            "
+                        )
+                        .to_owned(),
+                    ),
+                    fields: vec![],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [33m⚠ [0m[33m`nix doctor` found potential issues with your Nix installation:
+                  Running checks against store uri: daemon
+                  [FAIL] Multiple versions of nix found in PATH:
+                    /nix/store/lr32i0bdarx1iqsch4sy24jj1jkfw9vf-nix-2.11.0/bin
+                    /nix/store/s1j8d1x2jlfkb2ckncal8a700hid746p-nix-2.11.0/bin
+
+                  [PASS] All profiles are gcroots.
+                  [PASS] Client protocol matches store protocol.
+                  [0m
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_trace() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::TRACE),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("Fine-grained tracing info".to_owned()),
+                    fields: vec![("favorite_doggy_sound".to_owned(), "awooooooo".to_owned())],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [35mTRACE [0m[2mFine-grained tracing info [1;2mfavorite_doggy_sound[0m[2m=awooooooo[0m[0m
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_debug() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::DEBUG),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("Debugging info".to_owned()),
+                    fields: vec![("puppy".to_owned(), "pawbeans".to_owned())],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [34mDEBUG [0m[2mDebugging info [1;2mpuppy[0m[2m=pawbeans[0m[0m
+            "#]],
+        );
+    }
+
+    #[test]
+    fn test_wrapping() {
+        check(
+            HumanEvent {
+                style: EventStyle::new(Level::WARN),
+                fields: HumanFields {
+                    extract_message: true,
+                    message: Some("I was unable to clone `mercury-web-backend`; most likely this is because you don't have a proper SSH key available.\n\
+                        Note that access to Mercury repositories on GitHub over SSH is required to enter the `nix develop` shell in `mercury-web-backend`\n\
+                        See: https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account".to_owned()),
+                    fields: vec![],
+                },
+                spans: vec![],
+            },
+            expect![[r#"
+                [33m⚠ [0m[33mI was unable to clone `mercury-web-backend`; most likely this is because you
+                  don't have a proper SSH key available.
+                  Note that access to Mercury repositories on GitHub over SSH is required to
+                  enter the `nix develop` shell in `mercury-web-backend`
+                  See:
+                  https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account[0m
+            "#]],
+        );
+    }
+}
