@@ -43,7 +43,7 @@ impl HumanLayer {
         self
     }
 
-    fn visitor<S>(&self, level: Level, scope: Option<Scope<'_, S>>) -> HumanEvent
+    fn event<S>(&self, level: Level, scope: Option<Scope<'_, S>>) -> HumanEvent
     where
         S: tracing::Subscriber,
         S: for<'lookup> LookupSpan<'lookup>,
@@ -79,7 +79,7 @@ where
         }
 
         if self.span_events.clone() & FmtSpan::NEW != FmtSpan::NONE {
-            let mut human_event = self.visitor(
+            let mut human_event = self.event(
                 *ctx.metadata(id)
                     .expect("Metadata should exist for the span ID")
                     .level(),
@@ -107,14 +107,14 @@ where
     }
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        let mut human_event = self.visitor(*event.metadata().level(), ctx.event_scope(event));
+        let mut human_event = self.event(*event.metadata().level(), ctx.event_scope(event));
         event.record(&mut human_event);
         print!("{human_event}");
     }
 
     fn on_enter(&self, id: &Id, ctx: Context<'_, S>) {
         if self.span_events.clone() & FmtSpan::ENTER != FmtSpan::NONE {
-            let mut human_event = self.visitor(
+            let mut human_event = self.event(
                 *ctx.metadata(id)
                     .expect("Metadata should exist for the span ID")
                     .level(),
@@ -127,7 +127,7 @@ where
 
     fn on_exit(&self, id: &Id, ctx: Context<'_, S>) {
         if self.span_events.clone() & FmtSpan::EXIT != FmtSpan::NONE {
-            let mut human_event = self.visitor(
+            let mut human_event = self.event(
                 *ctx.metadata(id)
                     .expect("Metadata should exist for the span ID")
                     .level(),
@@ -140,7 +140,7 @@ where
 
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         if self.span_events.clone() & FmtSpan::CLOSE != FmtSpan::NONE {
-            let mut human_event = self.visitor(
+            let mut human_event = self.event(
                 *ctx.metadata(&id)
                     .expect("Metadata should exist for the span ID")
                     .level(),
