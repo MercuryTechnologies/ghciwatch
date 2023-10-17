@@ -76,17 +76,12 @@ where
                     }
                     .to_string(),
                 ));
-        }
 
-        if self.span_events.clone() & FmtSpan::NEW != FmtSpan::NONE {
-            let mut human_event = self.event(
-                *ctx.metadata(id)
-                    .expect("Metadata should exist for the span ID")
-                    .level(),
-                ctx.span_scope(id),
-            );
-            human_event.fields.message = Some("new".into());
-            print!("{human_event}");
+            if self.span_events.clone() & FmtSpan::NEW != FmtSpan::NONE {
+                let mut human_event = self.event(*span_ref.metadata().level(), ctx.span_scope(id));
+                human_event.fields.message = Some("new".into());
+                print!("{human_event}");
+            }
         }
     }
 
