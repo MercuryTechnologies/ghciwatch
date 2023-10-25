@@ -177,27 +177,9 @@ impl Ghci {
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
     pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
-        {
-            let span = tracing::debug_span!("before_startup_shell");
-            let _enter = span.enter();
-            for command in &opts.hooks.before_startup_shell {
-                shutdown.error_if_shutdown_requested()?;
-                let program = &command.program;
-                let mut command = command.as_tokio();
-                command.kill_on_drop(true);
-                let command_formatted = command.display();
-                tracing::info!("$ {command_formatted}");
-                let status = command
-                    .status()
-                    .await
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("Failed to execute `{command_formatted}`"))?;
-                if status.success() {
-                    tracing::debug!("{program:?} exited successfully: {status}");
-                } else {
-                    tracing::error!("{program:?} failed: {status}");
-                }
-            }
+        for command in &opts.hooks.before_startup_shell {
+            shutdown.error_if_shutdown_requested()?;
+            Self::before_startup_shell(command).await?;
         }
 
         let mut child = {
@@ -673,6 +655,26 @@ impl Ghci {
         signal::kill(self.pid, Signal::SIGINT)
             .into_diagnostic()
             .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")
+    }
+
+    #[instrument(skip_all, level = "trace")]
+    async fn before_startup_shell(command: &ClonableCommand) -> miette::Result<()> {
+        let program = &command.program;
+        let mut command = command.as_tokio();
+        command.kill_on_drop(true);
+        let command_formatted = command.display();
+        tracing::info!("$ {command_formatted}");
+        let status = command
+            .status()
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to execute `{command_formatted}`"))?;
+        if status.success() {
+            tracing::debug!("{program:?} exited successfully: {status}");
+        } else {
+            tracing::error!("{program:?} failed: {status}");
+        }
+        Ok(())
     }
 }
 
