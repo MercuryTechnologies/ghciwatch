@@ -7,7 +7,6 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio::task::JoinSet;
 use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
