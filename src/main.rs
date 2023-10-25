@@ -40,6 +40,6 @@ async fn main() -> miette::Result<()> {
         })
         .await;
     let ret = manager.wait_for_shutdown().await;
-    tracing::debug!("come on");
+    tracing::debug!("main() finished");
     ret
 }
