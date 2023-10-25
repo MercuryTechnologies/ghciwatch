@@ -49,6 +49,7 @@ pub async fn run_ghci(
     Ok(())
 }
 
+#[instrument(level = "debug", skip(ghci))]
 async fn dispatch(ghci: &mut Ghci, event: GhciEvent) -> miette::Result<()> {
     match event {
         GhciEvent::Reload { events } => {

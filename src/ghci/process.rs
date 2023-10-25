@@ -63,6 +63,7 @@ impl GhciProcess {
         }
 
         // Kill it otherwise.
+        tracing::debug!("Killing ghci ungracefully");
         self.process.kill().await.into_diagnostic()?;
         // Report the exit status.
         if let Some(status) = self.process.try_wait().into_diagnostic()? {

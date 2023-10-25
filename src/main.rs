@@ -39,5 +39,7 @@ async fn main() -> miette::Result<()> {
             run_watcher(handle, ghci_sender, watcher_opts)
         })
         .await;
-    manager.wait_for_shutdown().await
+    let ret = manager.wait_for_shutdown().await;
+    tracing::debug!("come on");
+    ret
 }
