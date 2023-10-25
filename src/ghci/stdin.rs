@@ -229,23 +229,14 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "trace")]
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
-        let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
-
         stdout.set_mode(mode);
 
-        {
-            let (sender, receiver) = oneshot::channel();
-            self.stderr_sender
-                .send(StderrEvent::Mode { mode, sender })
-                .await
-                .into_diagnostic()?;
-            set.spawn(receiver);
-        }
-
-        // Wait until the other tasks have finished setting the new mode.
-        while let Some(result) = set.join_next().await {
-            result.into_diagnostic()?.into_diagnostic()?;
-        }
+        let (sender, receiver) = oneshot::channel();
+        self.stderr_sender
+            .send(StderrEvent::Mode { mode, sender })
+            .await
+            .into_diagnostic()?;
+        receiver.await.into_diagnostic()?;
 
         Ok(())
     }

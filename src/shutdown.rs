@@ -68,11 +68,6 @@ impl ShutdownManager {
     {
         let sender = self.sender.clone();
         let receiver = sender.subscribe();
-        // wrap the future?
-        // -request shutdowns when tasks fail
-        // -cancel tasks from here
-        // -check if finished
-        // -check if failed later
         let handle = tokio::task::spawn(make_task(ShutdownHandle {
             sender,
             receiver,
@@ -239,6 +234,7 @@ impl ShutdownHandle {
     }
 
     /// Request a shutdown.
+    #[instrument(level = "debug", skip_all)]
     pub fn request_shutdown(&self) -> Result<(), broadcast::error::SendError<()>> {
         self.sender.send(()).map(|_| ())
     }

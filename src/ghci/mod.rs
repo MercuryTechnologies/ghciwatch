@@ -2,6 +2,7 @@
 
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
@@ -62,7 +63,6 @@ use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
-use crate::ShutdownError;
 
 use self::parse::parse_eval_commands;
 
@@ -169,8 +169,6 @@ impl Ghci {
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
     pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
-        let start_instant = Instant::now();
-
         {
             let span = tracing::debug_span!("before_startup_shell");
             let _enter = span.enter();
@@ -178,6 +176,7 @@ impl Ghci {
                 shutdown.error_if_shutdown_requested()?;
                 let program = &command.program;
                 let mut command = command.as_tokio();
+                command.kill_on_drop(true);
                 let command_formatted = command.display();
                 tracing::info!("$ {command_formatted}");
                 let status = command
@@ -259,7 +258,7 @@ impl Ghci {
 
         let error_log = ErrorLog::new(opts.error_path.clone());
 
-        let mut ret = Ghci {
+        Ok(Ghci {
             opts,
             shutdown: shutdown.clone(),
             process_state,
@@ -278,46 +277,43 @@ impl Ghci {
                     .wrap_err("Current directory is not UTF-8")?,
                 search_paths: Default::default(),
             },
-        };
-
-        let setup = async {
-            // Wait for the stdout job to start up.
-            ret.stdout.initialize().await?;
-
-            // Perform start-of-session initialization.
-            let messages = ret
-                .stdin
-                .initialize(&mut ret.stdout, &ret.opts.hooks.after_startup_ghci)
-                .await?;
-            ret.process_ghc_messages(messages).await?;
-
-            // Get the initial list of targets.
-            ret.refresh_targets().await?;
-            // Get the initial list of eval commands.
-            ret.refresh_eval_commands().await?;
-
-            tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
-
-            // Run the eval commands, if any.
-            ret.eval().await?;
-            // Run the user-provided test command, if any.
-            ret.test().await?;
-
-            Ok::<_, miette::Report>(ret)
-        };
-
-        // Perform the rest of setup, or shutdown when requested.
-        tokio::select! {
-            ret = setup => {
-                ret
-            }
-            _ = shutdown.on_shutdown_requested() => {
-                Err(ShutdownError.into())
-            }
-        }
+        })
     }
 
-    async fn get_reload_actions(&self, events: Vec<FileEvent>) -> miette::Result<ReloadActions> {
+    /// Perform post-startup initialization.
+    #[instrument(level = "debug", skip_all)]
+    pub async fn initialize(&mut self) -> miette::Result<()> {
+        let start_instant = Instant::now();
+
+        // Wait for the stdout job to start up.
+        self.stdout.initialize().await?;
+
+        // Perform start-of-session initialization.
+        let messages = self
+            .stdin
+            .initialize(&mut self.stdout, &self.opts.hooks.after_startup_ghci)
+            .await?;
+        self.process_ghc_messages(messages).await?;
+
+        // Get the initial list of targets.
+        self.refresh_targets().await?;
+        // Get the initial list of eval commands.
+        self.refresh_eval_commands().await?;
+
+        tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
+
+        // Run the eval commands, if any.
+        self.eval().await?;
+        // Run the user-provided test command, if any.
+        self.test().await?;
+
+        Ok(())
+    }
+
+    async fn get_reload_actions(
+        &self,
+        events: BTreeSet<FileEvent>,
+    ) -> miette::Result<ReloadActions> {
         // Once we know which paths were modified and which paths were removed, we can combine
         // that with information about this `ghci` session to determine which modules need to be
         // reloaded, which modules need to be added, and which modules were removed. In the case
@@ -383,7 +379,7 @@ impl Ghci {
     ///
     /// This may fully restart the `ghci` process.
     #[instrument(skip_all, level = "debug")]
-    pub async fn reload(&mut self, events: Vec<FileEvent>) -> miette::Result<()> {
+    pub async fn reload(&mut self, events: BTreeSet<FileEvent>) -> miette::Result<()> {
         let actions = self.get_reload_actions(events).await?;
 
         if !actions.needs_restart.is_empty() {
@@ -584,14 +580,21 @@ impl Ghci {
     /// Stop this `ghci` session and cancel the async tasks associated with it.
     #[instrument(skip_all, level = "debug")]
     async fn stop(&mut self) -> miette::Result<()> {
-        // Tell the `GhciProcess` that we're going to quit the session and it shouldn't quit
-        // `ghciwatch` in response.
-        let _ = self.restart_sender.try_send(());
+        let process_state = self.get_process_state().await;
+        if process_state == GhciProcessState::Running {
+            tracing::debug!("ghci is running, attempting to exit gracefully");
 
-        self.stdin
-            .quit(&mut self.stdout)
-            .await
-            .wrap_err("Failed to `:quit` ghci")?;
+            // Tell the `GhciProcess` that we're going to quit the session and it shouldn't quit
+            // `ghciwatch` in response.
+            let _ = self.restart_sender.try_send(());
+
+            self.stdin
+                .quit(&mut self.stdout)
+                .await
+                .wrap_err("Failed to `:quit` ghci")?;
+        } else {
+            tracing::debug!(?process_state, "ghci is not running, nothing to quit");
+        }
 
         Ok(())
     }

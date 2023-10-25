@@ -35,6 +35,7 @@ impl GhciProcess {
             }
             _ = self.restart_receiver.recv() => {
                 tracing::debug!("ghci is being shut down");
+                self.stop().await?;
             }
             result = self.process.wait() => {
                 self.exited(result.into_diagnostic()?).await;

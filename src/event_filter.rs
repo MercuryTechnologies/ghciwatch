@@ -1,5 +1,7 @@
 //! Parsing [`DebouncedEvent`]s into changes `ghciwatch` can respond to.
 
+use std::collections::BTreeSet;
+
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
@@ -8,7 +10,7 @@ use notify_debouncer_full::DebouncedEvent;
 
 /// A set of filesystem events that `ghci` will need to respond to. Due to the way that `ghci` is,
 /// we need to divide these into a few different classes so that we can respond appropriately.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FileEvent {
     /// Existing files that are modified, or new files that are created.
     ///
@@ -32,8 +34,8 @@ impl FileEvent {
 }
 
 /// Process a set of events into a set of [`FileEvent`]s.
-pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> miette::Result<Vec<FileEvent>> {
-    let mut ret = Vec::with_capacity(events.len());
+pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> miette::Result<BTreeSet<FileEvent>> {
+    let mut ret = BTreeSet::new();
 
     for event in events {
         let event = event.event;
@@ -57,9 +59,9 @@ pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> miette::Result<Ve
             let path: Utf8PathBuf = path.try_into().into_diagnostic()?;
 
             if !path.exists() || removed {
-                ret.push(FileEvent::Remove(path));
+                ret.insert(FileEvent::Remove(path));
             } else if modified {
-                ret.push(FileEvent::Modify(path));
+                ret.insert(FileEvent::Modify(path));
             }
         }
     }

@@ -1,11 +1,13 @@
 //! Subsystem for [`Ghci`] to support graceful shutdown.
 
+use std::collections::BTreeSet;
+
+use miette::miette;
 use miette::Context;
 use tokio::sync::mpsc;
 use tracing::instrument;
 
 use crate::event_filter::FileEvent;
-use crate::ghci::process::GhciProcessState;
 use crate::shutdown::ShutdownHandle;
 
 use super::Ghci;
@@ -17,7 +19,7 @@ pub enum GhciEvent {
     /// Reload the `ghci` session.
     Reload {
         /// The file events to respond to.
-        events: Vec<FileEvent>,
+        events: BTreeSet<FileEvent>,
     },
 }
 
@@ -32,16 +34,38 @@ pub async fn run_ghci(
         .await
         .wrap_err("Failed to start `ghci`")?;
 
+    tokio::select! {
+        _ = handle.on_shutdown_requested() => {
+            tracing::debug!("shutdown requested in ghci manager");
+            ghci.stop().await.wrap_err("Failed to quit ghci")?;
+        }
+        startup_result = ghci.initialize() => {
+            startup_result?;
+        }
+    }
+
     loop {
+        let recv_and_dispatch = async {
+            let event = receiver
+                .recv()
+                .await
+                .ok_or_else(|| miette!("ghci event channel closed"))?;
+
+            tracing::debug!(?event, "Received ghci event from watcher");
+            dispatch(&mut ghci, event).await?;
+            tracing::debug!("Finished dispatching ghci event");
+
+            Ok(()) as miette::Result<()>
+        };
+
         tokio::select! {
             _ = handle.on_shutdown_requested() => {
-                if ghci.get_process_state().await == GhciProcessState::Running {
-                    ghci.stop().await.wrap_err("Failed to quit ghci")?;
-                }
+                tracing::debug!("shutdown requested in ghci manager");
+                ghci.stop().await.wrap_err("Failed to quit ghci")?;
                 break;
             }
-            Some(event) = receiver.recv() => {
-                dispatch(&mut ghci, event).await?;
+            ret = recv_and_dispatch => {
+                ret?;
             }
         }
     }
