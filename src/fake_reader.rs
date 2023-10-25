@@ -19,12 +19,9 @@ pub struct FakeReader {
 
 impl FakeReader {
     /// Construct a `FakeReader` from an iterator of strings.
-    pub fn with_str_chunks(chunks: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+    pub fn with_byte_chunks<const N: usize>(chunks: [&[u8]; N]) -> Self {
         Self {
-            chunks: chunks
-                .into_iter()
-                .map(|chunk| chunk.as_ref().bytes().collect())
-                .collect(),
+            chunks: chunks.into_iter().map(|chunk| chunk.to_vec()).collect(),
         }
     }
 }

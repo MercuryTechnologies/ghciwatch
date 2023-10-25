@@ -13,3 +13,6 @@ pub const LINE_BUFFER_CAPACITY: usize = 1024;
 
 /// The default capacity (in entries) of buffers storing a collection of items, usually lines.
 pub const VEC_BUFFER_CAPACITY: usize = 1024;
+
+/// If we need to split a codepiont in half, we know it won't have more than 4 bytes total.
+pub const SPLIT_UTF8_CODEPOINT_CAPACITY: usize = 4;
