@@ -1,5 +1,7 @@
 //! The core [`Ghci`] session struct.
 
+use nix::sys::signal;
+use nix::sys::signal::Signal;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -13,8 +15,10 @@ use std::time::Instant;
 use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
+use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
+use nix::unistd::Pid;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::sync::mpsc;
@@ -131,6 +135,10 @@ pub struct Ghci {
     shutdown: ShutdownHandle,
     /// The state of the `ghci` session process.
     process_state: Arc<Mutex<GhciProcessState>>,
+    /// The process ID of the `ghci` session process.
+    ///
+    /// This is used to send the process `Ctrl-C` (`SIGINT`) to cancel reloads or other actions.
+    pid: Pid,
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
@@ -206,7 +214,12 @@ impl Ghci {
 
         shutdown.error_if_shutdown_requested()?;
 
-        tracing::debug!(pid = child.id(), "Started ghci");
+        let pid = Pid::from_raw(
+            child
+                .id()
+                .ok_or_else(|| miette!("ghci process has no pid"))? as i32,
+        );
+        tracing::debug!(pid = pid.as_raw(), "Started ghci");
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -262,6 +275,7 @@ impl Ghci {
             opts,
             shutdown: shutdown.clone(),
             process_state,
+            pid,
             stdin,
             stdout,
             restart_sender,
@@ -581,19 +595,22 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn stop(&mut self) -> miette::Result<()> {
         let process_state = self.get_process_state().await;
-        if process_state == GhciProcessState::Running {
+        if process_state != GhciProcessState::Running {
+            tracing::debug!(?process_state, "ghci is not running, nothing to quit");
+        } else {
             tracing::debug!("ghci is running, attempting to exit gracefully");
 
             // Tell the `GhciProcess` that we're going to quit the session and it shouldn't quit
             // `ghciwatch` in response.
             let _ = self.restart_sender.try_send(());
 
+            self.send_sigint().await?;
+
             self.stdin
                 .quit(&mut self.stdout)
                 .await
                 .wrap_err("Failed to `:quit` ghci")?;
-        } else {
-            tracing::debug!(?process_state, "ghci is not running, nothing to quit");
+            tracing::debug!("Exited ghci gracefully");
         }
 
         Ok(())
@@ -649,6 +666,13 @@ impl Ghci {
     /// Get the state of the process backing this session.
     pub async fn get_process_state(&self) -> GhciProcessState {
         *self.process_state.lock().await
+    }
+
+    #[instrument(skip_all, level = "trace")]
+    async fn send_sigint(&self) -> miette::Result<()> {
+        signal::kill(self.pid, Signal::SIGINT)
+            .into_diagnostic()
+            .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")
     }
 }
 
