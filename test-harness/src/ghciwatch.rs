@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -447,6 +448,22 @@ impl GhciWatch {
         // TODO: It would be nice to verify which modules have been deleted/moved.
         self.wait_for_log(BaseMatcher::ghci_restart()).await?;
         Ok(())
+    }
+
+    /// Wait until `ghciwatch` exits and return its status.
+    pub async fn wait_until_exit(&self) -> miette::Result<ExitStatus> {
+        let mut child = crate::internal::take_ghciwatch_process()?;
+
+        let status = child
+            .wait()
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to wait for `ghciwatch` to exit")?;
+
+        // Put it back.
+        crate::internal::set_ghciwatch_process(child)?;
+
+        Ok(status)
     }
 
     /// Get a path relative to the project root.
