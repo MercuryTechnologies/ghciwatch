@@ -61,6 +61,7 @@ impl WatcherOpts {
 
 /// A [`notify`] watcher which waits for file changes and sends reload events to the contained
 /// `ghci` session.
+#[instrument(level = "debug", skip_all)]
 pub async fn run_watcher(
     handle: ShutdownHandle,
     ghci_sender: mpsc::Sender<GhciEvent>,

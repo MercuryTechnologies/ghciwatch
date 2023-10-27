@@ -10,6 +10,7 @@ use std::fmt::Display;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
@@ -138,7 +139,7 @@ pub struct Ghci {
     /// The process group ID of the `ghci` session process.
     ///
     /// This is used to send the process `Ctrl-C` (`SIGINT`) to cancel reloads or other actions.
-    pgid: Pid,
+    process_group_id: Pid,
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
@@ -194,19 +195,23 @@ impl Ghci {
             command.spawn_group_without_inheriting_sigint()?
         };
 
-        let pgid = Pid::from_raw(
+        let process_group_id = Pid::from_raw(
             group
                 .id()
                 .ok_or_else(|| miette!("ghci process has no process group ID"))? as i32,
         );
 
         let child = group.inner();
-        let pid = Pid::from_raw(
+        let process_id = Pid::from_raw(
             child
                 .id()
-                .ok_or_else(|| miette!("ghci process has no pid"))? as i32,
+                .ok_or_else(|| miette!("ghci process has no process ID"))? as i32,
         );
-        tracing::debug!(pid = pid.as_raw(), pgid = pgid.as_raw(), "Started ghci");
+        tracing::debug!(
+            pid = process_id.as_raw(),
+            pgid = process_group_id.as_raw(),
+            "Started ghci"
+        );
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -229,7 +234,7 @@ impl Ghci {
         };
 
         shutdown
-            .spawn("ghci stderr".to_owned(), |shutdown| {
+            .spawn("stderr".to_owned(), |shutdown| {
                 GhciStderr {
                     shutdown,
                     reader: BufReader::new(stderr).lines(),
@@ -245,14 +250,14 @@ impl Ghci {
         let (restart_sender, restart_receiver) = mpsc::channel(1);
 
         shutdown
-            .spawn("ghci process".to_owned(), |shutdown| {
+            .spawn("ghci_process".to_owned(), |shutdown| {
                 GhciProcess {
                     shutdown,
                     restart_receiver,
-                    process: group,
+                    process_group_id,
                     state: process_state.clone(),
                 }
-                .run()
+                .run(group)
             })
             .await;
 
@@ -262,7 +267,7 @@ impl Ghci {
             opts,
             shutdown: shutdown.clone(),
             process_state,
-            pgid,
+            process_group_id,
             stdin,
             stdout,
             restart_sender,
@@ -659,13 +664,9 @@ impl Ghci {
 
     #[instrument(skip_all, level = "trace")]
     async fn send_sigint(&mut self) -> miette::Result<()> {
-        signal::killpg(self.pgid, Signal::SIGINT)
+        signal::killpg(self.process_group_id, Signal::SIGINT)
             .into_diagnostic()
             .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
-        self.stdout.set_mode(Mode::Internal);
-        self.stdout
-            .prompt(crate::incremental_reader::FindAt::LineStart)
-            .await?;
         Ok(())
     }
 

@@ -30,12 +30,12 @@ async fn main() -> miette::Result<()> {
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_millis(10_000));
     manager
-        .spawn("ghci".to_owned(), |handle| {
+        .spawn("run_ghci".to_owned(), |handle| {
             run_ghci(handle, ghci_opts, ghci_receiver)
         })
         .await;
     manager
-        .spawn("File watcher".to_owned(), move |handle| {
+        .spawn("run_watcher".to_owned(), move |handle| {
             run_watcher(handle, ghci_sender, watcher_opts)
         })
         .await;
