@@ -129,12 +129,13 @@ impl GhciStdout {
 
     #[instrument(skip_all, level = "debug")]
     pub async fn quit(&mut self) -> miette::Result<()> {
+        // self.prompt(FindAt::LineStart).await?;
         let leaving_ghci = AhoCorasick::from_anchored_patterns(["Leaving GHCi."]);
         let _data = self
             .reader
             .read_until(&mut ReadOpts {
                 end_marker: &leaving_ghci,
-                find: FindAt::LineStart,
+                find: FindAt::Anywhere,
                 writing: WriteBehavior::Write,
                 buffer: &mut self.buffer,
             })

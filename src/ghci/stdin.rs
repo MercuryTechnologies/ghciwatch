@@ -189,6 +189,7 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
+        let _ = self.set_mode(stdout, Mode::Internal).await;
         self.stdin
             .write_all(b":quit\n")
             .await

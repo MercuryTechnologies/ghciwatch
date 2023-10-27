@@ -1,8 +1,9 @@
 use std::process::ExitStatus;
 use std::sync::Arc;
+use std::time::Duration;
 
+use command_group::AsyncGroupChild;
 use miette::IntoDiagnostic;
-use tokio::process::Child;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::instrument;
@@ -21,7 +22,7 @@ pub enum GhciProcessState {
 
 pub struct GhciProcess {
     pub shutdown: ShutdownHandle,
-    pub process: Child,
+    pub process: AsyncGroupChild,
     pub restart_receiver: mpsc::Receiver<()>,
     pub state: Arc<Mutex<GhciProcessState>>,
 }
@@ -47,9 +48,8 @@ impl GhciProcess {
 
     #[instrument(skip(self), level = "debug")]
     async fn stop(&mut self) -> miette::Result<()> {
-        // Give `ghci` a half second for a graceful shutdown.
-        match tokio::time::timeout(std::time::Duration::from_millis(500), self.process.wait()).await
-        {
+        // Give `ghci` a bit for a graceful shutdown.
+        match tokio::time::timeout(std::time::Duration::from_secs(10), self.process.wait()).await {
             Ok(Ok(status)) => {
                 self.exited(status).await;
                 return Ok(());
@@ -65,10 +65,19 @@ impl GhciProcess {
 
         // Kill it otherwise.
         tracing::debug!("Killing ghci ungracefully");
-        self.process.kill().await.into_diagnostic()?;
+        self.process.kill().into_diagnostic()?;
         // Report the exit status.
-        if let Some(status) = self.process.try_wait().into_diagnostic()? {
-            self.exited(status).await;
+        loop {
+            match self.process.wait().await {
+                Ok(status) => {
+                    self.exited(status).await;
+                    break;
+                }
+                Err(err) => {
+                    tracing::error!("{err}");
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
         Ok(())
     }

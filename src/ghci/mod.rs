@@ -135,10 +135,10 @@ pub struct Ghci {
     shutdown: ShutdownHandle,
     /// The state of the `ghci` session process.
     process_state: Arc<Mutex<GhciProcessState>>,
-    /// The process ID of the `ghci` session process.
+    /// The process group ID of the `ghci` session process.
     ///
     /// This is used to send the process `Ctrl-C` (`SIGINT`) to cancel reloads or other actions.
-    pid: Pid,
+    pgid: Pid,
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
@@ -182,7 +182,7 @@ impl Ghci {
             Self::before_startup_shell(command).await?;
         }
 
-        let mut child = {
+        let mut group = {
             let mut command = opts.command.as_tokio();
 
             command
@@ -191,17 +191,22 @@ impl Ghci {
                 .stdout(Stdio::piped())
                 .kill_on_drop(true);
 
-            command.spawn_without_inheriting_sigint()?
+            command.spawn_group_without_inheriting_sigint()?
         };
 
-        shutdown.error_if_shutdown_requested()?;
+        let pgid = Pid::from_raw(
+            group
+                .id()
+                .ok_or_else(|| miette!("ghci process has no process group ID"))? as i32,
+        );
 
+        let child = group.inner();
         let pid = Pid::from_raw(
             child
                 .id()
                 .ok_or_else(|| miette!("ghci process has no pid"))? as i32,
         );
-        tracing::debug!(pid = pid.as_raw(), "Started ghci");
+        tracing::debug!(pid = pid.as_raw(), pgid = pgid.as_raw(), "Started ghci");
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -244,7 +249,7 @@ impl Ghci {
                 GhciProcess {
                     shutdown,
                     restart_receiver,
-                    process: child,
+                    process: group,
                     state: process_state.clone(),
                 }
                 .run()
@@ -257,7 +262,7 @@ impl Ghci {
             opts,
             shutdown: shutdown.clone(),
             process_state,
-            pid,
+            pgid,
             stdin,
             stdout,
             restart_sender,
@@ -586,13 +591,15 @@ impl Ghci {
             // `ghciwatch` in response.
             let _ = self.restart_sender.try_send(());
 
+            let start_instant = Instant::now();
             self.send_sigint().await?;
+            tracing::debug!("Sent SIGINT to ghci session");
 
             self.stdin
                 .quit(&mut self.stdout)
                 .await
                 .wrap_err("Failed to `:quit` ghci")?;
-            tracing::debug!("Exited ghci gracefully");
+            tracing::debug!("Exited ghci gracefully in {:.2?}", start_instant.elapsed());
         }
 
         Ok(())
@@ -651,10 +658,15 @@ impl Ghci {
     }
 
     #[instrument(skip_all, level = "trace")]
-    async fn send_sigint(&self) -> miette::Result<()> {
-        signal::kill(self.pid, Signal::SIGINT)
+    async fn send_sigint(&mut self) -> miette::Result<()> {
+        signal::killpg(self.pgid, Signal::SIGINT)
             .into_diagnostic()
-            .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")
+            .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
+        self.stdout.set_mode(Mode::Internal);
+        self.stdout
+            .prompt(crate::incremental_reader::FindAt::LineStart)
+            .await?;
+        Ok(())
     }
 
     #[instrument(skip_all, level = "trace")]

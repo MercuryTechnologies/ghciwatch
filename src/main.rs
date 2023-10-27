@@ -28,7 +28,7 @@ async fn main() -> miette::Result<()> {
     let ghci_opts = GhciOpts::from_cli(&opts)?;
     let watcher_opts = WatcherOpts::from_cli(&opts);
 
-    let mut manager = ShutdownManager::with_timeout(Duration::from_millis(1000));
+    let mut manager = ShutdownManager::with_timeout(Duration::from_millis(10_000));
     manager
         .spawn("ghci".to_owned(), |handle| {
             run_ghci(handle, ghci_opts, ghci_receiver)

@@ -104,9 +104,6 @@ impl ShutdownManager {
         // If we still have running tasks, begin the graceful shutdown procedure.
         let start_instant = Instant::now();
         if !all_finished {
-            tracing::debug!(
-                "Waiting for second Ctrl-C, all tasks to finish, or shutdown timeout to expire"
-            );
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     tracing::debug!("Ctrl-C pressed again, shutting down immediately");
@@ -155,14 +152,11 @@ impl Handles {
 
         for task in std::mem::take(self.0.lock().await.deref_mut()) {
             let name = task.name.clone();
-            tracing::debug!(task = name, "Getting result for task");
             match task.into_result().await {
                 Ok(Some(err)) => {
                     failures.push(err);
                 }
-                Ok(None) => {
-                    tracing::debug!(task = name, "Task completed successfully");
-                }
+                Ok(None) => {}
                 Err(err) => {
                     tracing::debug!(task = name, "Failed to get result for task: {err:?}");
                 }
@@ -213,7 +207,6 @@ impl Clone for ShutdownHandle {
 
 impl ShutdownHandle {
     /// Wait until a shutdown is requested.
-    #[instrument(level = "debug", skip_all)]
     pub async fn on_shutdown_requested(&mut self) -> Result<(), broadcast::error::RecvError> {
         self.receiver.recv().await
     }
@@ -221,7 +214,6 @@ impl ShutdownHandle {
     /// Check if a shutdown has been requested; if so, return a [`ShutdownError`].
     ///
     /// Otherwise, return `Ok(())`.
-    #[instrument(level = "debug", skip_all)]
     pub fn error_if_shutdown_requested(&mut self) -> miette::Result<()> {
         match self.receiver.try_recv() {
             Ok(()) | Err(broadcast::error::TryRecvError::Lagged(_)) => Err(ShutdownError.into()),

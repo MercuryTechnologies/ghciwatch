@@ -1,10 +1,13 @@
 //! Subsystem for [`Ghci`] to support graceful shutdown.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use miette::miette;
 use miette::Context;
+use miette::IntoDiagnostic;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tracing::instrument;
 
 use crate::event_filter::FileEvent;
@@ -44,28 +47,42 @@ pub async fn run_ghci(
         }
     }
 
+    let ghci = Arc::new(Mutex::new(ghci));
+
     loop {
-        let recv_and_dispatch = async {
-            let event = receiver
+        let recv_ghci = ghci.clone();
+
+        let recv = async {
+            receiver
                 .recv()
                 .await
-                .ok_or_else(|| miette!("ghci event channel closed"))?;
-
-            tracing::debug!(?event, "Received ghci event from watcher");
-            dispatch(&mut ghci, event).await?;
-            tracing::debug!("Finished dispatching ghci event");
-
-            Ok(()) as miette::Result<()>
+                .ok_or_else(|| miette!("ghci event channel closed"))
         };
+
+        let event = tokio::select! {
+            _ = handle.on_shutdown_requested() => {
+                tracing::debug!("shutdown requested in ghci manager");
+                ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
+                break;
+            }
+            ret = recv => {
+                ret?
+            }
+        };
+        tracing::debug!(?event, "Received ghci event from watcher");
+
+        let mut task = Box::pin(tokio::task::spawn(dispatch(recv_ghci, event)));
 
         tokio::select! {
             _ = handle.on_shutdown_requested() => {
                 tracing::debug!("shutdown requested in ghci manager");
-                ghci.stop().await.wrap_err("Failed to quit ghci")?;
+                task.abort();
+                ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
                 break;
             }
-            ret = recv_and_dispatch => {
-                ret?;
+            ret = &mut task => {
+                ret.into_diagnostic()??;
+                tracing::debug!("Finished dispatching ghci event");
             }
         }
     }
@@ -74,10 +91,10 @@ pub async fn run_ghci(
 }
 
 #[instrument(level = "debug", skip(ghci))]
-async fn dispatch(ghci: &mut Ghci, event: GhciEvent) -> miette::Result<()> {
+async fn dispatch(ghci: Arc<Mutex<Ghci>>, event: GhciEvent) -> miette::Result<()> {
     match event {
         GhciEvent::Reload { events } => {
-            ghci.reload(events).await?;
+            ghci.lock().await.reload(events).await?;
         }
     }
     Ok(())

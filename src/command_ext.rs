@@ -1,13 +1,15 @@
-use std::process::Child as StdChild;
 use std::process::Command as StdCommand;
 
+use command_group::AsyncCommandGroup;
+use command_group::AsyncGroupChild;
+use command_group::CommandGroup;
+use command_group::GroupChild;
 use miette::Context;
 use miette::IntoDiagnostic;
 use nix::sys::signal::pthread_sigmask;
 use nix::sys::signal::SigSet;
 use nix::sys::signal::SigmaskHow;
 use nix::sys::signal::Signal;
-use tokio::process::Child;
 use tokio::process::Command;
 
 /// Extension trait for commands.
@@ -16,7 +18,7 @@ pub trait CommandExt {
     type Child;
 
     /// Spawn the command, but do not inherit `SIGINT` signals from the calling process.
-    fn spawn_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child>;
+    fn spawn_group_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child>;
 
     /// Display the command as a string, suitable for user output.
     ///
@@ -25,11 +27,11 @@ pub trait CommandExt {
 }
 
 impl CommandExt for Command {
-    type Child = Child;
+    type Child = AsyncGroupChild;
 
-    fn spawn_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child> {
+    fn spawn_group_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child> {
         spawn_without_inheriting_sigint(|| {
-            self.spawn()
+            self.group_spawn()
                 .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to start `{}`", self.display()))
         })
@@ -41,11 +43,11 @@ impl CommandExt for Command {
 }
 
 impl CommandExt for StdCommand {
-    type Child = StdChild;
+    type Child = GroupChild;
 
-    fn spawn_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child> {
+    fn spawn_group_without_inheriting_sigint(&mut self) -> miette::Result<Self::Child> {
         spawn_without_inheriting_sigint(|| {
-            self.spawn()
+            self.group_spawn()
                 .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to start `{}`", self.display()))
         })
