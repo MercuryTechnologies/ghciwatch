@@ -24,6 +24,9 @@ async fn can_shutdown_gracefully() {
         .wait_for_log("^All tasks completed successfully$")
         .await
         .unwrap();
+
+    let status = session.wait_until_exit().await.unwrap();
+    assert!(status.success(), "ghciwatch exits successfully");
 }
 
 /// Test that `ghciwatch` can gracefully shutdown when the `ghci` process is unexpectedly killed.

@@ -9,8 +9,6 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
 use std::time::Instant;
 
 use aho_corasick::AhoCorasick;
@@ -23,7 +21,6 @@ use nix::unistd::Pid;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
 use tracing::instrument;
 
 mod stdin;
@@ -50,6 +47,7 @@ use parse::GhcDiagnostic;
 use parse::GhcMessage;
 use parse::ModuleSet;
 use parse::Severity;
+use parse::ShowPaths;
 
 mod ghci_command;
 pub use ghci_command::GhciCommand;
@@ -61,8 +59,6 @@ use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
-use crate::ghci::parse::ShowPaths;
-use crate::ghci::process::GhciProcessState;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
@@ -134,8 +130,6 @@ pub struct Ghci {
     opts: GhciOpts,
     /// The shutdown handle, used for performing or responding to graceful shutdowns.
     shutdown: ShutdownHandle,
-    /// The state of the `ghci` session process.
-    process_state: Arc<Mutex<GhciProcessState>>,
     /// The process group ID of the `ghci` session process.
     ///
     /// This is used to send the process `Ctrl-C` (`SIGINT`) to cancel reloads or other actions.
@@ -167,7 +161,9 @@ pub struct Ghci {
 
 impl Debug for Ghci {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Ghci").finish()
+        f.debug_struct("Ghci")
+            .field("pid", &self.process_group_id)
+            .finish()
     }
 }
 
@@ -246,7 +242,6 @@ impl Ghci {
             })
             .await;
 
-        let process_state: Arc<Mutex<GhciProcessState>> = Default::default();
         let (restart_sender, restart_receiver) = mpsc::channel(1);
 
         shutdown
@@ -255,7 +250,6 @@ impl Ghci {
                     shutdown,
                     restart_receiver,
                     process_group_id,
-                    state: process_state.clone(),
                 }
                 .run(group)
             })
@@ -266,7 +260,6 @@ impl Ghci {
         Ok(Ghci {
             opts,
             shutdown: shutdown.clone(),
-            process_state,
             process_group_id,
             stdin,
             stdout,
@@ -400,6 +393,7 @@ impl Ghci {
             self.stop().await?;
             let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
             let _ = std::mem::replace(self, new);
+            self.initialize().await?;
             for command in &self.opts.hooks.after_restart_ghci {
                 tracing::info!(%command, "Running after-restart command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
@@ -586,26 +580,9 @@ impl Ghci {
     /// Stop this `ghci` session and cancel the async tasks associated with it.
     #[instrument(skip_all, level = "debug")]
     async fn stop(&mut self) -> miette::Result<()> {
-        let process_state = self.get_process_state().await;
-        if process_state != GhciProcessState::Running {
-            tracing::debug!(?process_state, "ghci is not running, nothing to quit");
-        } else {
-            tracing::debug!("ghci is running, attempting to exit gracefully");
-
-            // Tell the `GhciProcess` that we're going to quit the session and it shouldn't quit
-            // `ghciwatch` in response.
-            let _ = self.restart_sender.try_send(());
-
-            let start_instant = Instant::now();
-            self.send_sigint().await?;
-            tracing::debug!("Sent SIGINT to ghci session");
-
-            self.stdin
-                .quit(&mut self.stdout)
-                .await
-                .wrap_err("Failed to `:quit` ghci")?;
-            tracing::debug!("Exited ghci gracefully in {:.2?}", start_instant.elapsed());
-        }
+        // Tell the `GhciProcess` to shut down `ghci` without requesting a shutdown for
+        // `ghciwatch`.
+        let _ = self.restart_sender.try_send(());
 
         Ok(())
     }
@@ -655,11 +632,6 @@ impl Ghci {
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
         NormalPath::new(path, &self.search_paths.cwd)
-    }
-
-    /// Get the state of the process backing this session.
-    pub async fn get_process_state(&self) -> GhciProcessState {
-        *self.process_state.lock().await
     }
 
     #[instrument(skip_all, level = "trace")]
