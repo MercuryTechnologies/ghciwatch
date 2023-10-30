@@ -111,9 +111,9 @@ impl ShutdownManager {
                 _ = self.guard_receiver.recv() => {
                     tracing::debug!("All tasks finished");
                 }
-                // _ = tokio::time::sleep(self.timeout) => {
-                    // tracing::debug!("Graceful shutdown timed out");
-                // }
+                _ = tokio::time::sleep(self.timeout) => {
+                    tracing::debug!("Graceful shutdown timed out");
+                }
             }
         }
         // Note any unfinished tasks, cancel everything, and check the return values.
