@@ -33,13 +33,16 @@ pub async fn run_ghci(
     opts: GhciOpts,
     mut receiver: mpsc::Receiver<GhciEvent>,
 ) -> miette::Result<()> {
+    // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
+    // is a little different each time, so the `select!`s can't be consolidated.
+
     let mut ghci = Ghci::new(handle.clone(), opts)
         .await
         .wrap_err("Failed to start `ghci`")?;
 
+    // Wait for ghci to finish loading.
     tokio::select! {
         _ = handle.on_shutdown_requested() => {
-            tracing::debug!("shutdown requested in ghci manager");
             ghci.stop().await.wrap_err("Failed to quit ghci")?;
         }
         startup_result = ghci.initialize() => {
@@ -48,34 +51,25 @@ pub async fn run_ghci(
     }
 
     let ghci = Arc::new(Mutex::new(ghci));
-
     loop {
-        let recv_ghci = ghci.clone();
-
-        let recv = async {
-            receiver
-                .recv()
-                .await
-                .ok_or_else(|| miette!("ghci event channel closed"))
-        };
-
+        // Wait for filesystem events.
         let event = tokio::select! {
             _ = handle.on_shutdown_requested() => {
-                tracing::debug!("shutdown requested in ghci manager");
                 ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
                 break;
             }
-            ret = recv => {
-                ret?
+            ret = receiver.recv() => {
+                ret.ok_or_else(|| miette!("ghci event channel closed"))?
             }
         };
         tracing::debug!(?event, "Received ghci event from watcher");
 
-        let mut task = Box::pin(tokio::task::spawn(dispatch(recv_ghci, event)));
-
+        // Dispatch the event. We spawn it into a new task so it can run in parallel to any
+        // shutdown requests.
+        let mut task = Box::pin(tokio::task::spawn(dispatch(ghci.clone(), event)));
         tokio::select! {
             _ = handle.on_shutdown_requested() => {
-                tracing::debug!("shutdown requested in ghci manager");
+                // Cancel any in-progress reloads. This releases the lock so we don't block here.
                 task.abort();
                 ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
                 break;
