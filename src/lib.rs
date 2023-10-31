@@ -34,13 +34,13 @@ pub(crate) use cwd::current_dir;
 pub(crate) use cwd::current_dir_utf8;
 pub(crate) use format_bulleted_list::format_bulleted_list;
 
+pub use crate::tracing::TracingOpts;
 pub use ghci::manager::run_ghci;
 pub use ghci::Ghci;
 pub use ghci::GhciOpts;
 pub use shutdown::ShutdownError;
 pub use shutdown::ShutdownHandle;
 pub use shutdown::ShutdownManager;
-pub use tracing::TracingOpts;
 pub use watcher::run_watcher;
 pub use watcher::WatcherOpts;
 
