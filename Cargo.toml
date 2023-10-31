@@ -55,6 +55,7 @@ tap = "1.0.1"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
 tracing = "0.1.37"
+tracing-human-layer = "0.1.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "time", "json", "registry"] }
 winnow = "0.5.15"
 
