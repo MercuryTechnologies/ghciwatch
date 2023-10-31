@@ -45,9 +45,11 @@ pub async fn write(path: impl AsRef<Path> + Debug, data: impl AsRef<[u8]>) -> mi
         create_dir(parent).await?;
     }
 
-    // Load-bearing sleep! If this is removed, some writes aren't detected some of the time.
-    // Comment it out and run `cargo nextest run` in a loop to see what I mean.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    if crate::internal::GHCIWATCH_PROCESS.with(|option| option.borrow().is_some()) {
+        // Load-bearing sleep! If this is removed, some writes aren't detected some of the time.
+        // Comment it out and run `cargo nextest run` in a loop to see what I mean.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 
     tokio::fs::write(path, data)
         .await

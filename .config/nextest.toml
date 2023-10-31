@@ -1,9 +1,11 @@
-[test-groups]
+# https://nexte.st/book/configuration.html
+
+[test-groups.serial-integration]
 # Run integration tests serially.
 # We only apply this setting in the `ci` profile; the CI builders are small
 # enough that running multiple integration tests at the same time actually
 # makes the entire test suite complete slower.
-serial-integration = { max-threads = 1 }
+max-threads = 1
 
 [profile.ci]
 # Print out output for failing tests as soon as they fail, and also at the end
@@ -11,6 +13,11 @@ serial-integration = { max-threads = 1 }
 failure-output = "immediate-final"
 # Do not cancel the test run on the first failure.
 fail-fast = false
+# The Garnix CI builders run in some weird virtual filesystem that messes with
+# `notify`. Even with sleeps before writing and poll-based notifications,
+# sometimes `notify` misses events (this is rare, maybe 1 in 50 test runs).
+# Retry tests if they fail in CI to mitigate this.
+retries = 3
 
 [[profile.ci.overrides]]
 # `kind(test)` means integration tests in the `../tests/` directory.

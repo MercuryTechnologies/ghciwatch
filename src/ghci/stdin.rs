@@ -1,12 +1,12 @@
 use std::time::Instant;
 
 use camino::Utf8Path;
+use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio::task::JoinSet;
 use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
@@ -126,7 +126,9 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         if test_commands.is_empty() {
             tracing::debug!("No test command provided, not running tests");
+            return Ok(());
         }
+
         self.set_mode(stdout, Mode::Testing).await?;
         for test_command in test_commands {
             tracing::debug!(command = %test_command, "Running user test command");
@@ -186,6 +188,20 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
+        let _ = self.set_mode(stdout, Mode::Internal).await;
+        self.stdin
+            .write_all(b":quit\n")
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to tell ghci to `:quit`")?;
+        stdout
+            .quit()
+            .await
+            .wrap_err("Failed to wait for ghci to quit")
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
     pub async fn eval(
         &mut self,
         stdout: &mut GhciStdout,
@@ -213,23 +229,14 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "trace")]
     pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
-        let mut set = JoinSet::<Result<(), oneshot::error::RecvError>>::new();
-
         stdout.set_mode(mode);
 
-        {
-            let (sender, receiver) = oneshot::channel();
-            self.stderr_sender
-                .send(StderrEvent::Mode { mode, sender })
-                .await
-                .into_diagnostic()?;
-            set.spawn(receiver);
-        }
-
-        // Wait until the other tasks have finished setting the new mode.
-        while let Some(result) = set.join_next().await {
-            result.into_diagnostic()?.into_diagnostic()?;
-        }
+        let (sender, receiver) = oneshot::channel();
+        self.stderr_sender
+            .send(StderrEvent::Mode { mode, sender })
+            .await
+            .into_diagnostic()?;
+        receiver.await.into_diagnostic()?;
 
         Ok(())
     }

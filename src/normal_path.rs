@@ -1,5 +1,3 @@
-//! Wrapper type for normalized [`Utf8PathBuf`]s.
-
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::fmt::Display;

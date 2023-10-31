@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::instrument;
 
+use crate::shutdown::ShutdownHandle;
+
 use super::Mode;
 
 /// An event sent to a `ghci` session's stderr channel.
@@ -23,6 +25,7 @@ pub enum StderrEvent {
 }
 
 pub struct GhciStderr {
+    pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
@@ -39,7 +42,6 @@ impl GhciStderr {
             match self.run_inner().await {
                 Ok(()) => {
                     // MPSC channel closed, probably a graceful shutdown?
-                    tracing::debug!("Channel closed");
                     break;
                 }
                 Err(err) => {
@@ -64,6 +66,10 @@ impl GhciStderr {
                 }
                 Some(event) = self.receiver.recv() => {
                     self.dispatch(event).await?;
+                }
+                _ = self.shutdown.on_shutdown_requested() => {
+                    // Graceful exit.
+                    break;
                 }
                 else => {
                     // Graceful exit.

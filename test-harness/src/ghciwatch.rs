@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -114,6 +115,8 @@ pub struct GhciWatch {
     default_timeout: Duration,
     /// The timeout for waiting for `ghci to finish starting up.
     startup_timeout: Duration,
+    //// The `ghciwatch` process's PID.
+    pid: u32,
 }
 
 impl GhciWatch {
@@ -161,8 +164,6 @@ impl GhciWatch {
                 &[
                     "ghciwatch::watcher=trace",
                     "ghciwatch=debug",
-                    "watchexec=debug",
-                    "watchexec::fs=trace",
                 ].join(","),
                 "--trace-spans",
                 "new,close",
@@ -208,8 +209,10 @@ impl GhciWatch {
             else => {}
         }
 
+        let pid = child
+            .id()
+            .ok_or_else(|| miette!("`ghciwatch` has no PID"))?;
         crate::internal::set_ghciwatch_process(child)?;
-
         let tracing_reader = TracingReader::new(log_path.clone()).await?;
 
         // Most tests won't use checkpoints, so we'll only have a couple checkpoint slots
@@ -224,6 +227,7 @@ impl GhciWatch {
             ghc_version,
             default_timeout: builder.default_timeout,
             startup_timeout: builder.startup_timeout,
+            pid,
         })
     }
 
@@ -446,6 +450,22 @@ impl GhciWatch {
         Ok(())
     }
 
+    /// Wait until `ghciwatch` exits and return its status.
+    pub async fn wait_until_exit(&self) -> miette::Result<ExitStatus> {
+        let mut child = crate::internal::take_ghciwatch_process()?;
+
+        let status = child
+            .wait()
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to wait for `ghciwatch` to exit")?;
+
+        // Put it back.
+        crate::internal::set_ghciwatch_process(child)?;
+
+        Ok(status)
+    }
+
     /// Get a path relative to the project root.
     pub fn path(&self, path: impl AsRef<Path>) -> PathBuf {
         self.cwd.join(path)
@@ -454,6 +474,11 @@ impl GhciWatch {
     /// Get the major GHC version this test is running under.
     pub fn ghc_version(&self) -> GhcVersion {
         self.ghc_version
+    }
+
+    /// Get the PID of the `ghciwatch` process running for this test.
+    pub fn pid(&self) -> u32 {
+        self.pid
     }
 }
 

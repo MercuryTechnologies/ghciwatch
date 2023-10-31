@@ -4,15 +4,17 @@
 //! `ghciwatch` watches your modules for changes and reloads them in a `ghci` session, displaying
 //! any errors.
 
+use std::time::Duration;
+
 use clap::Parser;
 use ghciwatch::cli;
-use ghciwatch::Ghci;
+use ghciwatch::run_ghci;
+use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
+use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
-use ghciwatch::Watcher;
 use ghciwatch::WatcherOpts;
-use miette::IntoDiagnostic;
-use miette::WrapErr;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
@@ -21,21 +23,23 @@ async fn main() -> miette::Result<()> {
     opts.init()?;
     TracingOpts::from_cli(&opts).install()?;
 
-    ::tracing::warn!(
-        "This is a prerelease alpha version of `ghciwatch`! Expect a rough user experience, and please report bugs or other issues to the #mighty-dux channel on Slack."
-    );
+    let (ghci_sender, ghci_receiver) = mpsc::channel(32);
 
-    let ghci = Ghci::new(GhciOpts::from_cli(&opts)?)
-        .await
-        .wrap_err("Failed to start `ghci`")?;
-    let watcher = Watcher::new(ghci, WatcherOpts::from_cli(&opts))
-        .wrap_err("Failed to start file watcher")?;
+    let ghci_opts = GhciOpts::from_cli(&opts)?;
+    let watcher_opts = WatcherOpts::from_cli(&opts);
 
-    watcher
-        .handle
-        .await
-        .into_diagnostic()?
-        .wrap_err("File watcher failed")?;
-
-    Ok(())
+    let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
+    manager
+        .spawn("run_ghci".to_owned(), |handle| {
+            run_ghci(handle, ghci_opts, ghci_receiver)
+        })
+        .await;
+    manager
+        .spawn("run_watcher".to_owned(), move |handle| {
+            run_watcher(handle, ghci_sender, watcher_opts)
+        })
+        .await;
+    let ret = manager.wait_for_shutdown().await;
+    tracing::debug!("main() finished");
+    ret
 }

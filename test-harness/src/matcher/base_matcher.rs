@@ -144,24 +144,7 @@ impl BaseMatcher {
 
     /// Match when the filesystem worker starts.
     pub fn watcher_started() -> Self {
-        // `watchexec` sends a few events when it starts up:
-        //
-        // DEBUG watchexec::watchexec: handing over main task handle
-        // DEBUG watchexec::watchexec: starting main task
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="action"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="fs"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="signal"}
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="keyboard"}
-        // DEBUG watchexec::fs: launching filesystem worker
-        // DEBUG watchexec::watchexec: spawning subtask {subtask="error_hook"}
-        // DEBUG watchexec::fs: creating new watcher {kind="Poll(100ms)"}
-        // DEBUG watchexec::signal: launching unix signal worker
-        // DEBUG watchexec::fs: applying changes to the watcher {to_drop="[]", to_watch="[WatchedPath(\"src\")]"}
-        //
-        // "launching filesystem worker" is tempting, but the phrasing implies the event is emitted
-        // _before_ the filesystem worker is started (hence it is not yet ready to notice file
-        // events). Therefore, we wait for "applying changes to the watcher".
-        Self::message("applying changes to the watcher").in_module("watchexec::fs")
+        Self::message("^notify watcher started$").in_module("ghciwatch::watcher")
     }
 
     /// Match when `ghci` reloads.

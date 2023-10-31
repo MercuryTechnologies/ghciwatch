@@ -103,28 +103,21 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 /// 1. Kill the process set by [`set_ghciwatch_process`].
 /// 2. Remove the [`TEMPDIR`] from the filesystem.
 async fn cleanup() {
-    let child = GHCIWATCH_PROCESS.with(|child| child.take());
-    match child {
-        None => {
-            panic!("`GHCIWATCH_PROCESS` is not set");
+    let mut child = take_ghciwatch_process().unwrap();
+    let _ = send_signal(&child, Signal::SIGINT);
+    match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+        Err(_) => {
+            tracing::info!("ghciwatch didn't exit in time, killing");
+            child
+                .kill()
+                .await
+                .expect("Failed to kill `ghciwatch` after test completion");
         }
-        Some(mut child) => {
-            send_signal(&child, Signal::SIGINT).expect("Failed to send SIGINT to `ghciwatch`");
-            match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
-                Err(_) => {
-                    tracing::info!("ghciwatch didn't exit in time, killing");
-                    child
-                        .kill()
-                        .await
-                        .expect("Failed to kill `ghciwatch` after test completion");
-                }
-                Ok(Ok(status)) => {
-                    tracing::info!(%status, "ghciwatch exited");
-                }
-                Ok(Err(err)) => {
-                    tracing::error!("Waiting for ghciwatch to exit failed: {err}");
-                }
-            }
+        Ok(Ok(status)) => {
+            tracing::info!(%status, "ghciwatch exited");
+        }
+        Ok(Err(err)) => {
+            tracing::error!("Waiting for ghciwatch to exit failed: {err}");
         }
     }
 
@@ -205,6 +198,15 @@ pub(crate) fn set_ghciwatch_process(child: Child) -> miette::Result<()> {
 
         Ok(())
     })
+}
+
+/// Take the `GHCIWATCH_PROCESS` for the current thread.
+///
+/// Fails if the `GHCIWATCH_PROCESS` is not set.
+pub(crate) fn take_ghciwatch_process() -> miette::Result<Child> {
+    GHCIWATCH_PROCESS
+        .with(|child| child.take())
+        .ok_or_else(|| miette!("GHCIWATCH_PROCESS is not set; have you constructed a `GhciWatch`?"))
 }
 
 /// Send a signal to a child process.

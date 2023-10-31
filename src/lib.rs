@@ -24,16 +24,21 @@ mod ghci;
 mod haskell_source_file;
 mod incremental_reader;
 mod normal_path;
+mod shutdown;
 mod textwrap;
 mod tracing;
 mod watcher;
 
 pub(crate) use format_bulleted_list::format_bulleted_list;
 
+pub use ghci::manager::run_ghci;
 pub use ghci::Ghci;
 pub use ghci::GhciOpts;
+pub use shutdown::ShutdownError;
+pub use shutdown::ShutdownHandle;
+pub use shutdown::ShutdownManager;
 pub use tracing::TracingOpts;
-pub use watcher::Watcher;
+pub use watcher::run_watcher;
 pub use watcher::WatcherOpts;
 
 #[cfg(test)]

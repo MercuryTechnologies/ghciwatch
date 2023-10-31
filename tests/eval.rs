@@ -22,7 +22,7 @@ async fn can_eval_commands() {
     let module_path = session.path(module_path);
 
     session
-        .wait_until_started()
+        .wait_until_ready()
         .await
         .expect("ghciwatch didn't start in time");
 
