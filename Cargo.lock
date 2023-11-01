@@ -430,6 +430,7 @@ dependencies = [
  "textwrap 0.16.0",
  "tokio",
  "tracing",
+ "tracing-human-layer",
  "tracing-subscriber",
  "tracing-test",
  "winnow",
@@ -1384,6 +1385,19 @@ checksum = "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-human-layer"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e552097b90425f04e1118d96002b49404a5f8f78040ee8d58eefa97b146731f"
+dependencies = [
+ "itertools",
+ "owo-colors",
+ "textwrap 0.16.0",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

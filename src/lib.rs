@@ -25,7 +25,6 @@ mod haskell_source_file;
 mod incremental_reader;
 mod normal_path;
 mod shutdown;
-mod textwrap;
 mod tracing;
 mod watcher;
 

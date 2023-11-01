@@ -13,8 +13,6 @@ use tracing_subscriber::Layer;
 
 use crate::cli::Opts;
 
-mod human;
-
 /// Options for initializing the [`tracing`] logging framework. This is like a lower-effort builder
 /// interface, mostly provided because Rust tragically lacks named arguments.
 pub struct TracingOpts<'opts> {
@@ -46,7 +44,7 @@ impl<'opts> TracingOpts<'opts> {
             .iter()
             .fold(FmtSpan::NONE, |result, item| result | item.clone());
 
-        let human_layer = human::HumanLayer::default()
+        let human_layer = tracing_human_layer::HumanLayer::default()
             .with_span_events(fmt_span.clone())
             .with_filter(env_filter);
 
