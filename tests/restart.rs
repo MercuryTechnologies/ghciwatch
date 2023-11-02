@@ -4,7 +4,6 @@ use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
-use test_harness::GhciWatchBuilder;
 
 /// Test that `ghciwatch` can restart `ghci` after a module is moved.
 #[test]
@@ -52,38 +51,12 @@ async fn can_restart_after_module_move() {
         .expect("ghciwatch restarts ghci");
 
     session
-        .wait_for_log(
-            BaseMatcher::message("Compiling")
-                .in_span("reload")
-                .with_field("module", r"My\.CoolModule"),
-        )
+        .wait_for_log(BaseMatcher::module_compiling("My.CoolModule"))
         .await
         .unwrap();
 
     session
-        .wait_for_log(BaseMatcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::compilation_succeeded())
         .await
         .unwrap();
-}
-
-/// Test that `ghciwatch` can restart after a custom `--watch-restart` path changes.
-#[test]
-async fn can_restart_on_custom_file_change() {
-    let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .with_args(["--watch-restart", "package.yaml"])
-        .start()
-        .await
-        .expect("ghciwatch starts");
-
-    session
-        .wait_until_ready()
-        .await
-        .expect("ghciwatch loads ghci");
-
-    fs::touch(session.path("package.yaml")).await.unwrap();
-
-    session
-        .wait_until_restart()
-        .await
-        .expect("ghciwatch restarts when package.yaml changes");
 }

@@ -18,8 +18,14 @@ pub const HASKELL_SOURCE_EXTENSIONS: [&str; 9] = [
 
 /// Determine if a given path represents a Haskell source file.
 pub fn is_haskell_source_file(path: impl AsRef<Utf8Path>) -> bool {
-    path.as_ref()
-        .extension()
+    let path = path.as_ref();
+    // Haskell source files end in a known extension.
+    path.extension()
         .map(|ext| HASKELL_SOURCE_EXTENSIONS.contains(&ext))
         .unwrap_or(false)
+        // Haskell source files do not start with `.` (Emacs swap files in particular start with
+        // `.#`).
+        && path
+            .file_name()
+            .map_or(false, |name| !name.starts_with('.'))
 }

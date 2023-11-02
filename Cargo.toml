@@ -39,6 +39,7 @@ camino = "1.1.4"
 clap = { version = "4.3.2", features = ["derive", "wrap_help", "env"] }
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
 humantime = "2.1.0"
+ignore = "0.4.20"
 itertools = "0.11.0"
 line-span = "0.1.5"
 miette = { version = "5.9.0", features = ["fancy"] }

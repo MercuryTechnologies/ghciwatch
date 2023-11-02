@@ -65,7 +65,7 @@ async fn can_reload_after_error() {
         .await
         .expect("ghciwatch loads new modules");
     session
-        .wait_for_log(BaseMatcher::message("Compilation failed").in_spans(["reload", "add_module"]))
+        .wait_for_log(BaseMatcher::compilation_failed())
         .await
         .unwrap();
 
@@ -74,11 +74,11 @@ async fn can_reload_after_error() {
         .unwrap();
 
     session
-        .wait_until_add()
+        .wait_until_reload()
         .await
         .expect("ghciwatch reloads on changes");
     session
-        .wait_for_log(BaseMatcher::message("Compilation succeeded").in_span("reload"))
+        .wait_for_log(BaseMatcher::compilation_succeeded())
         .await
         .unwrap();
 }

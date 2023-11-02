@@ -60,6 +60,7 @@ use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
+use crate::ignore::GlobMatcher;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
@@ -92,11 +93,10 @@ pub struct GhciOpts {
     pub enable_eval: bool,
     /// Lifecycle hooks, mostly `ghci` commands to run at certain points.
     pub hooks: HookOpts,
-    /// Restart the `ghci` session when these paths are changed.
-    pub restart_paths: Vec<NormalPath>,
-    /// Reload the `ghci` session when files with these extensions are changed, in addition to
-    /// Haskell source files.
-    pub extra_extensions: Vec<String>,
+    /// Restart the `ghci` session when paths matching these globs are changed.
+    pub restart_globs: GlobMatcher,
+    /// Reload the `ghci` session when paths matching these globs are changed.
+    pub reload_globs: GlobMatcher,
 }
 
 impl GhciOpts {
@@ -117,8 +117,8 @@ impl GhciOpts {
             error_path: opts.errors.clone(),
             enable_eval: opts.enable_eval,
             hooks: opts.hooks.clone(),
-            restart_paths: opts.watch.restart_paths.clone(),
-            extra_extensions: opts.watch.extensions.clone(),
+            restart_globs: opts.watch.restart_globs()?,
+            reload_globs: opts.watch.reload_globs()?,
         })
     }
 }
@@ -268,12 +268,7 @@ impl Ghci {
             targets: Default::default(),
             eval_commands: Default::default(),
             search_paths: ShowPaths {
-                cwd: std::env::current_dir()
-                    .into_diagnostic()
-                    .wrap_err("Failed to get current directory")?
-                    .try_into()
-                    .into_diagnostic()
-                    .wrap_err("Current directory is not UTF-8")?,
+                cwd: crate::current_dir_utf8()?,
                 search_paths: Default::default(),
             },
         })
@@ -323,39 +318,56 @@ impl Ghci {
         for event in events {
             let path = event.as_path();
             let path = self.relative_path(path)?;
-            // Restart on `.cabal` files, `.ghci` files, and any paths under the `restart_paths`.
-            if path.extension().map(|ext| ext == "cabal").unwrap_or(false)
+
+            let restart_match = self.opts.restart_globs.matched(&path);
+            let reload_match = self.opts.reload_globs.matched(&path);
+            let path_is_haskell_source_file = is_haskell_source_file(&path);
+            tracing::trace!(
+                ?event,
+                ?restart_match,
+                ?reload_match,
+                is_haskell_source_file = path_is_haskell_source_file,
+                "Checking path"
+            );
+
+            // Don't restart if we've explicitly ignored this path in a glob.
+            if (!restart_match.is_ignore()
+                // Restart on `.cabal` and `.ghci` files.
+                && (path
+                    .extension()
+                    .map(|ext| ext == "cabal")
+                    .unwrap_or(false)
                 || path
                     .file_name()
                     .map(|name| name == ".ghci")
                     .unwrap_or(false)
-                || self
-                    .opts
-                    .restart_paths
-                    .iter()
-                    .any(|restart_path| path.starts_with(restart_path))
-                // `ghci` can't cope with removed modules, so we need to fully restart the
-                // `ghci` process in case any modules are removed or renamed.
+                // Restart on explicit restart globs.
+                || restart_match.is_whitelist()))
+                // Even if we've explicitly ignored this path in a glob, `ghci` can't cope with
+                // removed modules, so we need to restart when modules are removed or renamed.
                 //
-                // https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                // See: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
                 //
                 // TODO: I should investigate if `:unadd` works for some classes of removed
                 // modules.
-                || (matches!(event, FileEvent::Remove(_)) && is_haskell_source_file(&path))
+                || (matches!(event, FileEvent::Remove(_))
+                    && path_is_haskell_source_file
+                    && self.targets.contains_source_path(&path))
             {
                 // Restart for this path.
                 tracing::debug!(%path, "Needs restart");
                 needs_restart.push(path);
-            } else if path
-                .extension()
-                .map(|ext| self.opts.extra_extensions.contains(&ext.to_owned()))
-                .unwrap_or(false)
-            {
+            } else if reload_match.is_whitelist() {
                 // Extra extensions are always reloaded, never added.
                 tracing::debug!(%path, "Needs reload");
                 needs_reload.push(path);
-            } else if matches!(event, FileEvent::Modify(_)) && is_haskell_source_file(&path) {
-                if self.targets.contains_source_path(path.absolute())? {
+            } else if !reload_match.is_ignore()
+                // Don't reload if we've explicitly ignored this path in a glob.
+                // Otherwise, reload when Haskell files are modified.
+                && matches!(event, FileEvent::Modify(_))
+                && path_is_haskell_source_file
+            {
+                if self.targets.contains_source_path(&path) {
                     // We can `:reload` paths in the target set.
                     tracing::debug!(%path, "Needs reload");
                     needs_reload.push(path);
@@ -560,7 +572,7 @@ impl Ghci {
     /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
     async fn add_module(&mut self, path: &NormalPath) -> miette::Result<Option<CompilationResult>> {
-        if self.targets.contains_source_path(path.absolute())? {
+        if self.targets.contains_source_path(path.absolute()) {
             tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
             return Ok(None);
         }
@@ -569,6 +581,8 @@ impl Ghci {
             .stdin
             .add_module(&mut self.stdout, path.relative())
             .await?;
+
+        self.targets.insert_source_path(path.clone());
 
         let result = self.process_ghc_messages(messages).await?;
 
