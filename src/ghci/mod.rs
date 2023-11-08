@@ -563,7 +563,8 @@ impl Ghci {
             .await
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {path}"))?;
-        let commands = parse_eval_commands(&contents).wrap_err("Failed to parse eval commands")?;
+        let commands = parse_eval_commands(&contents)
+            .wrap_err_with(|| format!("Failed to parse eval commands from file {path}"))?;
         Ok(commands)
     }
 
