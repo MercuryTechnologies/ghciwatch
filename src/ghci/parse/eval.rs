@@ -7,6 +7,7 @@ use miette::miette;
 use winnow::ascii::line_ending;
 use winnow::ascii::space0;
 use winnow::combinator::alt;
+use winnow::combinator::eof;
 use winnow::combinator::fold_repeat;
 use winnow::combinator::opt;
 use winnow::combinator::peek;
@@ -172,7 +173,7 @@ fn multiline_eval_command(input: &mut Located<&str>) -> PResult<ByteSpanCommand>
             .with_span()
             .parse_next(input)?;
     multiline_eval_end.parse_next(input)?;
-    let _ = (space0, line_ending).parse_next(input)?;
+    let _ = (space0, alt((line_ending, eof))).parse_next(input)?;
 
     Ok(ByteSpanCommand {
         // `command` ends with a newline so we put a newline after the `:{` but not before the
@@ -419,6 +420,34 @@ mod tests {
                 "
             )))
             .is_err());
+    }
+
+    #[test]
+    fn test_parse_eval_command_no_eol() {
+        assert_eq!(
+            parse_eval_commands("-- $> foo").unwrap(),
+            vec![EvalCommand {
+                command: "foo".to_owned().into(),
+                display_command: "foo".to_owned(),
+                line: 1,
+                column: 7,
+                byte_span: 6..9,
+            },]
+        )
+    }
+
+    #[test]
+    fn test_parse_multiline_eval_command_no_eol() {
+        assert_eq!(
+            parse_eval_commands("{- $>\nfoo\n<$ -}").unwrap(),
+            vec![EvalCommand {
+                command: ":{\nfoo\n:}".to_owned().into(),
+                display_command: "foo".to_owned(),
+                line: 2,
+                column: 1,
+                byte_span: 6..10,
+            },]
+        )
     }
 
     #[test]
