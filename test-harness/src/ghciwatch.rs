@@ -188,8 +188,7 @@ impl GhciWatch {
             .wrap_err("Failed to start `ghciwatch`")?;
 
         // Wait for `ghciwatch` to create the `log_path`
-        let creates_log_path =
-            tokio::time::timeout(builder.default_timeout, crate::fs::wait_for_path(&log_path));
+        let creates_log_path = crate::fs::wait_for_path(builder.default_timeout, &log_path);
         tokio::select! {
             child_result = child.wait() => {
                 return match child_result {
@@ -202,9 +201,7 @@ impl GhciWatch {
                 }
             }
             log_path_result = creates_log_path => {
-                if log_path_result.is_err() {
-                    return Err(miette!("`ghciwatch` didn't create log path {log_path:?} fast enough"));
-                }
+                log_path_result?;
             }
             else => {}
         }

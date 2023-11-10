@@ -74,18 +74,22 @@ pub async fn append(path: impl AsRef<Path> + Debug, data: impl AsRef<[u8]>) -> m
 ///
 /// This should generally be run under a [`tokio::time::timeout`].
 #[tracing::instrument]
-pub async fn wait_for_path(path: &Path) {
+pub async fn wait_for_path(duration: Duration, path: &Path) -> miette::Result<()> {
     let mut backoff = ExponentialBackoff {
         max_interval: Duration::from_secs(1),
+        max_elapsed_time: Some(duration),
         ..Default::default()
     };
     while let Some(duration) = backoff.next_backoff() {
         if (File::open(path).await).is_ok() {
-            break;
+            return Ok(());
         }
         tracing::debug!("Waiting {duration:?} before retrying");
         tokio::time::sleep(duration).await;
     }
+    Err(miette!(
+        "Path was not created after waiting {duration:.2?}: {path:?}"
+    ))
 }
 
 /// Read a path into a string.

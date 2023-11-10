@@ -13,6 +13,7 @@ use crate::clap::RustBacktrace;
 use crate::clonable_command::ClonableCommand;
 use crate::ghci::GhciCommand;
 use crate::ignore::GlobMatcher;
+use crate::maybe_async_command::MaybeAsyncCommand;
 use crate::normal_path::NormalPath;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
@@ -178,7 +179,7 @@ pub struct HookOpts {
     /// This can be used to regenerate `.cabal` files with `hpack`.
     /// Can be given multiple times.
     #[arg(long, value_name = "SHELL_COMMAND")]
-    pub before_startup_shell: Vec<ClonableCommand>,
+    pub before_startup_shell: Vec<MaybeAsyncCommand>,
 
     /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
     /// the command-line arguments for tests.
@@ -199,6 +200,11 @@ pub struct HookOpts {
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub after_reload_ghci: Vec<GhciCommand>,
 
+    /// Shell commands to run after reloading `ghci`.
+    /// Can be given multiple times.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub after_reload_shell: Vec<MaybeAsyncCommand>,
+
     /// `ghci` commands to run before restarting `ghci`.
     ///
     /// See `--after-restart-ghci` for more details.
@@ -217,6 +223,11 @@ pub struct HookOpts {
     /// See: https://gitlab.haskell.org/ghc/ghc/-/issues/9648
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub after_restart_ghci: Vec<GhciCommand>,
+
+    /// Shell commands to run after restarting `ghci`.
+    /// Can be given multiple times.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub after_restart_shell: Vec<MaybeAsyncCommand>,
 }
 
 impl Opts {

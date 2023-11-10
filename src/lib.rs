@@ -25,6 +25,7 @@ mod ghci;
 mod haskell_source_file;
 mod ignore;
 mod incremental_reader;
+mod maybe_async_command;
 mod normal_path;
 mod shutdown;
 mod tracing;
