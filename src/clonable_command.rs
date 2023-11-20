@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
@@ -13,10 +14,12 @@ use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::process::Command;
 
+use crate::command_ext::CommandExt;
+
 /// Like [`std::process::Stdio`], but it implements [`Clone`].
 ///
 /// Unlike [`Stdio`], this value can't represent arbitrary files or file descriptors.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClonableStdio {
     /// The stream will be ignored. Equivalent to attaching the stream to `/dev/null`.
     Null,
@@ -50,7 +53,7 @@ impl ClonableStdio {
 }
 
 /// Like [`std::process::Command`], but it implements [`Clone`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClonableCommand {
     /// The program to be executed.
     pub program: OsString,
@@ -90,6 +93,14 @@ impl ClonableCommand {
     /// Add an argument to this command. See [`StdCommand::arg`].
     pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
         self.args.push(arg.into());
+        self
+    }
+
+    /// Add arguments to this command. See [`StdCommand::args`].
+    pub fn args(mut self, args: impl IntoIterator<Item = impl Into<OsString>>) -> Self {
+        for arg in args {
+            self = self.arg(arg);
+        }
         self
     }
 
@@ -142,7 +153,7 @@ impl FromStr for ClonableCommand {
     type Err = miette::Report;
 
     fn from_str(shell_command: &str) -> Result<Self, Self::Err> {
-        let tokens = shell_words::split(shell_command)
+        let tokens = shell_words::split(shell_command.trim())
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to split shell command: {shell_command:?}"))?;
 
@@ -158,6 +169,21 @@ impl FromStr for ClonableCommand {
                 ..Default::default()
             }),
         }
+    }
+}
+
+impl Display for ClonableCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tokens = std::iter::once(self.program.to_string_lossy())
+            .chain(self.args.iter().map(|arg| arg.to_string_lossy()));
+
+        write!(f, "{}", shell_words::join(tokens))
+    }
+}
+
+impl CommandExt for ClonableCommand {
+    fn display(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -188,5 +214,27 @@ impl ValueParserFactory for ClonableCommand {
 
     fn value_parser() -> Self::Parser {
         Self::Parser::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse() {
+        // Note quotes, whitespace at both ends.
+        assert_eq!(
+            " puppy --flavor 'sammy' --eyes \"brown\" "
+                .parse::<ClonableCommand>()
+                .unwrap(),
+            ClonableCommand::new("puppy").args(["--flavor", "sammy", "--eyes", "brown"])
+        );
+
+        // But quoted whitespace is preserved.
+        assert_eq!(
+            " \" puppy\" ".parse::<ClonableCommand>().unwrap(),
+            ClonableCommand::new(" puppy")
+        );
     }
 }

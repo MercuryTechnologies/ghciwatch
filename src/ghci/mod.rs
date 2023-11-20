@@ -8,8 +8,10 @@ use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
+use tokio::task::JoinHandle;
 
 use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
@@ -57,6 +59,7 @@ use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::HookOpts;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
+use crate::command_ext::SpawnExt;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
@@ -157,6 +160,8 @@ pub struct Ghci {
     eval_commands: BTreeMap<NormalPath, Vec<EvalCommand>>,
     /// Search paths / current working directory for this `ghci` session.
     search_paths: ShowPaths,
+    /// Tasks running `async:` shell commands in the background.
+    command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
 }
 
 impl Debug for Ghci {
@@ -174,9 +179,14 @@ impl Ghci {
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
     pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
-        for command in &opts.hooks.before_startup_shell {
-            shutdown.error_if_shutdown_requested()?;
-            Self::before_startup_shell(command).await?;
+        let mut command_handles = Vec::new();
+        {
+            let span = tracing::debug_span!("before_startup_shell");
+            let _enter = span.enter();
+            for command in &opts.hooks.before_startup_shell {
+                tracing::info!(%command, "Running before-startup command");
+                command.run_on(&mut command_handles).await?;
+            }
         }
 
         let mut group = {
@@ -271,6 +281,7 @@ impl Ghci {
                 cwd: crate::current_dir_utf8()?,
                 search_paths: Default::default(),
             },
+            command_handles,
         })
     }
 
@@ -410,6 +421,10 @@ impl Ghci {
                 tracing::info!(%command, "Running after-restart command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
             }
+            for command in &self.opts.hooks.after_restart_shell {
+                tracing::info!(%command, "Running after-restart command");
+                command.run_on(&mut self.command_handles).await?;
+            }
             // Once we restart, everything is freshly loaded. We don't need to add or
             // reload any other modules.
             return Ok(());
@@ -455,6 +470,10 @@ impl Ghci {
                 tracing::info!(%command, "Running after-reload command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
             }
+            for command in &self.opts.hooks.after_reload_shell {
+                tracing::info!(%command, "Running after-reload command");
+                command.run_on(&mut self.command_handles).await?;
+            }
 
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
@@ -464,6 +483,9 @@ impl Ghci {
                 self.test().await?;
             }
         }
+
+        // Get rid of any handles for background commands that have finished.
+        self.command_handles.retain(|handle| !handle.is_finished());
 
         Ok(())
     }
