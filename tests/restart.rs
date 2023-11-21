@@ -1,6 +1,5 @@
 use indoc::indoc;
 
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
@@ -17,17 +16,19 @@ async fn can_restart_after_module_move() {
         .expect("ghciwatch loads ghci");
 
     let module_path = session.path("src/My/Module.hs");
-    fs::write(
-        &module_path,
-        indoc!(
-            "module My.Module (myIdent) where
+    session
+        .fs()
+        .write(
+            &module_path,
+            indoc!(
+                "module My.Module (myIdent) where
             myIdent :: ()
             myIdent = ()
             "
-        ),
-    )
-    .await
-    .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
     session
         .wait_until_add()
         .await
@@ -35,14 +36,15 @@ async fn can_restart_after_module_move() {
 
     {
         // Rename the module and fix the module name to match the new path.
-        let contents = fs::read(&module_path).await.unwrap();
-        fs::remove(&module_path).await.unwrap();
-        fs::write(
-            session.path("src/My/CoolModule.hs"),
-            contents.replace("module My.Module", "module My.CoolModule"),
-        )
-        .await
-        .unwrap();
+        let new_path = session.path("src/My/CoolModule.hs");
+        session.fs_mut().disable_load_bearing_sleep();
+        session.fs().rename(&module_path, &new_path).await.unwrap();
+        session
+            .fs()
+            .replace(&new_path, "module My.Module", "module My.CoolModule")
+            .await
+            .unwrap();
+        session.fs_mut().reset_load_bearing_sleep();
     }
 
     session

@@ -1,5 +1,4 @@
 use expect_test::expect;
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatchBuilder;
@@ -19,7 +18,9 @@ async fn can_run_test_suite_on_reload() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path("src/MyLib.hs"))
+    session
+        .fs()
+        .touch(session.path("src/MyLib.hs"))
         .await
         .expect("Can touch file");
 
@@ -32,7 +33,9 @@ async fn can_run_test_suite_on_reload() {
         .await
         .expect("ghciwatch runs the test suite");
 
-    let error_contents = fs::read(&error_path)
+    let error_contents = session
+        .fs()
+        .read(&error_path)
         .await
         .expect("ghciwatch writes ghcid.txt");
     expect![[r#"

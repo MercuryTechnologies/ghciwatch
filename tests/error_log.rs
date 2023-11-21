@@ -1,7 +1,6 @@
 use expect_test::expect;
 use indoc::indoc;
 
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhcVersion::*;
@@ -21,7 +20,9 @@ async fn can_write_error_log() {
         .wait_until_ready()
         .await
         .expect("ghciwatch loads ghci");
-    let error_contents = fs::read(&error_path)
+    let error_contents = session
+        .fs()
+        .read(&error_path)
         .await
         .expect("ghciwatch writes ghcid.txt");
     expect![[r#"
@@ -49,17 +50,19 @@ async fn can_write_error_log_compilation_errors() {
 
     let new_module = session.path("src/My/Module.hs");
 
-    fs::write(
-        &new_module,
-        indoc!(
-            "module My.Module (myIdent) where
+    session
+        .fs()
+        .write(
+            &new_module,
+            indoc!(
+                "module My.Module (myIdent) where
             myIdent :: ()
             myIdent = \"Uh oh!\"
             "
-        ),
-    )
-    .await
-    .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
     session
         .wait_until_add()
         .await
@@ -70,7 +73,9 @@ async fn can_write_error_log_compilation_errors() {
         .await
         .expect("ghciwatch writes ghcid.txt");
 
-    let error_contents = fs::read(&error_path)
+    let error_contents = session
+        .fs()
+        .read(&error_path)
         .await
         .expect("ghciwatch writes ghcid.txt");
 
@@ -101,7 +106,9 @@ async fn can_write_error_log_compilation_errors() {
 
     expected.assert_eq(&error_contents);
 
-    fs::replace(&new_module, "myIdent = \"Uh oh!\"", "myIdent = ()")
+    session
+        .fs()
+        .replace(&new_module, "myIdent = \"Uh oh!\"", "myIdent = ()")
         .await
         .unwrap();
 
@@ -115,7 +122,9 @@ async fn can_write_error_log_compilation_errors() {
         .await
         .expect("ghciwatch writes ghcid.txt");
 
-    let error_contents = fs::read(&error_path)
+    let error_contents = session
+        .fs()
+        .read(&error_path)
         .await
         .expect("ghciwatch writes ghcid.txt");
 

@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatchBuilder;
@@ -66,7 +65,9 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("before-startup-shell-1"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("before-startup-shell-1"))
         .await
         .unwrap();
 
@@ -77,7 +78,9 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("before-startup-shell-2"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("before-startup-shell-2"))
         .await
         .unwrap();
 
@@ -107,7 +110,11 @@ async fn can_run_hooks() {
 
     session.wait_until_ready().await.unwrap();
 
-    fs::touch(session.path("src/MyLib.hs")).await.unwrap();
+    session
+        .fs()
+        .touch(session.path("src/MyLib.hs"))
+        .await
+        .unwrap();
 
     // Before reload
     session
@@ -166,7 +173,9 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("before-startup-shell-1"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("before-startup-shell-1"))
         .await
         .unwrap();
 
@@ -177,11 +186,17 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("before-startup-shell-2"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("before-startup-shell-2"))
         .await
         .unwrap();
 
-    fs::remove(session.path("src/MyModule.hs")).await.unwrap();
+    session
+        .fs()
+        .remove(session.path("src/MyModule.hs"))
+        .await
+        .unwrap();
     // Before restart
     session
         .wait_for_log(
@@ -239,7 +254,9 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("after-restart-shell-1"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("after-restart-shell-1"))
         .await
         .unwrap();
 
@@ -250,7 +267,9 @@ async fn can_run_hooks() {
         )
         .await
         .unwrap();
-    fs::wait_for_path(wait_duration, &session.path("after-restart-shell-2"))
+    session
+        .fs()
+        .wait_for_path(wait_duration, &session.path("after-restart-shell-2"))
         .await
         .unwrap();
 }

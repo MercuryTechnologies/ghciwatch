@@ -1,6 +1,5 @@
 use indoc::indoc;
 
-use test_harness::fs;
 use test_harness::test;
 use test_harness::GhciWatch;
 
@@ -26,17 +25,19 @@ async fn can_load_new_module() {
         .wait_until_ready()
         .await
         .expect("ghciwatch loads ghci");
-    fs::write(
-        session.path("src/My/Module.hs"),
-        indoc!(
-            "module My.Module (myIdent) where
+    session
+        .fs()
+        .write(
+            session.path("src/My/Module.hs"),
+            indoc!(
+                "module My.Module (myIdent) where
             myIdent :: ()
             myIdent = ()
             "
-        ),
-    )
-    .await
-    .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
     session
         .wait_until_add()
         .await

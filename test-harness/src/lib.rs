@@ -15,7 +15,8 @@ pub use matcher::IntoMatcher;
 pub use matcher::Matcher;
 pub use matcher::OrMatcher;
 
-pub mod fs;
+mod fs;
+pub use fs::Fs;
 
 pub mod internal;
 

@@ -1,6 +1,6 @@
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
+use test_harness::Fs;
 use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
@@ -17,7 +17,9 @@ async fn can_reload_glob() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path("src/my_model.persistentmodels"))
+    session
+        .fs()
+        .touch(session.path("src/my_model.persistentmodels"))
         .await
         .unwrap();
 
@@ -41,7 +43,11 @@ async fn can_skip_reload_for_ignore_glob() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path("src/MyModule.hs")).await.unwrap();
+    session
+        .fs()
+        .touch(session.path("src/MyModule.hs"))
+        .await
+        .unwrap();
 
     session
         .wait_for_log(BaseMatcher::reload_completes().but_not(BaseMatcher::reload()))
@@ -63,7 +69,11 @@ async fn can_restart_on_custom_file_change() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path("package.yaml")).await.unwrap();
+    session
+        .fs()
+        .touch(session.path("package.yaml"))
+        .await
+        .unwrap();
 
     session
         .wait_until_restart()
@@ -76,7 +86,9 @@ async fn can_restart_on_custom_file_change() {
 async fn can_restart_on_cabal_file_change() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .before_start(|project_root| async move {
-            fs::touch(project_root.join("my-simple-package.cabal")).await
+            Fs::new()
+                .touch(project_root.join("my-simple-package.cabal"))
+                .await
         })
         .with_args(["--watch", "my-simple-package.cabal"])
         .start()
@@ -88,7 +100,9 @@ async fn can_restart_on_cabal_file_change() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path("my-simple-package.cabal"))
+    session
+        .fs()
+        .touch(session.path("my-simple-package.cabal"))
         .await
         .unwrap();
 
@@ -102,7 +116,9 @@ async fn can_restart_on_cabal_file_change() {
 #[test]
 async fn can_restart_on_ghci_file_change() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .before_start(|project_root| async move { fs::touch(project_root.join(".ghci")).await })
+        .before_start(
+            |project_root| async move { Fs::new().touch(project_root.join(".ghci")).await },
+        )
         .with_args(["--watch", ".ghci"])
         .start()
         .await
@@ -113,7 +129,7 @@ async fn can_restart_on_ghci_file_change() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path(".ghci")).await.unwrap();
+    session.fs().touch(session.path(".ghci")).await.unwrap();
 
     session
         .wait_until_restart()
@@ -126,7 +142,9 @@ async fn can_restart_on_ghci_file_change() {
 #[test]
 async fn can_ignore_restart_paths() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .before_start(|project_root| async move { fs::touch(project_root.join(".ghci")).await })
+        .before_start(
+            |project_root| async move { Fs::new().touch(project_root.join(".ghci")).await },
+        )
         .with_args(["--restart-glob", "!.ghci", "--watch", ".ghci"])
         .start()
         .await
@@ -137,7 +155,7 @@ async fn can_ignore_restart_paths() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::touch(session.path(".ghci")).await.unwrap();
+    session.fs().touch(session.path(".ghci")).await.unwrap();
 
     session
         .wait_for_log(BaseMatcher::reload_completes().but_not(BaseMatcher::restart()))
@@ -162,7 +180,11 @@ async fn can_restart_on_module_change_even_if_ignored() {
         .await
         .expect("ghciwatch loads ghci");
 
-    fs::remove(session.path("src/MyModule.hs")).await.unwrap();
+    session
+        .fs()
+        .remove(session.path("src/MyModule.hs"))
+        .await
+        .unwrap();
 
     session
         .wait_until_restart()
