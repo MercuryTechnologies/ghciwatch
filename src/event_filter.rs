@@ -10,7 +10,7 @@ use notify_debouncer_full::DebouncedEvent;
 
 /// A set of filesystem events that `ghci` will need to respond to. Due to the way that `ghci` is,
 /// we need to divide these into a few different classes so that we can respond appropriately.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FileEvent {
     /// Existing files that are modified, or new files that are created.
     ///
