@@ -409,22 +409,7 @@ impl Ghci {
                 "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
-            for command in &self.opts.hooks.before_restart_ghci {
-                tracing::info!(%command, "Running before-restart command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
-            self.stop().await?;
-            let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
-            let _ = std::mem::replace(self, new);
-            self.initialize().await?;
-            for command in &self.opts.hooks.after_restart_ghci {
-                tracing::info!(%command, "Running after-restart command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
-            for command in &self.opts.hooks.after_restart_shell {
-                tracing::info!(%command, "Running after-restart command");
-                command.run_on(&mut self.command_handles).await?;
-            }
+            self.restart().await?;
             // Once we restart, everything is freshly loaded. We don't need to add or
             // reload any other modules.
             return Ok(());
@@ -484,9 +469,30 @@ impl Ghci {
             }
         }
 
-        // Get rid of any handles for background commands that have finished.
-        self.command_handles.retain(|handle| !handle.is_finished());
+        self.prune_command_handles();
 
+        Ok(())
+    }
+
+    /// Restart the `ghci` session.
+    #[instrument(skip_all, level = "debug")]
+    async fn restart(&mut self) -> miette::Result<()> {
+        for command in &self.opts.hooks.before_restart_ghci {
+            tracing::info!(%command, "Running before-restart command");
+            self.stdin.run_command(&mut self.stdout, command).await?;
+        }
+        self.stop().await?;
+        let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
+        let _ = std::mem::replace(self, new);
+        self.initialize().await?;
+        for command in &self.opts.hooks.after_restart_ghci {
+            tracing::info!(%command, "Running after-restart command");
+            self.stdin.run_command(&mut self.stdout, command).await?;
+        }
+        for command in &self.opts.hooks.after_restart_shell {
+            tracing::info!(%command, "Running after-restart command");
+            command.run_on(&mut self.command_handles).await?;
+        }
         Ok(())
     }
 
@@ -697,6 +703,12 @@ impl Ghci {
             tracing::error!("{program:?} failed: {status}");
         }
         Ok(())
+    }
+
+    // Get rid of any handles for background commands that have finished.
+    #[instrument(skip_all, level = "trace")]
+    fn prune_command_handles(&mut self) {
+        self.command_handles.retain(|handle| !handle.is_finished());
     }
 }
 
