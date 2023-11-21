@@ -1,5 +1,5 @@
-use test_harness::fs;
 use test_harness::test;
+use test_harness::Fs;
 use test_harness::GhciWatchBuilder;
 
 use indoc::indoc;
@@ -9,16 +9,17 @@ use indoc::indoc;
 async fn can_run_with_custom_ghci_prompt() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .before_start(|project| async move {
-            fs::write(
-                project.join(".ghci"),
-                indoc!(
-                    r#"
+            Fs::new()
+                .write(
+                    project.join(".ghci"),
+                    indoc!(
+                        r#"
                     :set prompt "λ "
                     :set prompt-cont "│ "
                     "#
-                ),
-            )
-            .await?;
+                    ),
+                )
+                .await?;
             Ok(())
         })
         .start()

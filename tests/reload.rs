@@ -1,6 +1,5 @@
 use indoc::indoc;
 
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
@@ -15,18 +14,20 @@ async fn can_reload() {
         .wait_until_ready()
         .await
         .expect("ghciwatch loads ghci");
-    fs::append(
-        session.path("src/MyLib.hs"),
-        indoc!(
-            "
+    session
+        .fs()
+        .append(
+            session.path("src/MyLib.hs"),
+            indoc!(
+                "
 
             hello = 1 :: Integer
 
             "
-        ),
-    )
-    .await
-    .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
     session
         .wait_until_reload()
         .await
@@ -49,17 +50,19 @@ async fn can_reload_after_error() {
         .expect("ghciwatch loads ghci");
     let new_module = session.path("src/My/Module.hs");
 
-    fs::write(
-        &new_module,
-        indoc!(
-            "module My.Module (myIdent) where
+    session
+        .fs()
+        .write(
+            &new_module,
+            indoc!(
+                "module My.Module (myIdent) where
             myIdent :: ()
             myIdent = \"Uh oh!\"
             "
-        ),
-    )
-    .await
-    .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
     session
         .wait_until_add()
         .await
@@ -69,7 +72,9 @@ async fn can_reload_after_error() {
         .await
         .unwrap();
 
-    fs::replace(&new_module, "myIdent = \"Uh oh!\"", "myIdent = ()")
+    session
+        .fs()
+        .replace(&new_module, "myIdent = \"Uh oh!\"", "myIdent = ()")
         .await
         .unwrap();
 

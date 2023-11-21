@@ -19,6 +19,7 @@ use crate::BaseMatcher;
 use crate::Checkpoint;
 use crate::CheckpointIndex;
 use crate::Event;
+use crate::Fs;
 use crate::GhcVersion;
 use crate::IntoMatcher;
 
@@ -117,6 +118,8 @@ pub struct GhciWatch {
     startup_timeout: Duration,
     //// The `ghciwatch` process's PID.
     pid: u32,
+    /// Filesystem helpers.
+    fs: Fs,
 }
 
 impl GhciWatch {
@@ -124,7 +127,8 @@ impl GhciWatch {
         let full_ghc_version = crate::internal::get_ghc_version()?;
         let ghc_version = full_ghc_version.parse()?;
         let tempdir = crate::internal::set_tempdir()?;
-        write_cabal_config(&tempdir).await?;
+        let fs = Fs::new();
+        write_cabal_config(&fs, &tempdir).await?;
         check_ghc_version(&tempdir, &full_ghc_version).await?;
 
         tracing::info!("Copying project files");
@@ -188,7 +192,7 @@ impl GhciWatch {
             .wrap_err("Failed to start `ghciwatch`")?;
 
         // Wait for `ghciwatch` to create the `log_path`
-        let creates_log_path = crate::fs::wait_for_path(builder.default_timeout, &log_path);
+        let creates_log_path = fs.wait_for_path(builder.default_timeout, &log_path);
         tokio::select! {
             child_result = child.wait() => {
                 return match child_result {
@@ -225,6 +229,7 @@ impl GhciWatch {
             default_timeout: builder.default_timeout,
             startup_timeout: builder.startup_timeout,
             pid,
+            fs: Fs::new(),
         })
     }
 
@@ -477,16 +482,26 @@ impl GhciWatch {
     pub fn pid(&self) -> u32 {
         self.pid
     }
+
+    /// Get the filesystem helpers.
+    pub fn fs(&self) -> &Fs {
+        &self.fs
+    }
+
+    /// Get a mutable reference to the filesystem helpers.
+    pub fn fs_mut(&mut self) -> &mut Fs {
+        &mut self.fs
+    }
 }
 
 /// Write an empty `~/.cabal/config` so that `cabal` doesn't try to access the internet.
 ///
 /// See: <https://github.com/haskell/cabal/issues/6167>
-async fn write_cabal_config(home: &Path) -> miette::Result<()> {
+async fn write_cabal_config(fs: &Fs, home: &Path) -> miette::Result<()> {
     std::fs::create_dir_all(home.join(".cabal"))
         .into_diagnostic()
         .wrap_err("Failed to create `.cabal` directory")?;
-    crate::fs::touch(home.join(".cabal/config"))
+    fs.touch(home.join(".cabal/config"))
         .await
         .wrap_err("Failed to write empty `.cabal/config`")?;
     Ok(())

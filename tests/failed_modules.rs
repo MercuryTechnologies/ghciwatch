@@ -1,5 +1,5 @@
-use test_harness::fs;
 use test_harness::test;
+use test_harness::Fs;
 use test_harness::GhciWatchBuilder;
 
 /// Test that `ghciwatch` can start with compile errors.
@@ -10,7 +10,9 @@ async fn can_start_with_failed_modules() {
     let module_path = "src/MyModule.hs";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .before_start(move |path| async move {
-            fs::replace(path.join(module_path), "example :: String", "example :: ()").await
+            Fs::new()
+                .replace(path.join(module_path), "example :: String", "example :: ()")
+                .await
         })
         .start()
         .await
@@ -24,7 +26,9 @@ async fn can_start_with_failed_modules() {
 
     session.wait_until_ready().await.expect("ghciwatch loads");
 
-    fs::replace(&module_path, "example :: ()", "example :: String")
+    session
+        .fs()
+        .replace(&module_path, "example :: ()", "example :: String")
         .await
         .unwrap();
 

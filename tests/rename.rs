@@ -1,4 +1,3 @@
-use test_harness::fs;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
@@ -17,7 +16,11 @@ async fn can_compile_renamed_module() {
 
     let module_path = session.path("src/MyModule.hs");
     let new_module_path = session.path("src/MyCoolModule.hs");
-    fs::rename(&module_path, &new_module_path).await.unwrap();
+    session
+        .fs()
+        .rename(&module_path, &new_module_path)
+        .await
+        .unwrap();
 
     session
         .wait_until_restart()
@@ -29,7 +32,9 @@ async fn can_compile_renamed_module() {
         .await
         .unwrap();
 
-    fs::replace(new_module_path, "module MyModule", "module MyCoolModule")
+    session
+        .fs()
+        .replace(new_module_path, "module MyModule", "module MyCoolModule")
         .await
         .unwrap();
 
