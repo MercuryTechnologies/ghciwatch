@@ -1,5 +1,6 @@
 //! The core [`Ghci`] session struct.
 
+use command_group::AsyncCommandGroup;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
 use std::borrow::Borrow;
@@ -11,6 +12,7 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use aho_corasick::AhoCorasick;
@@ -59,7 +61,6 @@ use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::HookOpts;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
-use crate::command_ext::SpawnExt;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
@@ -198,7 +199,10 @@ impl Ghci {
                 .stdout(Stdio::piped())
                 .kill_on_drop(true);
 
-            command.spawn_group_without_inheriting_sigint()?
+            command
+                .group_spawn()
+                .into_diagnostic()
+                .wrap_err_with(|| format!("Failed to start {}", command.display()))?
         };
 
         let process_group_id = Pid::from_raw(
@@ -400,11 +404,19 @@ impl Ghci {
     /// Reload this `ghci` session to include the given modified and removed paths.
     ///
     /// This may fully restart the `ghci` process.
+    ///
+    /// NOTE: We interrupt reloads when applicable, so this function may be canceled and dropped at
+    /// any `await` point!
     #[instrument(skip_all, level = "debug")]
-    pub async fn reload(&mut self, events: BTreeSet<FileEvent>) -> miette::Result<()> {
+    pub async fn reload(
+        &mut self,
+        events: BTreeSet<FileEvent>,
+        kind_sender: oneshot::Sender<GhciReloadKind>,
+    ) -> miette::Result<()> {
         let actions = self.get_reload_actions(events).await?;
+        let _ = kind_sender.send(actions.kind());
 
-        if !actions.needs_restart.is_empty() {
+        if actions.needs_restart() {
             tracing::info!(
                 "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
@@ -677,11 +689,16 @@ impl Ghci {
         NormalPath::new(path, &self.search_paths.cwd)
     }
 
-    #[instrument(skip_all, level = "trace")]
+    #[instrument(skip_all, level = "debug")]
     async fn send_sigint(&mut self) -> miette::Result<()> {
+        let start_instant = Instant::now();
         signal::killpg(self.process_group_id, Signal::SIGINT)
             .into_diagnostic()
             .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
+        self.stdout
+            .prompt(crate::incremental_reader::FindAt::Anywhere)
+            .await?;
+        tracing::debug!("Interrupted ghci in {:.2?}", start_instant.elapsed());
         Ok(())
     }
 
@@ -764,4 +781,31 @@ impl ReloadActions {
     fn needs_add_or_reload(&self) -> bool {
         !self.needs_add.is_empty() || !self.needs_reload.is_empty()
     }
+
+    /// Is a session restart needed?
+    fn needs_restart(&self) -> bool {
+        !self.needs_restart.is_empty()
+    }
+
+    /// Get the kind of reload we'll perform.
+    fn kind(&self) -> GhciReloadKind {
+        if self.needs_restart() {
+            GhciReloadKind::Restart
+        } else if self.needs_add_or_reload() {
+            GhciReloadKind::Reload
+        } else {
+            GhciReloadKind::None
+        }
+    }
+}
+
+/// How a [`Ghci`] session responds to a reload event.
+#[derive(Debug)]
+pub enum GhciReloadKind {
+    /// Noop. No actions needed.
+    None,
+    /// Reload and/or add modules. Can be interrupted.
+    Reload,
+    /// Restart the whole session. Cannot be interrupted.
+    Restart,
 }
