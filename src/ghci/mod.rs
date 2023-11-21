@@ -416,6 +416,10 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
+            for command in &self.opts.hooks.before_reload_shell {
+                tracing::info!(%command, "Running before-reload command");
+                command.run_on(&mut self.command_handles).await?;
+            }
             for command in &self.opts.hooks.before_reload_ghci {
                 tracing::info!(%command, "Running before-reload command");
                 self.stdin.run_command(&mut self.stdout, command).await?;
@@ -451,13 +455,13 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            for command in &self.opts.hooks.after_reload_ghci {
-                tracing::info!(%command, "Running after-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
             for command in &self.opts.hooks.after_reload_shell {
                 tracing::info!(%command, "Running after-reload command");
                 command.run_on(&mut self.command_handles).await?;
+            }
+            for command in &self.opts.hooks.after_reload_ghci {
+                tracing::info!(%command, "Running after-reload command");
+                self.stdin.run_command(&mut self.stdout, command).await?;
             }
 
             if compilation_failed {
@@ -477,6 +481,10 @@ impl Ghci {
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
     async fn restart(&mut self) -> miette::Result<()> {
+        for command in &self.opts.hooks.before_restart_shell {
+            tracing::info!(%command, "Running before-restart command");
+            command.run_on(&mut self.command_handles).await?;
+        }
         for command in &self.opts.hooks.before_restart_ghci {
             tracing::info!(%command, "Running before-restart command");
             self.stdin.run_command(&mut self.stdout, command).await?;
@@ -485,13 +493,13 @@ impl Ghci {
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
         self.initialize().await?;
-        for command in &self.opts.hooks.after_restart_ghci {
-            tracing::info!(%command, "Running after-restart command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
         for command in &self.opts.hooks.after_restart_shell {
             tracing::info!(%command, "Running after-restart command");
             command.run_on(&mut self.command_handles).await?;
+        }
+        for command in &self.opts.hooks.after_restart_ghci {
+            tracing::info!(%command, "Running after-restart command");
+            self.stdin.run_command(&mut self.stdout, command).await?;
         }
         Ok(())
     }
