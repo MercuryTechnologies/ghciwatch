@@ -36,7 +36,7 @@ categories = ["command-line-utilities", "development-tools"]
 aho-corasick = "1.0.2"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
-clap = { version = "4.3.2", features = ["derive", "wrap_help", "env"] }
+clap = { version = "4.3.2", features = ["derive", "wrap_help", "env", "string"] }
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
 humantime = "2.1.0"
 ignore = "0.4.20"
@@ -52,12 +52,14 @@ pathdiff = { version = "0.2.1", features = ["camino"] }
 regex = { version = "1.9.3", default-features = false, features = ["perf", "std"] }
 shell-words = "1.1.0"
 strip-ansi-escapes = "0.2.0"
+strum = { version = "0.25.0", features = ["derive"] }
 tap = "1.0.1"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
 tracing = "0.1.37"
 tracing-human-layer = "0.1.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "time", "json", "registry"] }
+unindent = "0.2.3"
 winnow = "0.5.15"
 
 [dev-dependencies]
