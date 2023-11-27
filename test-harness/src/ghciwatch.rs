@@ -31,6 +31,7 @@ pub(crate) const LOG_FILENAME: &str = "ghciwatch.json";
 pub struct GhciWatchBuilder {
     project_directory: PathBuf,
     args: Vec<OsString>,
+    cabal_args: Vec<String>,
     #[allow(clippy::type_complexity)]
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
     default_timeout: Duration,
@@ -43,6 +44,7 @@ impl GhciWatchBuilder {
         Self {
             project_directory: project_directory.as_ref().to_owned(),
             args: Default::default(),
+            cabal_args: Default::default(),
             before_start: None,
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
@@ -59,6 +61,34 @@ impl GhciWatchBuilder {
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
         self.args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Add an argument to the `cabal repl` invocation.
+    pub fn with_cabal_arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.cabal_args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple arguments to the `cabal repl` invocation.
+    pub fn with_cabal_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        self.cabal_args
+            .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Add a GHC argument to the `cabal repl` invocation.
+    pub fn with_ghc_arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.cabal_args.push("--repl-option".into());
+        self.cabal_args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple GHC arguments to the `cabal repl` invocation.
+    pub fn with_ghc_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        for arg in args {
+            self = self.with_ghc_arg(arg);
+        }
         self
     }
 
@@ -153,22 +183,31 @@ impl GhciWatch {
         let log_path = tempdir.join(LOG_FILENAME);
 
         tracing::info!("Starting ghciwatch");
+        let ghc_options = vec!["-fdiagnostics-color=always"];
+        let cabal_command = shell_words::join(
+            [
+                "cabal",
+                "--offline",
+                &format!("--with-compiler=ghc-{full_ghc_version}"),
+                "-flocal-dev",
+            ]
+            .into_iter()
+            .chain(ghc_options.into_iter().flat_map(|s| ["--repl-option", s]))
+            .chain(builder.cabal_args.iter().map(|s| s.as_str()))
+            .chain(["v2-repl", "lib:test-dev"]),
+        );
+
         let mut command = Command::new(test_bin::get_test_bin("ghciwatch").get_program());
         command
             .arg("--log-json")
             .arg(&log_path)
             .args([
                 "--command",
-                &format!(
-                    "cabal --offline --with-compiler=ghc-{full_ghc_version} -flocal-dev --repl-option -fdiagnostics-color=always v2-repl lib:test-dev"
-                ),
+                &cabal_command,
                 "--before-startup-shell",
                 "hpack --force .",
                 "--tracing-filter",
-                &[
-                    "ghciwatch::watcher=trace",
-                    "ghciwatch=debug",
-                ].join(","),
+                &["ghciwatch::watcher=trace", "ghciwatch=debug"].join(","),
                 "--trace-spans",
                 "new,close",
                 "--poll",
@@ -186,6 +225,7 @@ impl GhciWatch {
             .stdout(Stdio::inherit())
             .kill_on_drop(true);
 
+        tracing::info!("Starting ghciwatch");
         let mut child = command
             .spawn()
             .into_diagnostic()

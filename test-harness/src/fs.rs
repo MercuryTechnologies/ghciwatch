@@ -123,6 +123,29 @@ impl Fs {
         file.write_all(data.as_ref()).await.into_diagnostic()
     }
 
+    /// Prepend some data to a path.
+    #[tracing::instrument(skip(data))]
+    pub async fn prepend(
+        &self,
+        path: impl AsRef<Path> + Debug,
+        data: impl AsRef<[u8]>,
+    ) -> miette::Result<()> {
+        let path = path.as_ref();
+        let contents = self.read(path).await?;
+        let mut file = File::create(path)
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to open {path:?}"))?;
+        file.write_all(data.as_ref())
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to write {path:?}"))?;
+        file.write_all(contents.as_ref())
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to write {path:?}"))
+    }
+
     /// Read a path into a string.
     #[tracing::instrument]
     pub async fn read(&self, path: impl AsRef<Path> + Debug) -> miette::Result<String> {

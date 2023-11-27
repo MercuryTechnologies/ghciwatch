@@ -17,7 +17,6 @@ use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::GhciCommand;
 use super::Mode;
-use super::IO_MODULE_NAME;
 use super::PROMPT;
 use crate::ghci::GhciStdout;
 
@@ -98,11 +97,6 @@ impl GhciStdin {
         self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
             .await?;
-        self.write_line(
-            stdout,
-            &format!("import qualified System.IO as {IO_MODULE_NAME}\n"),
-        )
-        .await?;
 
         for command in setup_commands {
             tracing::debug!(%command, "Running after-startup command");
