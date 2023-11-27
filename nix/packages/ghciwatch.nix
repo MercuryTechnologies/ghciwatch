@@ -5,15 +5,20 @@
   darwin,
   haskell,
   haskellPackages,
+  ghc,
   hpack,
   craneLib,
-  advisory-db,
-}: {
+  inputs,
+  rustPlatform,
+  rust-analyzer,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
-  ghcVersions,
+  ghcVersions ? null,
 }: let
-  ghcPackages = builtins.map (ghcVersion: haskell.compiler.${ghcVersion}) ghcVersions;
+  ghcPackages =
+    if ghcVersions == null
+    then [ghc]
+    else builtins.map (ghcVersion: haskell.compiler.${ghcVersion}) ghcVersions;
 
   ghcBuildInputs =
     [
@@ -25,7 +30,7 @@
   GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
 
   src = lib.cleanSourceWith {
-    src = craneLib.path ../.;
+    src = craneLib.path ../../.;
     filter = let
       # Keep test project data, needed for the build.
       testDataFilter = path: _type: lib.hasInfix "tests/data" path;
@@ -107,13 +112,13 @@
     ghciwatch-fmt = craneLib.cargoFmt commonArgs;
     ghciwatch-audit = craneLib.cargoAudit (commonArgs
       // {
-        inherit advisory-db;
+        inherit (inputs) advisory-db;
       });
 
     # Check that the Haskell project used for integration tests is OK.
     haskell-project-for-integration-tests = stdenv.mkDerivation {
       name = "haskell-project-for-integration-tests";
-      src = ../tests/data/simple;
+      src = ../../tests/data/simple;
       phases = ["unpackPhase" "buildPhase" "installPhase"];
       nativeBuildInputs = ghcBuildInputs;
       inherit GHC_VERSIONS;
@@ -134,6 +139,21 @@
       '';
     };
   };
+
+  devShell = craneLib.devShell {
+    inherit checks;
+
+    # Make rust-analyzer work
+    RUST_SRC_PATH = rustPlatform.rustLibSrc;
+
+    # Provide GHC versions to use to the integration test suite.
+    inherit GHC_VERSIONS;
+
+    # Extra development tools (cargo and rustc are included by default).
+    packages = [
+      rust-analyzer
+    ];
+  };
 in
   # Build the actual crate itself, reusing the dependency
   # artifacts from above.
@@ -148,7 +168,7 @@ in
       cargoBuildCommand = "cargoWithProfile build";
 
       passthru = {
-        inherit GHC_VERSIONS checks;
+        inherit GHC_VERSIONS checks devShell;
       };
     }
     // (lib.optionalAttrs (stdenv.isLinux && stdenv.isx86_64) {
