@@ -1,6 +1,7 @@
 //! Lifecycle hooks.
 
 use std::fmt::Display;
+use std::fmt::Write;
 use std::process::ExitStatus;
 use std::str::FromStr;
 
@@ -9,120 +10,129 @@ use clap::Arg;
 use clap::ArgAction;
 use clap::Args;
 use clap::FromArgMatches;
-use strum::EnumMessage;
-use strum::EnumProperty;
-use strum::IntoEnumIterator;
+use enum_iterator::Sequence;
+use indoc::indoc;
 use tokio::task::JoinHandle;
 
 use crate::ghci::GhciCommand;
 use crate::maybe_async_command::MaybeAsyncCommand;
 
 /// A lifecycle event that triggers hooks.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    strum::EnumVariantNames,
-    strum::EnumIter,
-    strum::EnumMessage,
-    strum::EnumProperty,
-    strum::Display,
-    strum::AsRefStr,
-)]
-#[strum(serialize_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Sequence)]
 pub enum LifecycleEvent {
     /// When tests are run (after startup, after reloads).
-    #[strum(
-        message = "
-        Tests are run after startup and after reloads.
-        ",
-        props(help_name = "tests")
-    )]
     Test,
     /// When a `ghci` session is started (at `ghciwatch` startup and after restarts).
-    #[strum(message = "
-        Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
-    ")]
-    Startup,
+    Startup(When),
     /// When a module is changed or added.
-    #[strum(message = "
-        Reload hooks are run when modules are changed on disk.
-    ")]
-    Reload,
+    Reload(When),
     /// When a `ghci` session is restarted (when a module is removed or renamed).
-    #[strum(message = "
-        `ghci` is restarted when modules are removed or renamed.
-        See: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
-    ")]
-    Restart,
+    Restart(When),
+}
+
+impl Display for LifecycleEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(when) = self.when() {
+            write!(f, "{}-", when)?;
+        }
+        write!(f, "{}", self.event_name())
+    }
 }
 
 impl LifecycleEvent {
-    fn supported_when(&self) -> Vec<When> {
+    fn event_name(&self) -> &'static str {
         match self {
-            LifecycleEvent::Test => vec![When::During],
-            LifecycleEvent::Startup | LifecycleEvent::Reload | LifecycleEvent::Restart => {
-                vec![When::Before, When::After]
-            }
+            LifecycleEvent::Test => "test",
+            LifecycleEvent::Startup(_) => "startup",
+            LifecycleEvent::Reload(_) => "reload",
+            LifecycleEvent::Restart(_) => "restart",
         }
     }
 
-    fn supported_kind(&self, when: When) -> Vec<CommandKind> {
-        debug_assert!(self.supported_when().contains(&when));
+    fn get_message(&self) -> &'static str {
         match self {
-            LifecycleEvent::Reload | LifecycleEvent::Restart | LifecycleEvent::Test => {
+            LifecycleEvent::Test => indoc!(
+                "
+                Tests are run after startup and after reloads.
+                "
+            ),
+            LifecycleEvent::Startup(_) => indoc!(
+                "
+                Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
+                "
+            ),
+            LifecycleEvent::Reload(_) => indoc!(
+                "
+                Reload hooks are run when modules are changed on disk.
+                "
+            ),
+            LifecycleEvent::Restart(_) => indoc!(
+                "
+                `ghci` is restarted when modules are removed or renamed.
+                See: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                "
+            ),
+        }.trim_end_matches('\n')
+    }
+
+    fn get_help_name(&self) -> Option<&'static str> {
+        match self {
+            LifecycleEvent::Test => Some("tests"),
+            _ => None,
+        }
+    }
+
+    fn when(&self) -> Option<When> {
+        match &self {
+            LifecycleEvent::Test => None,
+            LifecycleEvent::Startup(when) => Some(*when),
+            LifecycleEvent::Reload(when) => Some(*when),
+            LifecycleEvent::Restart(when) => Some(*when),
+        }
+    }
+
+    fn supported_kind(&self) -> Vec<CommandKind> {
+        match self {
+            LifecycleEvent::Startup(When::Before) => vec![CommandKind::Shell],
+            LifecycleEvent::Startup(When::After)
+            | LifecycleEvent::Test
+            | LifecycleEvent::Reload(_)
+            | LifecycleEvent::Restart(_) => {
                 vec![CommandKind::Ghci, CommandKind::Shell]
             }
-            LifecycleEvent::Startup => match when {
-                When::Before => vec![CommandKind::Shell],
-                When::During => unreachable!(),
-                When::After => vec![CommandKind::Ghci, CommandKind::Shell],
-            },
         }
     }
 
     fn hooks() -> impl Iterator<Item = Hook<CommandKind>> {
-        Self::iter()
-            .flat_map(|event| {
-                event
-                    .supported_when()
-                    .into_iter()
-                    .map(move |when| (event, when))
+        enum_iterator::all::<Self>().flat_map(|event| {
+            event.supported_kind().into_iter().map(move |kind| Hook {
+                event,
+                command: kind,
             })
-            .flat_map(|(event, when)| {
-                event
-                    .supported_kind(when)
-                    .into_iter()
-                    .map(move |kind| Hook {
-                        event,
-                        when,
-                        command: kind,
-                    })
-            })
+        })
     }
 }
 
 /// When to run a hook in relation to a given [`LifecycleEvent`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::AsRefStr)]
-#[strum(serialize_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Sequence)]
 pub enum When {
     /// Run the hook before the event.
     Before,
-    /// Run the hook at the event.
-    ///
-    /// This is used for the test hook.
-    During,
     /// Run the hook after the event.
     After,
 }
 
+impl Display for When {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            When::Before => write!(f, "before"),
+            When::After => write!(f, "after"),
+        }
+    }
+}
+
 /// The kind of hook; a `ghci` command or a shell command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum::Display, strum::AsRefStr)]
-#[strum(serialize_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Sequence)]
 pub enum CommandKind {
     /// A shell command.
     Shell,
@@ -130,6 +140,15 @@ pub enum CommandKind {
     ///
     /// Can either be Haskell code to run (`TestMain.test`) or a `ghci` command (`:set args ...`).
     Ghci,
+}
+
+impl Display for CommandKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandKind::Shell => write!(f, "shell"),
+            CommandKind::Ghci => write!(f, "ghci"),
+        }
+    }
 }
 
 impl CommandKind {
@@ -173,18 +192,13 @@ impl Display for Command {
 pub struct Hook<C> {
     /// The event to run this hook on.
     pub event: LifecycleEvent,
-    /// When to run the hook in relation to the event.
-    pub when: When,
     /// The command to run.
     pub command: C,
 }
 
 impl<C> Display for Hook<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.when {
-            When::During => write!(f, "{}", self.event.as_ref()),
-            _ => write!(f, "{}-{}", self.when, self.event),
-        }
+        self.event.fmt(f)
     }
 }
 
@@ -192,7 +206,6 @@ impl<C> Hook<C> {
     fn with_command<C2>(&self, command: C2) -> Hook<C2> {
         Hook {
             event: self.event,
-            when: self.when,
             command,
         }
     }
@@ -200,46 +213,33 @@ impl<C> Hook<C> {
 
 impl Hook<CommandKind> {
     fn extra_help(&self) -> Option<&'static str> {
-        match (self.event, self.when, self.command) {
-            (LifecycleEvent::Startup, When::Before, _) => Some(
+        match (self.event, self.command) {
+            (LifecycleEvent::Startup(When::Before), _) => Some(indoc!(
                 "
                 This can be used to regenerate `.cabal` files with `hpack`.
                 ",
-            ),
-            (LifecycleEvent::Startup, When::After, CommandKind::Ghci) => Some(
+            )),
+            (LifecycleEvent::Startup(When::After), CommandKind::Ghci) => Some(indoc!(
                 "
                 Use `:set args ...` to set command-line arguments for test hooks.
                 ",
-            ),
-            (LifecycleEvent::Test, _, CommandKind::Ghci) => Some(
+            )),
+            (LifecycleEvent::Test, CommandKind::Ghci) => Some(indoc!(
                 "
                 Example: `TestMain.testMain`.
                 ",
-            ),
+            )),
             _ => None,
         }
+        .map(|help| help.trim_end_matches('\n'))
     }
 
     fn arg_name(&self) -> String {
-        let mut ret = match self.when {
-            When::During => String::new(),
-            when => when.to_string(),
-        };
-        if !ret.is_empty() {
-            ret.push('-');
-        }
-        ret.push_str(self.event.as_ref());
-        ret.push('-');
-        ret.push_str(self.command.as_ref());
-        ret
+        format!("{}-{}", self.event, self.command)
     }
 
     fn help(&self) -> Help {
-        let Hook {
-            event,
-            when,
-            command,
-        } = self;
+        let Hook { event, command } = self;
         let kind = match command {
             CommandKind::Ghci => "`ghci`",
             CommandKind::Shell => "Shell",
@@ -247,30 +247,26 @@ impl Hook<CommandKind> {
 
         let mut short = format!("{kind} commands to run");
 
-        match when {
-            When::During => {}
-            _ => {
-                short.push(' ');
-                short.push_str(when.as_ref());
-            }
+        if let Some(when) = self.event.when() {
+            short.push(' ');
+            write!(short, "{}", when).expect("Writing to a `String` never fails");
         }
 
         short.push(' ');
-        if let Some(help_name) = event.get_str("help_name") {
+        if let Some(help_name) = event.get_help_name() {
             short.push_str(help_name);
         } else {
-            short.push_str(event.as_ref());
+            write!(short, "{}", event.event_name()).expect("Writing to a `String` never fails");
         }
 
         let mut long = short.clone();
 
-        if let Some(message) = self.event.get_message() {
-            long.push_str("\n\n");
-            long.push_str(unindent::unindent(message).trim_end_matches('\n'));
-        }
+        long.push_str("\n\n");
+        long.push_str(event.get_message());
+
         if let Some(extra_help) = self.extra_help() {
             long.push('\n');
-            long.push_str(unindent::unindent(extra_help).trim_end_matches('\n'));
+            long.push_str(extra_help);
         }
 
         long.push_str("\n\nCan be given multiple times.");
@@ -294,23 +290,16 @@ pub struct HookOpts {
 }
 
 impl HookOpts {
-    pub fn select(
-        &self,
-        event: LifecycleEvent,
-        when: When,
-    ) -> impl Iterator<Item = &Hook<Command>> {
-        self.hooks
-            .iter()
-            .filter(move |hook| hook.event == event && hook.when == when)
+    pub fn select(&self, event: LifecycleEvent) -> impl Iterator<Item = &Hook<Command>> {
+        self.hooks.iter().filter(move |hook| hook.event == event)
     }
 
     pub async fn run_shell_hooks(
         &self,
         event: LifecycleEvent,
-        when: When,
         handles: &mut Vec<JoinHandle<miette::Result<ExitStatus>>>,
     ) -> miette::Result<()> {
-        for hook in self.select(event, when) {
+        for hook in self.select(event) {
             if let Command::Shell(command) = &hook.command {
                 tracing::info!(%command, "Running {hook} command");
                 command.run_on(handles).await?;

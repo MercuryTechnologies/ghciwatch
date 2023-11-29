@@ -38,8 +38,10 @@ backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
 clap = { version = "4.3.2", features = ["derive", "wrap_help", "env", "string"] }
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
+enum-iterator = "1.4.1"
 humantime = "2.1.0"
 ignore = "0.4.20"
+indoc = "1.0.6"
 itertools = "0.11.0"
 line-span = "0.1.5"
 miette = { version = "5.9.0", features = ["fancy"] }
@@ -52,7 +54,6 @@ pathdiff = { version = "0.2.1", features = ["camino"] }
 regex = { version = "1.9.3", default-features = false, features = ["perf", "std"] }
 shell-words = "1.1.0"
 strip-ansi-escapes = "0.2.0"
-strum = { version = "0.25.0", features = ["derive"] }
 tap = "1.0.1"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
@@ -65,7 +66,6 @@ winnow = "0.5.15"
 [dev-dependencies]
 test-harness = { path = "test-harness" }
 expect-test = "1.4.0"
-indoc = "1.0.6"
 pretty_assertions = "1.2.1"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 

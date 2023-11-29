@@ -183,8 +183,7 @@ impl Ghci {
             let _enter = span.enter();
             opts.hooks
                 .run_shell_hooks(
-                    LifecycleEvent::Startup,
-                    hooks::When::Before,
+                    LifecycleEvent::Startup(hooks::When::Before),
                     &mut command_handles,
                 )
                 .await?;
@@ -300,7 +299,7 @@ impl Ghci {
         // Perform start-of-session initialization.
         let messages = self.stdin.initialize(&mut self.stdout).await?;
         self.process_ghc_messages(messages).await?;
-        self.run_hooks(LifecycleEvent::Startup, hooks::When::After)
+        self.run_hooks(LifecycleEvent::Startup(hooks::When::After))
             .await?;
 
         // Get the initial list of targets.
@@ -427,7 +426,7 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            self.run_hooks(LifecycleEvent::Reload, hooks::When::Before)
+            self.run_hooks(LifecycleEvent::Reload(hooks::When::Before))
                 .await?;
         }
 
@@ -460,7 +459,7 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            self.run_hooks(LifecycleEvent::Reload, hooks::When::After)
+            self.run_hooks(LifecycleEvent::Reload(hooks::When::After))
                 .await?;
 
             if compilation_failed {
@@ -480,13 +479,13 @@ impl Ghci {
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
     async fn restart(&mut self) -> miette::Result<()> {
-        self.run_hooks(LifecycleEvent::Restart, hooks::When::Before)
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::Before))
             .await?;
         self.stop().await?;
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
         self.initialize().await?;
-        self.run_hooks(LifecycleEvent::Restart, hooks::When::After)
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::After))
             .await?;
         Ok(())
     }
@@ -495,8 +494,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn test(&mut self) -> miette::Result<()> {
         self.stdin.set_mode(&mut self.stdout, Mode::Testing).await?;
-        self.run_hooks(LifecycleEvent::Test, hooks::When::During)
-            .await?;
+        self.run_hooks(LifecycleEvent::Test).await?;
         Ok(())
     }
 
@@ -712,8 +710,8 @@ impl Ghci {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn run_hooks(&mut self, event: LifecycleEvent, when: hooks::When) -> miette::Result<()> {
-        for hook in self.opts.hooks.select(event, when) {
+    async fn run_hooks(&mut self, event: LifecycleEvent) -> miette::Result<()> {
+        for hook in self.opts.hooks.select(event) {
             tracing::info!(command = %hook.command, "Running {hook} command");
             match &hook.command {
                 hooks::Command::Ghci(command) => {
