@@ -42,7 +42,7 @@
   }: let
     eachSystem = nixpkgs.lib.genAttrs (import systems);
 
-    makeNixpkgs = {
+    makePkgs = {
       localSystem,
       crossSystem ? localSystem,
     }:
@@ -82,14 +82,14 @@
   in {
     packages = eachSystem (
       localSystem: let
-        pkgs = makeNixpkgs {inherit localSystem;};
+        pkgs = makePkgs {inherit localSystem;};
         inherit (pkgs) lib;
-        packages = pkgs.callPackage ./nix/makePackages.nix {inherit inputs;};
-        ghciwatch = packages.ghciwatch.override {
+        localPackages = pkgs.callPackage ./nix/makePackages.nix {inherit inputs;};
+        ghciwatch = localPackages.ghciwatch.override {
           inherit ghcVersions;
         };
       in
-        (lib.filterAttrs (name: value: lib.isDerivation value) packages)
+        (lib.filterAttrs (name: value: lib.isDerivation value) localPackages)
         // {
           inherit ghciwatch;
           default = ghciwatch;
@@ -107,7 +107,7 @@
         // (pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # ghciwatch cross-compiled to aarch64-linux.
           ghciwatch-aarch64-linux = let
-            crossPkgs = makeNixpkgs {
+            crossPkgs = makePkgs {
               inherit localSystem;
               crossSystem = "aarch64-linux";
             };
