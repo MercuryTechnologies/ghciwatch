@@ -195,6 +195,12 @@ pub struct HookOpts {
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub before_reload_ghci: Vec<GhciCommand>,
 
+    /// Shell commands to run before reloading `ghci`.
+    ///
+    /// Can be given multiple times.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub before_reload_shell: Vec<MaybeAsyncCommand>,
+
     /// `ghci` commands to run after reloading `ghci`.
     /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
@@ -211,6 +217,11 @@ pub struct HookOpts {
     /// Can be given multiple times.
     #[arg(long, value_name = "GHCI_COMMAND")]
     pub before_restart_ghci: Vec<GhciCommand>,
+
+    /// Shell commands to run before restarting `ghci`.
+    /// Can be given multiple times.
+    #[arg(long, value_name = "SHELL_COMMAND")]
+    pub before_restart_shell: Vec<MaybeAsyncCommand>,
 
     /// `ghci` commands to run after restarting `ghci`.
     /// Can be given multiple times.
