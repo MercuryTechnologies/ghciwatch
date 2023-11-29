@@ -23,6 +23,7 @@ mod event_filter;
 mod format_bulleted_list;
 mod ghci;
 mod haskell_source_file;
+mod hooks;
 mod ignore;
 mod incremental_reader;
 mod maybe_async_command;

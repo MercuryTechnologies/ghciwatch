@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use camino::Utf8Path;
 use miette::Context;
 use miette::IntoDiagnostic;
@@ -83,11 +81,7 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
-    pub async fn initialize(
-        &mut self,
-        stdout: &mut GhciStdout,
-        setup_commands: &[GhciCommand],
-    ) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn initialize(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
         self.set_mode(stdout, Mode::Compiling).await?;
@@ -98,11 +92,6 @@ impl GhciStdin {
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
             .await?;
 
-        for command in setup_commands {
-            tracing::debug!(%command, "Running after-startup command");
-            self.run_command(stdout, command).await?;
-        }
-
         Ok(messages)
     }
 
@@ -110,29 +99,6 @@ impl GhciStdin {
     pub async fn reload(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
         self.set_mode(stdout, Mode::Compiling).await?;
         self.write_line(stdout, ":reload\n").await
-    }
-
-    #[instrument(skip_all, level = "debug")]
-    pub async fn test(
-        &mut self,
-        stdout: &mut GhciStdout,
-        test_commands: &[GhciCommand],
-    ) -> miette::Result<()> {
-        if test_commands.is_empty() {
-            tracing::debug!("No test command provided, not running tests");
-            return Ok(());
-        }
-
-        self.set_mode(stdout, Mode::Testing).await?;
-        for test_command in test_commands {
-            tracing::debug!(command = %test_command, "Running user test command");
-            tracing::info!("Running tests: {test_command}");
-            let start_time = Instant::now();
-            self.run_command(stdout, test_command).await?;
-            tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
-        }
-
-        Ok(())
     }
 
     #[instrument(skip(self, stdout), level = "debug")]

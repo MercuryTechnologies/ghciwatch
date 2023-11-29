@@ -58,12 +58,14 @@ pub use ghci_command::GhciCommand;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
-use crate::cli::HookOpts;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
+use crate::hooks;
+use crate::hooks::HookOpts;
+use crate::hooks::LifecycleEvent;
 use crate::ignore::GlobMatcher;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
@@ -179,10 +181,12 @@ impl Ghci {
         {
             let span = tracing::debug_span!("before_startup_shell");
             let _enter = span.enter();
-            for command in &opts.hooks.before_startup_shell {
-                tracing::info!(%command, "Running before-startup command");
-                command.run_on(&mut command_handles).await?;
-            }
+            opts.hooks
+                .run_shell_hooks(
+                    LifecycleEvent::Startup(hooks::When::Before),
+                    &mut command_handles,
+                )
+                .await?;
         }
 
         let mut group = {
@@ -293,11 +297,10 @@ impl Ghci {
         self.stdout.initialize().await?;
 
         // Perform start-of-session initialization.
-        let messages = self
-            .stdin
-            .initialize(&mut self.stdout, &self.opts.hooks.after_startup_ghci)
-            .await?;
+        let messages = self.stdin.initialize(&mut self.stdout).await?;
         self.process_ghc_messages(messages).await?;
+        self.run_hooks(LifecycleEvent::Startup(hooks::When::After))
+            .await?;
 
         // Get the initial list of targets.
         self.refresh_targets().await?;
@@ -423,14 +426,8 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            for command in &self.opts.hooks.before_reload_shell {
-                tracing::info!(%command, "Running before-reload command");
-                command.run_on(&mut self.command_handles).await?;
-            }
-            for command in &self.opts.hooks.before_reload_ghci {
-                tracing::info!(%command, "Running before-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
+            self.run_hooks(LifecycleEvent::Reload(hooks::When::Before))
+                .await?;
         }
 
         let mut compilation_failed = false;
@@ -462,14 +459,8 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            for command in &self.opts.hooks.after_reload_shell {
-                tracing::info!(%command, "Running after-reload command");
-                command.run_on(&mut self.command_handles).await?;
-            }
-            for command in &self.opts.hooks.after_reload_ghci {
-                tracing::info!(%command, "Running after-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
+            self.run_hooks(LifecycleEvent::Reload(hooks::When::After))
+                .await?;
 
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
@@ -488,35 +479,22 @@ impl Ghci {
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
     async fn restart(&mut self) -> miette::Result<()> {
-        for command in &self.opts.hooks.before_restart_shell {
-            tracing::info!(%command, "Running before-restart command");
-            command.run_on(&mut self.command_handles).await?;
-        }
-        for command in &self.opts.hooks.before_restart_ghci {
-            tracing::info!(%command, "Running before-restart command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::Before))
+            .await?;
         self.stop().await?;
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
         self.initialize().await?;
-        for command in &self.opts.hooks.after_restart_shell {
-            tracing::info!(%command, "Running after-restart command");
-            command.run_on(&mut self.command_handles).await?;
-        }
-        for command in &self.opts.hooks.after_restart_ghci {
-            tracing::info!(%command, "Running after-restart command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::After))
+            .await?;
         Ok(())
     }
 
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
     async fn test(&mut self) -> miette::Result<()> {
-        self.stdin
-            .test(&mut self.stdout, &self.opts.hooks.test_ghci)
-            .await?;
+        self.stdin.set_mode(&mut self.stdout, Mode::Testing).await?;
+        self.run_hooks(LifecycleEvent::Test).await?;
         Ok(())
     }
 
@@ -729,6 +707,27 @@ impl Ghci {
     #[instrument(skip_all, level = "trace")]
     fn prune_command_handles(&mut self) {
         self.command_handles.retain(|handle| !handle.is_finished());
+    }
+
+    #[instrument(skip(self), level = "trace")]
+    async fn run_hooks(&mut self, event: LifecycleEvent) -> miette::Result<()> {
+        for hook in self.opts.hooks.select(event) {
+            tracing::info!(command = %hook.command, "Running {hook} command");
+            match &hook.command {
+                hooks::Command::Ghci(command) => {
+                    let start_time = Instant::now();
+                    self.stdin.run_command(&mut self.stdout, command).await?;
+                    if let LifecycleEvent::Test = &hook.event {
+                        tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
+                    }
+                }
+                hooks::Command::Shell(command) => {
+                    command.run_on(&mut self.command_handles).await?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

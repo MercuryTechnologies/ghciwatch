@@ -4,7 +4,7 @@
 //!
 //! [1]: https://www.haskell.org/onlinereport/haskell2010/haskellch2.html
 
-use winnow::combinator::separated1;
+use winnow::combinator::separated;
 use winnow::token::one_of;
 use winnow::token::take_while;
 use winnow::PResult;
@@ -15,7 +15,7 @@ use winnow::Parser;
 /// See: `modid` in <https://www.haskell.org/onlinereport/haskell2010/haskellch2.html#x7-180002.4>
 pub fn module_name<'i>(input: &mut &'i str) -> PResult<&'i str> {
     // Surely there's a better way to get type inference to work here?
-    separated1::<_, _, (), _, _, _, _>(constructor_name, ".")
+    separated::<_, _, (), _, _, _, _>(1.., constructor_name, ".")
         .recognize()
         .parse_next(input)
 }
