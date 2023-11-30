@@ -1,5 +1,7 @@
 use std::fmt::Display;
+use std::fmt::Write;
 use std::process::ExitStatus;
+use std::process::Stdio;
 use std::str::FromStr;
 
 use miette::miette;
@@ -56,16 +58,41 @@ impl MaybeAsyncCommand {
         let command_formatted = self.display();
         let join_handle = tokio::task::spawn(async move {
             tracing::info!("$ {command_formatted}");
-            let status = command
-                .status()
+            let output = command
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
                 .await
                 .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to execute `{command_formatted}`"))?;
+
+            let status = output.status;
+
+            let mut message = format!("{program:?} ");
             if status.success() {
-                tracing::debug!("{program:?} exited successfully: {status}");
+                message.push_str("finished successfully");
             } else {
-                tracing::error!("{program:?} failed: {status}");
+                write!(message, "failed: {status}").expect("Writing to a `String` never fails");
             }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = stdout.trim();
+            if !stdout.is_empty() {
+                write!(message, "\n\nStdout: {stdout}").expect("Writing to a `String` never fails");
+            }
+
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if !stderr.is_empty() {
+                write!(message, "\n\nStderr: {stderr}").expect("Writing to a `String` never fails");
+            }
+
+            if status.success() {
+                tracing::debug!("{message}");
+            } else {
+                tracing::error!("{message}");
+            }
+
             Ok(status)
         });
 
