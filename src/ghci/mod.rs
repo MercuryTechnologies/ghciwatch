@@ -3,6 +3,8 @@
 use command_group::AsyncCommandGroup;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
+use owo_colors::OwoColorize;
+use owo_colors::Stream::Stdout;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -411,6 +413,7 @@ impl Ghci {
         events: BTreeSet<FileEvent>,
         kind_sender: oneshot::Sender<GhciReloadKind>,
     ) -> miette::Result<()> {
+        let start_instant = Instant::now();
         let actions = self.get_reload_actions(events).await?;
         let _ = kind_sender.send(actions.kind());
 
@@ -465,6 +468,11 @@ impl Ghci {
             if compilation_failed {
                 tracing::debug!("Compilation failed, skipping running tests.");
             } else {
+                tracing::info!(
+                    "{} Finished reloading in {:.2?}",
+                    "All good!".if_supports_color(Stdout, |text| text.green()),
+                    start_instant.elapsed()
+                );
                 // If we loaded or reloaded any modules, we should run tests/eval commands.
                 self.eval().await?;
                 self.test().await?;
