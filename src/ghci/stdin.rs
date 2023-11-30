@@ -170,6 +170,17 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
 
+        // If the `module` was already compiled, `ghci` may have loaded the interface file instead
+        // of the interpreted bytecode, giving us this error message:
+        //
+        //     module 'Mercury.Typescript.Golden' is not interpreted
+        //
+        // We use `:add *{module}` to force interpreting the module. We do this here instead of in
+        // `add_module` to save time if eval commands aren't used (or aren't needed for a
+        // particular module).
+        self.write_line(stdout, &format!(":add *{module}\n"))
+            .await?;
+
         self.stdin
             .write_all(format!(":module + *{module}\n").as_bytes())
             .await
