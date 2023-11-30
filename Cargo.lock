@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "ghciwatch"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "aho-corasick",
  "backoff",
