@@ -1,8 +1,32 @@
+use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
 use miette::miette;
 use regex::Regex;
+
+/// A GHC version, including the patch level.
+pub struct FullGhcVersion {
+    /// The major version.
+    pub major: GhcVersion,
+    /// The full version string.
+    pub full: String,
+}
+
+impl FullGhcVersion {
+    /// Get the GHC version for the current test.
+    pub fn current() -> miette::Result<Self> {
+        let full = crate::internal::get_ghc_version()?;
+        let major = full.parse()?;
+        Ok(Self { full, major })
+    }
+}
+
+impl Display for FullGhcVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.full)
+    }
+}
 
 /// A major version of GHC.
 ///

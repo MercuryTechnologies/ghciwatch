@@ -228,6 +228,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 
 [[package]]
+name = "clonable-command"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4140de6168fe09fe790bf37d6dfdd269f313d23ff9e99cc4e3a8aec6a65f619b"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1298,6 +1304,7 @@ name = "test-harness"
 version = "0.1.0"
 dependencies = [
  "backoff",
+ "clonable-command",
  "fs_extra",
  "futures-util",
  "itertools",
@@ -1307,6 +1314,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
+ "tap",
  "tempfile",
  "test-harness-macro",
  "test_bin",

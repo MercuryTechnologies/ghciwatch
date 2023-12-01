@@ -165,7 +165,7 @@ impl GhciStdin {
     pub async fn eval(
         &mut self,
         stdout: &mut GhciStdout,
-        module: &str,
+        module_name: &str,
         command: &GhciCommand,
     ) -> miette::Result<()> {
         self.set_mode(stdout, Mode::Internal).await?;
@@ -178,11 +178,11 @@ impl GhciStdin {
         // We use `:add *{module}` to force interpreting the module. We do this here instead of in
         // `add_module` to save time if eval commands aren't used (or aren't needed for a
         // particular module).
-        self.write_line(stdout, &format!(":add *{module}\n"))
+        self.write_line(stdout, &format!(":add *{module_name}\n"))
             .await?;
 
         self.stdin
-            .write_all(format!(":module + *{module}\n").as_bytes())
+            .write_all(format!(":module + *{module_name}\n").as_bytes())
             .await
             .into_diagnostic()?;
         stdout.prompt(FindAt::LineStart).await?;
@@ -190,7 +190,7 @@ impl GhciStdin {
         self.run_command(stdout, command).await?;
 
         self.stdin
-            .write_all(format!(":module - *{module}\n").as_bytes())
+            .write_all(format!(":module - *{module_name}\n").as_bytes())
             .await
             .into_diagnostic()?;
         stdout.prompt(FindAt::LineStart).await?;
