@@ -9,12 +9,12 @@ use std::time::Duration;
 use clap::Parser;
 use ghciwatch::cli;
 use ghciwatch::run_ghci;
-use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
+use ghciwatch::{run_tui, write_hello_world};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -31,9 +31,17 @@ async fn main() -> miette::Result<()> {
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
     if opts.tui {
+        let (tui_writer, tui_reader) = tokio::io::duplex(1024);
+
         manager
             .spawn("run_tui".to_owned(), |handle| {
-                run_tui(handle, ghci_sender.clone())
+                run_tui(handle, tui_reader, ghci_sender.clone())
+            })
+            .await;
+
+        manager
+            .spawn("write_hello_world".to_owned(), |_| {
+                write_hello_world(tui_writer)
             })
             .await;
     }
