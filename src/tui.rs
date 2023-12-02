@@ -7,7 +7,7 @@ use tokio_stream::StreamExt as _;
 
 /// TODO(evan): Document
 pub async fn run_tui(
-    _handle: ShutdownHandle,
+    shutdown_handle: ShutdownHandle,
     _ghci_sender: mpsc::Sender<GhciEvent>,
 ) -> miette::Result<()> {
     let mut terminal = terminal::enter().wrap_err("Failed to enter terminal")?;
@@ -37,6 +37,15 @@ pub async fn run_tui(
             break;
         }
     }
+
+    terminal::exit().wrap_err("Failed to exit terminal")?;
+
+    eprintln!("ghciwatch shutting down...");
+
+    shutdown_handle
+        .request_shutdown()
+        .into_diagnostic()
+        .wrap_err("Failed to request shutdown")?;
 
     Ok(())
 }
