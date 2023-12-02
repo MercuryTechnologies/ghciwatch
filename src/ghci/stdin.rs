@@ -1,6 +1,7 @@
 use camino::Utf8Path;
 use miette::Context;
 use miette::IntoDiagnostic;
+use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
@@ -32,12 +33,15 @@ impl GhciStdin {
     ///
     /// The `find` parameter determines where the prompt can be found in the output line.
     #[instrument(skip(self, stdout), level = "debug")]
-    async fn write_line_with_prompt_at(
+    async fn write_line_with_prompt_at<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         line: &str,
         find: FindAt,
-    ) -> miette::Result<Vec<GhcMessage>> {
+    ) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         self.stdin
             .write_all(line.as_bytes())
             .await
@@ -48,11 +52,14 @@ impl GhciStdin {
     /// Write a line on `stdin` and wait for a prompt on stdout.
     ///
     /// The `line` should contain the trailing newline.
-    async fn write_line(
+    async fn write_line<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         line: &str,
-    ) -> miette::Result<Vec<GhcMessage>> {
+    ) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         self.write_line_with_prompt_at(stdout, line, FindAt::LineStart)
             .await
     }
@@ -61,11 +68,14 @@ impl GhciStdin {
     ///
     /// The command may be multiple lines.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn run_command(
+    pub async fn run_command<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         command: &GhciCommand,
-    ) -> miette::Result<Vec<GhcMessage>> {
+    ) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         let mut ret = Vec::new();
 
         for line in command.lines() {
@@ -81,7 +91,13 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
-    pub async fn initialize(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn initialize<W>(
+        &mut self,
+        stdout: &mut GhciStdout<W>,
+    ) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
         self.set_mode(stdout, Mode::Compiling).await?;
@@ -96,17 +112,23 @@ impl GhciStdin {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn reload(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn reload<W>(&mut self, stdout: &mut GhciStdout<W>) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         self.set_mode(stdout, Mode::Compiling).await?;
         self.write_line(stdout, ":reload\n").await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn add_module(
+    pub async fn add_module<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         path: &Utf8Path,
-    ) -> miette::Result<Vec<GhcMessage>> {
+    ) -> miette::Result<Vec<GhcMessage>>
+    where
+        W: AsyncWrite,
+    {
         self.set_mode(stdout, Mode::Compiling).await?;
 
         // We use `:add` because `:load` unloads all previously loaded modules:
@@ -120,7 +142,10 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
+    pub async fn show_paths<W>(&mut self, stdout: &mut GhciStdout<W>) -> miette::Result<ShowPaths>
+    where
+        W: AsyncWrite,
+    {
         self.set_mode(stdout, Mode::Internal).await?;
 
         self.stdin
@@ -132,11 +157,14 @@ impl GhciStdin {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn show_targets(
+    pub async fn show_targets<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         show_paths: &ShowPaths,
-    ) -> miette::Result<ModuleSet> {
+    ) -> miette::Result<ModuleSet>
+    where
+        W: AsyncWrite,
+    {
         self.set_mode(stdout, Mode::Internal).await?;
 
         self.stdin
@@ -148,7 +176,10 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
+    pub async fn quit<W>(&mut self, stdout: &mut GhciStdout<W>) -> miette::Result<()>
+    where
+        W: AsyncWrite,
+    {
         let _ = self.set_mode(stdout, Mode::Internal).await;
         self.stdin
             .write_all(b":quit\n")
@@ -162,12 +193,15 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn eval(
+    pub async fn eval<W>(
         &mut self,
-        stdout: &mut GhciStdout,
+        stdout: &mut GhciStdout<W>,
         module: &str,
         command: &GhciCommand,
-    ) -> miette::Result<()> {
+    ) -> miette::Result<()>
+    where
+        W: AsyncWrite,
+    {
         self.set_mode(stdout, Mode::Internal).await?;
 
         // If the `module` was already compiled, `ghci` may have loaded the interface file instead
@@ -199,7 +233,14 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "trace")]
-    pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
+    pub async fn set_mode<W>(
+        &mut self,
+        stdout: &mut GhciStdout<W>,
+        mode: Mode,
+    ) -> miette::Result<()>
+    where
+        W: AsyncWrite,
+    {
         stdout.set_mode(mode);
 
         let (sender, receiver) = oneshot::channel();
