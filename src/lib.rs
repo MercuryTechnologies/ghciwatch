@@ -29,6 +29,7 @@ mod incremental_reader;
 mod maybe_async_command;
 mod normal_path;
 mod shutdown;
+mod terminal;
 mod tracing;
 mod tui;
 mod watcher;
