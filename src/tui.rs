@@ -1,25 +1,53 @@
 use crate::{ghci::manager::GhciEvent, terminal, ShutdownHandle};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use miette::{miette, IntoDiagnostic as _, WrapErr as _};
-use ratatui::widgets::{Paragraph, Widget as _};
-use tokio::sync::mpsc;
+use ratatui::style::Style;
+use std::str;
+use tokio::{
+    io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream},
+    sync::mpsc,
+};
 use tokio_stream::StreamExt as _;
 
 /// TODO(evan): Document
 pub async fn run_tui(
     shutdown_handle: ShutdownHandle,
+    mut tui_reader: DuplexStream,
     _ghci_sender: mpsc::Sender<GhciEvent>,
 ) -> miette::Result<()> {
+    let mut scrollback = String::new();
+
+    let mut buffer = [0; 1024];
+
     let mut terminal = terminal::enter().wrap_err("Failed to enter terminal")?;
 
     let mut event_stream = EventStream::new();
 
     loop {
+        tui_reader
+            .read(&mut buffer)
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to read bytes into TUI buffer")?;
+
+        // TODO(evan): It's not always valid UTF-8!!
+        let str = str::from_utf8(&buffer[..])
+            .into_diagnostic()
+            .wrap_err("Bytes are not valid UTF-8")?;
+
+        scrollback.push_str(str);
+
         terminal
             .draw(|frame| {
                 let area = frame.size();
                 let buffer = frame.buffer_mut();
-                Paragraph::new("Hello, world!").render(area, buffer);
+                // TODO(evan): Scroll once you hit the bottom
+                for (i, line) in scrollback.lines().enumerate() {
+                    if i < usize::from(area.bottom()) {
+                        let y = u16::try_from(i).unwrap();
+                        buffer.set_string(area.x, y, line, Style::new());
+                    }
+                }
             })
             .into_diagnostic()
             .wrap_err("Failed to draw to terminal")?;
@@ -59,4 +87,13 @@ fn handle_event(event: Event) -> bool {
     }
 
     quit
+}
+
+/// TODO(evan): Remove
+pub async fn write_hello_world(mut tui_writer: DuplexStream) -> miette::Result<()> {
+    tui_writer
+        .write_all(b"Hello, world!")
+        .await
+        .into_diagnostic()
+        .wrap_err("Failed to write 'hello world' text to TUI")
 }
