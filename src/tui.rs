@@ -1,6 +1,7 @@
 use crate::{ghci::manager::GhciEvent, terminal, ShutdownHandle};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use miette::{miette, IntoDiagnostic as _, WrapErr as _};
+use ratatui::widgets::{Paragraph, Widget as _};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
 
@@ -9,11 +10,20 @@ pub async fn run_tui(
     _handle: ShutdownHandle,
     _ghci_sender: mpsc::Sender<GhciEvent>,
 ) -> miette::Result<()> {
-    let mut _terminal = terminal::enter().wrap_err("Failed to enter terminal")?;
+    let mut terminal = terminal::enter().wrap_err("Failed to enter terminal")?;
 
     let mut event_stream = EventStream::new();
 
     loop {
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                let buffer = frame.buffer_mut();
+                Paragraph::new("Hello, world!").render(area, buffer);
+            })
+            .into_diagnostic()
+            .wrap_err("Failed to draw to terminal")?;
+
         let event = event_stream
             .next()
             .await
