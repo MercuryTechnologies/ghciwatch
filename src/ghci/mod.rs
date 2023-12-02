@@ -4,7 +4,6 @@ use command_group::AsyncCommandGroup;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
 use owo_colors::OwoColorize;
-use owo_colors::Stream::Stdout;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -14,10 +13,14 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
+use tokio::io::AsyncWrite;
+use tokio::io::Stdout;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use aho_corasick::AhoCorasick;
+use async_dup::Arc;
+use async_dup::Mutex;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::miette;
@@ -27,6 +30,10 @@ use nix::unistd::Pid;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::sync::mpsc;
+use tokio_util::compat::Compat;
+use tokio_util::compat::FuturesAsyncWriteCompatExt;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
+
 use tracing::instrument;
 
 mod stdin;
@@ -76,6 +83,8 @@ use crate::CommandExt;
 
 use self::parse::parse_eval_commands;
 
+type ClonableStdout = Compat<Arc<Mutex<Compat<Stdout>>>>;
+
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
 pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
@@ -87,7 +96,7 @@ pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
 /// is fully owned; ultimately, this is because [`Ghci`] is run through a [`ShutdownHandle`], which
 /// requires that the task is fully owned.
 #[derive(Debug, Clone)]
-pub struct GhciOpts {
+pub struct GhciOpts<W = ClonableStdout> {
     /// The command used to start the underlying `ghci` session.
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
@@ -100,6 +109,8 @@ pub struct GhciOpts {
     pub restart_globs: GlobMatcher,
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
+    /// TODO(evan): Document
+    pub stdout_writer: W,
 }
 
 impl GhciOpts {
@@ -122,15 +133,34 @@ impl GhciOpts {
             hooks: opts.hooks.clone(),
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
+            stdout_writer: Arc::new(Mutex::new(tokio::io::stdout().compat_write())).compat_write(),
         })
     }
 }
 
+impl<W> GhciOpts<W> {
+    /// TODO(evan): Document
+    pub fn with_stdout_writer<W2>(self, stdout_writer: W2) -> GhciOpts<W2>
+    where
+        W: AsyncWrite + Clone,
+    {
+        GhciOpts {
+            command: self.command,
+            error_path: self.error_path,
+            enable_eval: self.enable_eval,
+            hooks: self.hooks,
+            restart_globs: self.restart_globs,
+            reload_globs: self.reload_globs,
+            stdout_writer,
+        }
+    }
+}
+
 /// A `ghci` session.
-pub struct Ghci {
+pub struct Ghci<W = ClonableStdout> {
     /// Options used to start this `ghci` session. We keep this around so we can reuse it when
     /// restarting this session.
-    opts: GhciOpts,
+    opts: GhciOpts<W>,
     /// The shutdown handle, used for performing or responding to graceful shutdowns.
     shutdown: ShutdownHandle,
     /// The process group ID of the `ghci` session process.
@@ -140,7 +170,7 @@ pub struct Ghci {
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
-    stdout: GhciStdout,
+    stdout: GhciStdout<W>,
     /// Sender for notifying the process watching job ([`GhciProcess`]) that we're shutting down
     /// the `ghci` session on purpose. If the process watcher sees `ghci` exit, usually it will
     /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
@@ -172,13 +202,16 @@ impl Debug for Ghci {
     }
 }
 
-impl Ghci {
+impl<W> Ghci<W>
+where
+    W: AsyncWrite + Clone,
+{
     /// Start a new `ghci` session.
     ///
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
+    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts<W>) -> miette::Result<Self> {
         let mut command_handles = Vec::new();
         {
             let span = tracing::debug_span!("before_startup_shell");
@@ -231,8 +264,10 @@ impl Ghci {
         // TODO: Is this a good capacity? Maybe it should just be 1.
         let (stderr_sender, stderr_receiver) = mpsc::channel(8);
 
+        let stdout_writer = opts.stdout_writer.clone();
+
         let stdout = GhciStdout {
-            reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
+            reader: IncrementalReader::new(stdout).with_writer(stdout_writer),
             stderr_sender: stderr_sender.clone(),
             buffer: vec![0; LINE_BUFFER_CAPACITY],
             prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
@@ -470,7 +505,7 @@ impl Ghci {
             } else {
                 tracing::info!(
                     "{} Finished reloading in {:.2?}",
-                    "All good!".if_supports_color(Stdout, |text| text.green()),
+                    "All good!".if_supports_color(owo_colors::Stream::Stdout, |text| text.green()),
                     start_instant.elapsed()
                 );
                 // If we loaded or reloaded any modules, we should run tests/eval commands.

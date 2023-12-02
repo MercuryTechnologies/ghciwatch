@@ -1,4 +1,5 @@
 use crate::{ghci::manager::GhciEvent, terminal, ShutdownHandle};
+use async_dup::{Arc, Mutex};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use miette::{miette, IntoDiagnostic as _, WrapErr as _};
 use ratatui::style::Style;
@@ -8,6 +9,9 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_stream::StreamExt as _;
+use tokio_util::compat::Compat;
+
+type ClonableDuplexStream = Compat<Arc<Mutex<Compat<DuplexStream>>>>;
 
 /// TODO(evan): Document
 pub async fn run_tui(
@@ -90,7 +94,7 @@ fn handle_event(event: Event) -> bool {
 }
 
 /// TODO(evan): Remove
-pub async fn write_hello_world(mut tui_writer: DuplexStream) -> miette::Result<()> {
+pub async fn write_hello_world(mut tui_writer: ClonableDuplexStream) -> miette::Result<()> {
     tui_writer
         .write_all(b"Hello, world!")
         .await

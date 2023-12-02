@@ -1,10 +1,13 @@
 use aho_corasick::AhoCorasick;
+use async_dup::Arc;
+use async_dup::Mutex;
 use miette::Context;
 use miette::IntoDiagnostic;
-use tokio::io::Stdout;
+use tokio::io::AsyncWrite;
 use tokio::process::ChildStdout;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio_util::compat::Compat;
 use tracing::instrument;
 
 use crate::aho_corasick::AhoCorasickExt;
@@ -22,9 +25,11 @@ use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::Mode;
 
-pub struct GhciStdout {
+type ClonableStdout = Compat<Arc<Mutex<Compat<tokio::io::Stdout>>>>;
+
+pub struct GhciStdout<W = ClonableStdout> {
     /// Reader for parsing and forwarding the underlying stdout stream.
-    pub reader: IncrementalReader<ChildStdout, Stdout>,
+    pub reader: IncrementalReader<ChildStdout, W>,
     /// Channel for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
     /// Prompt patterns to match. Constructing these `AhoCorasick` automatons is costly so we store
@@ -36,7 +41,10 @@ pub struct GhciStdout {
     pub mode: Mode,
 }
 
-impl GhciStdout {
+impl<W> GhciStdout<W>
+where
+    W: AsyncWrite,
+{
     #[instrument(skip_all, name = "stdout_initialize", level = "debug")]
     pub async fn initialize(&mut self) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.

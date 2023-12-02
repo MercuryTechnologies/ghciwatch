@@ -6,6 +6,7 @@ use std::sync::Arc;
 use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
+use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -47,11 +48,14 @@ impl GhciEvent {
 
 /// Start the [`Ghci`] subsystem.
 #[instrument(skip_all, level = "debug")]
-pub async fn run_ghci(
+pub async fn run_ghci<W>(
     mut handle: ShutdownHandle,
-    opts: GhciOpts,
+    opts: GhciOpts<W>,
     mut receiver: mpsc::Receiver<GhciEvent>,
-) -> miette::Result<()> {
+) -> miette::Result<()>
+where
+    W: AsyncWrite + Clone + Send + Sync + 'static,
+{
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
 
@@ -137,11 +141,14 @@ pub async fn run_ghci(
 }
 
 #[instrument(level = "debug", skip(ghci, reload_sender))]
-async fn dispatch(
-    ghci: Arc<Mutex<Ghci>>,
+async fn dispatch<W>(
+    ghci: Arc<Mutex<Ghci<W>>>,
     event: GhciEvent,
     reload_sender: oneshot::Sender<GhciReloadKind>,
-) -> miette::Result<()> {
+) -> miette::Result<()>
+where
+    W: AsyncWrite + Clone,
+{
     match event {
         GhciEvent::Reload { events } => {
             ghci.lock().await.reload(events, reload_sender).await?;
