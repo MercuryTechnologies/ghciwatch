@@ -9,18 +9,13 @@ use tracing::instrument;
 
 use crate::shutdown::ShutdownHandle;
 
-use super::Mode;
-
 /// An event sent to a `ghci` session's stderr channel.
 #[derive(Debug)]
 pub enum StderrEvent {
-    /// Set the writer's mode.
-    Mode {
-        mode: Mode,
-        sender: oneshot::Sender<()>,
-    },
+    /// Clear the buffer contents.
+    ClearBuffer,
 
-    /// Get the buffer contents since the last `Mode` event.
+    /// Get the buffer contents since the last `ClearBuffer` event.
     GetBuffer { sender: oneshot::Sender<String> },
 }
 
@@ -30,8 +25,6 @@ pub struct GhciStderr {
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,
-    /// The mode we're currently reading output in.
-    pub mode: Mode,
 }
 
 impl GhciStderr {
@@ -82,8 +75,8 @@ impl GhciStderr {
 
     async fn dispatch(&mut self, event: StderrEvent) -> miette::Result<()> {
         match event {
-            StderrEvent::Mode { mode, sender } => {
-                self.set_mode(sender, mode).await;
+            StderrEvent::ClearBuffer => {
+                self.clear_buffer().await;
             }
             StderrEvent::GetBuffer { sender } => {
                 self.get_buffer(sender).await;
@@ -101,11 +94,9 @@ impl GhciStderr {
         eprintln!("{line}");
     }
 
-    #[instrument(skip(self, sender), level = "trace")]
-    async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
-        self.mode = mode;
+    #[instrument(skip(self), level = "trace")]
+    async fn clear_buffer(&mut self) {
         self.buffer.clear();
-        let _ = sender.send(());
     }
 
     #[instrument(skip(self, sender), level = "debug")]

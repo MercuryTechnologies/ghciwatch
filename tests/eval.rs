@@ -130,6 +130,7 @@ async fn can_eval_commands_in_non_interpreted_modules() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_arg("--enable-eval")
         .with_ghc_arg("-fwrite-if-simplified-core")
+        .with_cabal_arg("--repl-no-load")
         .before_start(move |path| async move {
             Fs::new()
                 .append(path.join(module_path), format!("\n{cmd}\n"))
@@ -145,7 +146,18 @@ async fn can_eval_commands_in_non_interpreted_modules() {
         .await
         .expect("ghciwatch didn't start in time");
 
+    // Touch the module so `ghci` compiles it.
+    session.fs().touch(&module_path).await.unwrap();
+    session
+        .wait_for_log(BaseMatcher::reload_completes())
+        .await
+        .unwrap();
+
+    // Restart so it loads the compiled, non-interpreted module.
     session.restart_ghciwatch().await.unwrap();
+
+    // Touch the module so `ghciwatch` loads it.
+    session.fs().touch(&module_path).await.unwrap();
 
     let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
     session

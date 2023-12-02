@@ -33,8 +33,10 @@ pub(crate) const LOG_FILENAME: &str = "ghciwatch.json";
 /// Builder for [`GhciWatch`].
 pub struct GhciWatchBuilder {
     project_directory: PathBuf,
-    args: Vec<OsString>,
+    ghciwatch_args: Vec<OsString>,
+    make_args: Vec<String>,
     ghc_args: Vec<String>,
+    cabal_args: Vec<String>,
     #[allow(clippy::type_complexity)]
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
     default_timeout: Duration,
@@ -46,8 +48,10 @@ impl GhciWatchBuilder {
     pub fn new(project_directory: impl AsRef<Path>) -> Self {
         Self {
             project_directory: project_directory.as_ref().to_owned(),
-            args: Default::default(),
+            ghciwatch_args: Default::default(),
             ghc_args: Default::default(),
+            make_args: Default::default(),
+            cabal_args: Default::default(),
             before_start: None,
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
@@ -56,13 +60,13 @@ impl GhciWatchBuilder {
 
     /// Add an argument to the `ghciwatch` invocation.
     pub fn with_arg(mut self, arg: impl AsRef<OsStr>) -> Self {
-        self.args.push(arg.as_ref().to_owned());
+        self.ghciwatch_args.push(arg.as_ref().to_owned());
         self
     }
 
     /// Add multiple arguments to the `ghciwatch` invocation.
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
-        self.args
+        self.ghciwatch_args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
         self
     }
@@ -76,6 +80,32 @@ impl GhciWatchBuilder {
     /// Add multiple GHC arguments to the `cabal repl` invocation.
     pub fn with_ghc_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         self.ghc_args
+            .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Add an argument to the `make` invocations.
+    pub fn with_make_arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.make_args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple arguments to the `make` invocations.
+    pub fn with_make_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        self.make_args
+            .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Add an argument to the `cabal` invocations.
+    pub fn with_cabal_arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.cabal_args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple arguments to the `cabal` invocations.
+    pub fn with_cabal_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        self.cabal_args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
         self
     }
@@ -231,12 +261,17 @@ impl GhciWatch {
         let log_path = tempdir.join(LOG_FILENAME);
 
         tracing::info!("Starting ghciwatch");
-        let repl_command = shell_words::join([
-            "make",
-            "ghci",
-            &format!("GHC=ghc-{ghc_version}"),
-            &format!("EXTRA_GHC_OPTS={}", shell_words::join(builder.ghc_args)),
-        ]);
+        let repl_command = shell_words::join(
+            [
+                "make",
+                "ghci",
+                &format!("GHC=ghc-{ghc_version}"),
+                &format!("EXTRA_GHC_OPTS={}", shell_words::join(builder.ghc_args)),
+                &format!("CABAL_OPTS={}", shell_words::join(builder.cabal_args)),
+            ]
+            .into_iter()
+            .chain(builder.make_args.iter().map(|s| s.as_str())),
+        );
 
         let command = ClonableCommand::new(test_bin::get_test_bin("ghciwatch").get_program())
             .arg("--log-json")
@@ -253,7 +288,7 @@ impl GhciWatch {
                 "--poll",
                 "1000ms",
             ])
-            .args(builder.args)
+            .args(builder.ghciwatch_args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
             // GHC will quote things with Unicode quotes unless we set this variable.

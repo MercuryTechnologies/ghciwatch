@@ -4,7 +4,6 @@ use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
@@ -14,7 +13,6 @@ use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::GhciCommand;
-use super::Mode;
 use super::PROMPT;
 use crate::ghci::GhciStdout;
 
@@ -66,7 +64,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         command: &GhciCommand,
     ) -> miette::Result<Vec<GhcMessage>> {
-        let mut ret = Vec::new();
+        let mut messages = Vec::new();
 
         for line in command.lines() {
             self.stdin
@@ -74,21 +72,19 @@ impl GhciStdin {
                 .await
                 .into_diagnostic()?;
             self.stdin.write_all(b"\n").await.into_diagnostic()?;
-            ret.extend(stdout.prompt(FindAt::LineStart).await?);
+            messages.extend(stdout.prompt(FindAt::LineStart).await?);
         }
 
-        Ok(ret)
+        Ok(messages)
     }
 
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
     pub async fn initialize(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
-        self.set_mode(stdout, Mode::Compiling).await?;
         let messages = self
             .write_line_with_prompt_at(stdout, &format!(":set prompt {PROMPT}\n"), FindAt::Anywhere)
             .await?;
-        self.set_mode(stdout, Mode::Internal).await?;
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
             .await?;
 
@@ -97,7 +93,6 @@ impl GhciStdin {
 
     #[instrument(skip_all, level = "debug")]
     pub async fn reload(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
-        self.set_mode(stdout, Mode::Compiling).await?;
         self.write_line(stdout, ":reload\n").await
     }
 
@@ -107,8 +102,6 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         path: &Utf8Path,
     ) -> miette::Result<Vec<GhcMessage>> {
-        self.set_mode(stdout, Mode::Compiling).await?;
-
         // We use `:add` because `:load` unloads all previously loaded modules:
         //
         // > All previously loaded modules, except package modules, are forgotten. The new set of
@@ -121,8 +114,6 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
-        self.set_mode(stdout, Mode::Internal).await?;
-
         self.stdin
             .write_all(b":show paths\n")
             .await
@@ -137,8 +128,6 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         show_paths: &ShowPaths,
     ) -> miette::Result<ModuleSet> {
-        self.set_mode(stdout, Mode::Internal).await?;
-
         self.stdin
             .write_all(b":show targets\n")
             .await
@@ -149,7 +138,6 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
-        let _ = self.set_mode(stdout, Mode::Internal).await;
         self.stdin
             .write_all(b":quit\n")
             .await
@@ -167,8 +155,8 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         module_name: &str,
         command: &GhciCommand,
-    ) -> miette::Result<()> {
-        self.set_mode(stdout, Mode::Internal).await?;
+    ) -> miette::Result<Vec<GhcMessage>> {
+        let mut messages = Vec::new();
 
         // If the `module` was already compiled, `ghci` may have loaded the interface file instead
         // of the interpreted bytecode, giving us this error message:
@@ -178,37 +166,23 @@ impl GhciStdin {
         // We use `:add *{module}` to force interpreting the module. We do this here instead of in
         // `add_module` to save time if eval commands aren't used (or aren't needed for a
         // particular module).
-        self.write_line(stdout, &format!(":add *{module_name}\n"))
-            .await?;
+        messages.extend(
+            self.write_line(stdout, &format!(":add *{module_name}\n"))
+                .await?,
+        );
 
-        self.stdin
-            .write_all(format!(":module + *{module_name}\n").as_bytes())
-            .await
-            .into_diagnostic()?;
-        stdout.prompt(FindAt::LineStart).await?;
+        messages.extend(
+            self.write_line(stdout, &format!(":module + *{module_name}\n"))
+                .await?,
+        );
 
-        self.run_command(stdout, command).await?;
+        messages.extend(self.run_command(stdout, command).await?);
 
-        self.stdin
-            .write_all(format!(":module - *{module_name}\n").as_bytes())
-            .await
-            .into_diagnostic()?;
-        stdout.prompt(FindAt::LineStart).await?;
+        messages.extend(
+            self.write_line(stdout, &format!(":module - *{module_name}\n"))
+                .await?,
+        );
 
-        Ok(())
-    }
-
-    #[instrument(skip(self, stdout), level = "trace")]
-    pub async fn set_mode(&mut self, stdout: &mut GhciStdout, mode: Mode) -> miette::Result<()> {
-        stdout.set_mode(mode);
-
-        let (sender, receiver) = oneshot::channel();
-        self.stderr_sender
-            .send(StderrEvent::Mode { mode, sender })
-            .await
-            .into_diagnostic()?;
-        receiver.await.into_diagnostic()?;
-
-        Ok(())
+        Ok(messages)
     }
 }

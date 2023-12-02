@@ -9,7 +9,6 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::fmt::Display;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
@@ -47,6 +46,7 @@ mod error_log;
 use error_log::ErrorLog;
 
 pub mod parse;
+use parse::parse_eval_commands;
 use parse::CompilationResult;
 use parse::EvalCommand;
 use parse::GhcDiagnostic;
@@ -73,8 +73,6 @@ use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
-
-use self::parse::parse_eval_commands;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -236,7 +234,6 @@ impl Ghci {
             stderr_sender: stderr_sender.clone(),
             buffer: vec![0; LINE_BUFFER_CAPACITY],
             prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
-            mode: Mode::Compiling,
         };
 
         let stdin = GhciStdin {
@@ -251,7 +248,6 @@ impl Ghci {
                     reader: BufReader::new(stderr).lines(),
                     receiver: stderr_receiver,
                     buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
-                    mode: Mode::Compiling,
                 }
                 .run()
             })
@@ -501,7 +497,6 @@ impl Ghci {
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
     async fn test(&mut self) -> miette::Result<()> {
-        self.stdin.set_mode(&mut self.stdout, Mode::Testing).await?;
         self.run_hooks(LifecycleEvent::Test).await?;
         Ok(())
     }
@@ -513,15 +508,21 @@ impl Ghci {
             return Ok(());
         }
 
+        let mut messages = Vec::new();
+
         for (path, commands) in &self.eval_commands {
             for command in commands {
                 tracing::info!("{path}:{command}");
                 let module_name = self.search_paths.path_to_module(path)?;
-                self.stdin
-                    .eval(&mut self.stdout, &module_name, &command.command)
-                    .await?;
+                messages.extend(
+                    self.stdin
+                        .eval(&mut self.stdout, &module_name, &command.command)
+                        .await?,
+                );
             }
         }
+
+        self.process_ghc_messages(messages).await?;
 
         Ok(())
     }
@@ -719,12 +720,14 @@ impl Ghci {
 
     #[instrument(skip(self), level = "trace")]
     async fn run_hooks(&mut self, event: LifecycleEvent) -> miette::Result<()> {
+        let mut messages = Vec::new();
+
         for hook in self.opts.hooks.select(event) {
             tracing::info!(command = %hook.command, "Running {hook} command");
             match &hook.command {
                 hooks::Command::Ghci(command) => {
                     let start_time = Instant::now();
-                    self.stdin.run_command(&mut self.stdout, command).await?;
+                    messages.extend(self.stdin.run_command(&mut self.stdout, command).await?);
                     if let LifecycleEvent::Test = &hook.event {
                         tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
                     }
@@ -735,41 +738,9 @@ impl Ghci {
             }
         }
 
+        self.process_ghc_messages(messages).await?;
+
         Ok(())
-    }
-}
-
-/// The mode a `ghci` session is in. This is used to track output, particularly for the error log
-/// (`ghcid.txt`).
-///
-/// Note: The [`Ord`] implementation on this type determines the order in which sections will be
-/// written to the error log.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Mode {
-    /// We're doing something private, like initializing the session, refreshing the list of loaded
-    /// modules, etc.
-    ///
-    /// Stderr messages sent when the session is in this mode are not written to the error log.
-    Internal,
-
-    /// Compiling, loading, reloading, adding modules. We expect chunks of this output to end with
-    /// a string like this before the prompt:
-    ///
-    /// 1. `Ok, [0-9]+ modules loaded.`
-    /// 2. `Failed, [0-9]+ modules loaded.`
-    Compiling,
-
-    /// Running tests.
-    Testing,
-}
-
-impl Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Mode::Internal => write!(f, "internal"),
-            Mode::Compiling => write!(f, "compilation"),
-            Mode::Testing => write!(f, "test"),
-        }
     }
 }
 
