@@ -38,10 +38,6 @@ pub async fn run_tui(
         }
     }
 
-    terminal::exit().wrap_err("Failed to exit terminal")?;
-
-    eprintln!("ghciwatch shutting down...");
-
     shutdown_handle
         .request_shutdown()
         .into_diagnostic()

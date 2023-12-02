@@ -30,11 +30,13 @@ async fn main() -> miette::Result<()> {
     let watcher_opts = WatcherOpts::from_cli(&opts);
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
-    manager
-        .spawn("run_tui".to_owned(), |handle| {
-            run_tui(handle, ghci_sender.clone())
-        })
-        .await;
+    if opts.tui {
+        manager
+            .spawn("run_tui".to_owned(), |handle| {
+                run_tui(handle, ghci_sender.clone())
+            })
+            .await;
+    }
     manager
         .spawn("run_ghci".to_owned(), |handle| {
             run_ghci(handle, ghci_opts, ghci_receiver)
