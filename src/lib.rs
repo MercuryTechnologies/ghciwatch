@@ -20,6 +20,7 @@ mod clonable_command;
 mod command_ext;
 mod cwd;
 mod event_filter;
+mod foo;
 mod format_bulleted_list;
 mod ghci;
 mod haskell_source_file;
