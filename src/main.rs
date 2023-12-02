@@ -9,6 +9,7 @@ use std::time::Duration;
 use clap::Parser;
 use ghciwatch::cli;
 use ghciwatch::run_ghci;
+use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
@@ -30,13 +31,18 @@ async fn main() -> miette::Result<()> {
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
     manager
+        .spawn("run_tui".to_owned(), |handle| {
+            run_tui(handle, ghci_sender.clone())
+        })
+        .await;
+    manager
         .spawn("run_ghci".to_owned(), |handle| {
             run_ghci(handle, ghci_opts, ghci_receiver)
         })
         .await;
     manager
-        .spawn("run_watcher".to_owned(), move |handle| {
-            run_watcher(handle, ghci_sender, watcher_opts)
+        .spawn("run_watcher".to_owned(), |handle| {
+            run_watcher(handle, ghci_sender.clone(), watcher_opts)
         })
         .await;
     let ret = manager.wait_for_shutdown().await;
