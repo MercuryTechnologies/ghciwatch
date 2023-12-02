@@ -171,15 +171,8 @@ async fn can_eval_commands_in_non_interpreted_modules() {
         .await
         .expect("ghciwatch evals commands");
 
-    // Erase the command.
-    session.fs().replace(module_path, cmd, "").await.unwrap();
     session
-        .wait_until_reload()
-        .await
-        .expect("ghciwatch reloads");
-
-    session
-        .wait_for_log(BaseMatcher::reload_completes().but_not(eval_message))
+        .wait_for_log(BaseMatcher::reload_completes().and(BaseMatcher::message("All good!")))
         .await
         .unwrap();
 }

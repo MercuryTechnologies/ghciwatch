@@ -513,6 +513,7 @@ impl Ghci {
         for (path, commands) in &self.eval_commands {
             for command in commands {
                 tracing::info!("{path}:{command}");
+                self.interpret_module(path).await?;
                 let module_name = self.search_paths.path_to_module(path)?;
                 messages.extend(
                     self.stdin
@@ -603,6 +604,35 @@ impl Ghci {
     /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
     async fn add_module(&mut self, path: &NormalPath) -> miette::Result<Option<CompilationResult>> {
+        if self.targets.contains_source_path(path.absolute()) {
+            tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
+            return Ok(None);
+        }
+
+        let messages = self
+            .stdin
+            .add_module(&mut self.stdout, path.relative())
+            .await?;
+
+        self.targets.insert_source_path(path.clone());
+
+        let result = self.process_ghc_messages(messages).await?;
+
+        self.refresh_eval_commands_for_paths(std::iter::once(path))
+            .await?;
+        Ok(result)
+    }
+
+    /// `:add *` a module to the `ghci` session by path.
+    ///
+    /// This forces it to be interpreted.
+    ///
+    /// Optionally returns a compilation result.
+    #[instrument(skip(self), level = "debug")]
+    async fn interpret_module(
+        &mut self,
+        path: &NormalPath,
+    ) -> miette::Result<Option<CompilationResult>> {
         if self.targets.contains_source_path(path.absolute()) {
             tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
             return Ok(None);
