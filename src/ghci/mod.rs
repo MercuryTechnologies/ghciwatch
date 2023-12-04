@@ -63,6 +63,7 @@ use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
+use crate::foo::Foo;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::hooks;
@@ -86,7 +87,7 @@ pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
 /// Some of the other `*Opts` structs include borrowed data from the [`Opts`] struct, but this one
 /// is fully owned; ultimately, this is because [`Ghci`] is run through a [`ShutdownHandle`], which
 /// requires that the task is fully owned.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GhciOpts {
     /// The command used to start the underlying `ghci` session.
     pub command: ClonableCommand,
@@ -130,7 +131,7 @@ impl GhciOpts {
 pub struct Ghci {
     /// Options used to start this `ghci` session. We keep this around so we can reuse it when
     /// restarting this session.
-    opts: GhciOpts,
+    opts: Foo<GhciOpts>,
     /// The shutdown handle, used for performing or responding to graceful shutdowns.
     shutdown: ShutdownHandle,
     /// The process group ID of the `ghci` session process.
@@ -273,7 +274,7 @@ impl Ghci {
         let error_log = ErrorLog::new(opts.error_path.clone());
 
         Ok(Ghci {
-            opts,
+            opts: Foo::new(opts),
             shutdown: shutdown.clone(),
             process_group_id,
             stdin,
@@ -490,7 +491,8 @@ impl Ghci {
         self.run_hooks(LifecycleEvent::Restart(hooks::When::Before))
             .await?;
         self.stop().await?;
-        let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
+        let (_opts_bomb, opts) = Foo::take(&mut self.opts);
+        let new = Self::new(self.shutdown.clone(), opts).await?;
         let _ = std::mem::replace(self, new);
         self.initialize().await?;
         self.run_hooks(LifecycleEvent::Restart(hooks::When::After))
