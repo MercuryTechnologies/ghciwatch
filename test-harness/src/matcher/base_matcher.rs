@@ -48,13 +48,13 @@ impl BaseMatcher {
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// successfully.
     pub fn compilation_succeeded() -> Self {
-        Self::message("^Compilation succeeded$").in_leaf_span("reload")
+        Self::message("^Compilation succeeded$").in_spans(["reload"])
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// unsuccessfully.
     pub fn compilation_failed() -> Self {
-        Self::message("^Compilation failed$").in_leaf_span("reload")
+        Self::message("^Compilation failed$").in_spans(["reload"])
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` compiles the given
@@ -63,7 +63,7 @@ impl BaseMatcher {
     /// The module is given by name (`My.Module`), not path (`src/My/Module.hs`).
     pub fn module_compiling(module: &str) -> Self {
         Self::message("^Compiling$")
-            .in_leaf_span("reload")
+            .in_spans(["reload"])
             .with_field("module", &regex::escape(module))
     }
 

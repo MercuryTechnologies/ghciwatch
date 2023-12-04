@@ -1,5 +1,3 @@
-mod all_good;
-
 use test_harness::test;
 use test_harness::Fs;
 use test_harness::GhciWatchBuilder;
