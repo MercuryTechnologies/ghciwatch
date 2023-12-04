@@ -466,7 +466,7 @@ impl Ghci {
                 .await?;
 
             if compilation_failed {
-                tracing::debug!("Compilation failed, skipping running tests.");
+                tracing::debug!("Compilation failed, skipping running tests");
             } else {
                 tracing::info!(
                     "{} Finished reloading in {:.2?}",
@@ -670,7 +670,7 @@ impl Ghci {
 
         self.error_log.write(compilation_summary, &messages).await?;
 
-        Ok(None)
+        Ok(compilation_summary.map(|summary| summary.result))
     }
 
     /// Make a path relative to the `ghci` session's current working directory.

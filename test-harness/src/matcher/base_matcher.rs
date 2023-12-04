@@ -13,6 +13,7 @@ use crate::Matcher;
 pub struct BaseMatcher {
     message: Regex,
     target: Option<String>,
+    leaf_span: Option<String>,
     spans: Vec<String>,
     fields: HashMap<String, Regex>,
 }
@@ -28,6 +29,7 @@ impl BaseMatcher {
         Self {
             message,
             target: None,
+            leaf_span: None,
             spans: Vec::new(),
             fields: HashMap::new(),
         }
@@ -46,13 +48,13 @@ impl BaseMatcher {
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// successfully.
     pub fn compilation_succeeded() -> Self {
-        Self::message("^Compilation succeeded$").in_span("reload")
+        Self::message("^Compilation succeeded$").in_spans(["reload"])
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// unsuccessfully.
     pub fn compilation_failed() -> Self {
-        Self::message("^Compilation failed$").in_span("reload")
+        Self::message("^Compilation failed$").in_spans(["reload"])
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` compiles the given
@@ -61,7 +63,7 @@ impl BaseMatcher {
     /// The module is given by name (`My.Module`), not path (`src/My/Module.hs`).
     pub fn module_compiling(module: &str) -> Self {
         Self::message("^Compiling$")
-            .in_span("reload")
+            .in_spans(["reload"])
             .with_field("module", &regex::escape(module))
     }
 
@@ -75,7 +77,7 @@ impl BaseMatcher {
     /// adding modules. (E.g., if all the changed files are ignored, a 'reload' may be a no-op.)
     pub fn reload_completes() -> Self {
         Self::span_close()
-            .in_span("reload")
+            .in_leaf_span("reload")
             .in_module("ghciwatch::ghci")
     }
 
@@ -90,12 +92,14 @@ impl BaseMatcher {
         Self::message("^Restarting ghci:\n")
     }
 
-    /// Require that matching events be in a span with the given name.
+    /// Require that matching events be in a leaf span with the given name.
+    ///
+    /// A leaf span is the inner-most span; i.e. if you have an event in spans `c` (root),
+    /// `b`, and `a` (leaf), then `in_leaf_span("a")` will match but `in_leaf_span("b")` will not.
     ///
     /// Note that this will overwrite any previously-set spans.
-    pub fn in_span(mut self, span: &str) -> Self {
-        self.spans.clear();
-        self.spans.push(span.to_owned());
+    pub fn in_leaf_span(mut self, span: &str) -> Self {
+        self.leaf_span = Some(span.to_owned());
         self
     }
 
@@ -215,6 +219,17 @@ impl Matcher for BaseMatcher {
                             return Ok(false);
                         }
                     }
+                }
+            }
+        }
+
+        if let Some(leaf_span) = &self.leaf_span {
+            match event.spans().last() {
+                Some(actual_leaf_span) if &actual_leaf_span.name == leaf_span => {}
+                _ => {
+                    // Expected a leaf span, but the event is missing a leaf span or doesn't have
+                    // the correct leaf span.
+                    return Ok(false);
                 }
             }
         }
@@ -465,7 +480,7 @@ mod tests {
     #[test]
     fn test_matcher_in_span() {
         assert!(BaseMatcher::span_close()
-            .in_span("error_log_write")
+            .in_leaf_span("error_log_write")
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
                 level: Level::DEBUG,
@@ -486,6 +501,65 @@ mod tests {
                     .into(),
                 }),
                 spans: vec![Span::new("on_action"), Span::new("reload"),]
+            })
+            .unwrap());
+
+        assert!(BaseMatcher::span_close()
+            .in_leaf_span("error_log_write")
+            .matches(&Event {
+                timestamp: "2023-09-12T18:06:04.677942Z".into(),
+                level: Level::DEBUG,
+                message: "close".into(),
+                fields: [
+                    ("message".into(), "close".into()),
+                    ("time.busy".into(), "206µs".into()),
+                    ("time.idle".into(), "246µs".into()),
+                ]
+                .into(),
+                target: "ghciwatch::ghci::error_log".into(),
+                span: None,
+                spans: vec![
+                    Span::new("on_action"),
+                    Span::new("reload"),
+                    Span {
+                        name: "error_log_write".into(),
+                        rest: [(
+                            "compilation_summary".into(),
+                            "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
+                        )]
+                        .into(),
+                    }
+                ]
+            })
+            .unwrap());
+
+        // Span exists, but it's not the leaf span.
+        assert!(BaseMatcher::span_close()
+            .in_leaf_span("error_log_write")
+            .matches(&Event {
+                timestamp: "2023-09-12T18:06:04.677942Z".into(),
+                level: Level::DEBUG,
+                message: "close".into(),
+                fields: [
+                    ("message".into(), "close".into()),
+                    ("time.busy".into(), "206µs".into()),
+                    ("time.idle".into(), "246µs".into()),
+                ]
+                .into(),
+                target: "ghciwatch::ghci::error_log".into(),
+                span: None,
+                spans: vec![
+                    Span::new("on_action"),
+                    Span {
+                        name: "error_log_write".into(),
+                        rest: [(
+                            "compilation_summary".into(),
+                            "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
+                        )]
+                        .into(),
+                    },
+                    Span::new("reload"),
+                ]
             })
             .unwrap());
     }
