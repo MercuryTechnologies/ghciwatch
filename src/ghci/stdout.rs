@@ -47,7 +47,7 @@ impl GhciStdout {
                 .await;
             receiver.await.into_diagnostic()?
         };
-        log.extend(parse_ghc_messages(&data).wrap_err("Failed to parse compiler output")?);
+        log.extend(parse_ghc_messages(data).wrap_err("Failed to parse compiler output")?);
         log.extend(parse_ghc_messages(&stderr_data).wrap_err("Failed to parse compiler output")?);
         Ok(())
     }
