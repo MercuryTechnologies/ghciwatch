@@ -88,7 +88,7 @@ impl GhciStderr {
 
     #[instrument(skip(self), level = "trace")]
     async fn ingest_line(&mut self, line: String) {
-        // Then write to our general buffer.
+        tracing::debug!(line, "Read stderr line");
         self.buffer.push_str(&line);
         self.buffer.push('\n');
         eprintln!("{line}");

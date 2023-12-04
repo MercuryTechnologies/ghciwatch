@@ -510,14 +510,26 @@ impl Ghci {
 
         let mut messages = Vec::new();
 
-        for (path, commands) in &self.eval_commands {
+        // TODO: This `clone` is ugly but I can't get the borrow checker to accept it otherwise.
+        // Might be more efficient to swap it out for a default, but then it gets trickier to
+        // restore the old value when the function returns.
+        for (path, commands) in self.eval_commands.clone() {
             for command in commands {
                 tracing::info!("{path}:{command}");
-                self.interpret_module(path).await?;
-                let module_name = self.search_paths.path_to_module(path)?;
+                // If the `module` was already compiled, `ghci` may have loaded the interface file instead
+                // of the interpreted bytecode, giving us this error message when we attempt to
+                // load the top-level scope with `:module + *{module}`:
+                //
+                //     module 'Mercury.Typescript.Golden' is not interpreted
+                //
+                // We use `:add *{module}` to force interpreting the module. We do this here instead of in
+                // `add_module` to save time if eval commands aren't used (or aren't needed for a
+                // particular module).
+                self.interpret_module(&path).await?;
+                let module = self.search_paths.path_to_module(&path)?;
                 messages.extend(
                     self.stdin
-                        .eval(&mut self.stdout, &module_name, &command.command)
+                        .eval(&mut self.stdout, &module, &command.command)
                         .await?,
                 );
             }
@@ -633,14 +645,9 @@ impl Ghci {
         &mut self,
         path: &NormalPath,
     ) -> miette::Result<Option<CompilationResult>> {
-        if self.targets.contains_source_path(path.absolute()) {
-            tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
-            return Ok(None);
-        }
-
         let messages = self
             .stdin
-            .add_module(&mut self.stdout, path.relative())
+            .interpret_module(&mut self.stdout, path.relative())
             .await?;
 
         self.targets.insert_source_path(path.clone());
@@ -706,7 +713,7 @@ impl Ghci {
 
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
-        NormalPath::new(path, &self.search_paths.cwd)
+        self.search_paths.make_relative(path)
     }
 
     #[instrument(skip_all, level = "debug")]

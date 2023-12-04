@@ -113,6 +113,17 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn interpret_module(
+        &mut self,
+        stdout: &mut GhciStdout,
+        path: &Utf8Path,
+    ) -> miette::Result<Vec<GhcMessage>> {
+        // `:add *` forces the module to be interpreted, even if it was already loaded from
+        // bytecode. This is necessary to access the module's top-level binds for the eval feature.
+        self.write_line(stdout, &format!(":add *{path}\n")).await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
     pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
         self.stdin
             .write_all(b":show paths\n")
@@ -157,19 +168,6 @@ impl GhciStdin {
         command: &GhciCommand,
     ) -> miette::Result<Vec<GhcMessage>> {
         let mut messages = Vec::new();
-
-        // If the `module` was already compiled, `ghci` may have loaded the interface file instead
-        // of the interpreted bytecode, giving us this error message:
-        //
-        //     module 'Mercury.Typescript.Golden' is not interpreted
-        //
-        // We use `:add *{module}` to force interpreting the module. We do this here instead of in
-        // `add_module` to save time if eval commands aren't used (or aren't needed for a
-        // particular module).
-        messages.extend(
-            self.write_line(stdout, &format!(":add *{module_name}\n"))
-                .await?,
-        );
 
         messages.extend(
             self.write_line(stdout, &format!(":module + *{module_name}\n"))

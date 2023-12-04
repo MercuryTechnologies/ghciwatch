@@ -159,20 +159,27 @@ async fn can_eval_commands_in_non_interpreted_modules() {
     // Touch the module so `ghciwatch` loads it.
     session.fs().touch(&module_path).await.unwrap();
 
-    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
-    session
-        .assert_logged_or_wait(&eval_message)
-        .await
-        .expect("ghciwatch evals commands");
     session
         .assert_logged_or_wait(
-            BaseMatcher::message("Read line").with_field("line", "exampleexample"),
+            // Adds the module succesfully.
+            BaseMatcher::message("All good!")
+                // Evals the command.
+                .and(BaseMatcher::message(
+                    r"MyModule.hs:\d+:\d+: example \+\+ example",
+                ))
+                // Reads eval output.
+                .and(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
+                // Finishes the reload.
+                .and(BaseMatcher::reload_completes())
+                .but_not(
+                    BaseMatcher::message("Read stderr line")
+                        .with_field("line", "defined in multiple files"),
+                )
+                .but_not(
+                    BaseMatcher::message("Read stderr line")
+                        .with_field("line", "module '.*' is not interpreted"),
+                ),
         )
         .await
         .expect("ghciwatch evals commands");
-
-    session
-        .wait_for_log(BaseMatcher::reload_completes().and(BaseMatcher::message("All good!")))
-        .await
-        .unwrap();
 }
