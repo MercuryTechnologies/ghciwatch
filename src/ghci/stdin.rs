@@ -8,10 +8,10 @@ use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
 
-use super::parse::GhcMessage;
 use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
+use super::CompilationLog;
 use super::GhciCommand;
 use super::PROMPT;
 use crate::ghci::GhciStdout;
@@ -35,12 +35,13 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         line: &str,
         find: FindAt,
-    ) -> miette::Result<Vec<GhcMessage>> {
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         self.stdin
             .write_all(line.as_bytes())
             .await
             .into_diagnostic()?;
-        stdout.prompt(find).await
+        stdout.prompt(find, log).await
     }
 
     /// Write a line on `stdin` and wait for a prompt on stdout.
@@ -50,8 +51,9 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         line: &str,
-    ) -> miette::Result<Vec<GhcMessage>> {
-        self.write_line_with_prompt_at(stdout, line, FindAt::LineStart)
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.write_line_with_prompt_at(stdout, line, FindAt::LineStart, log)
             .await
     }
 
@@ -63,37 +65,42 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         command: &GhciCommand,
-    ) -> miette::Result<Vec<GhcMessage>> {
-        let mut messages = Vec::new();
-
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         for line in command.lines() {
-            self.stdin
-                .write_all(line.as_bytes())
-                .await
-                .into_diagnostic()?;
-            self.stdin.write_all(b"\n").await.into_diagnostic()?;
-            messages.extend(stdout.prompt(FindAt::LineStart).await?);
+            self.write_line(stdout, &format!("{line}\n"), log).await?;
         }
 
-        Ok(messages)
+        Ok(())
     }
 
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
-    pub async fn initialize(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn initialize(
+        &mut self,
+        stdout: &mut GhciStdout,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
-        let messages = self
-            .write_line_with_prompt_at(stdout, &format!(":set prompt {PROMPT}\n"), FindAt::Anywhere)
+        self.write_line_with_prompt_at(
+            stdout,
+            &format!(":set prompt {PROMPT}\n"),
+            FindAt::Anywhere,
+            log,
+        )
+        .await?;
+        self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"), log)
             .await?;
-        self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"))
-            .await?;
-
-        Ok(messages)
+        Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn reload(&mut self, stdout: &mut GhciStdout) -> miette::Result<Vec<GhcMessage>> {
-        self.write_line(stdout, ":reload\n").await
+    pub async fn reload(
+        &mut self,
+        stdout: &mut GhciStdout,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.write_line(stdout, ":reload\n", log).await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
@@ -101,7 +108,8 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         path: &Utf8Path,
-    ) -> miette::Result<Vec<GhcMessage>> {
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         // We use `:add` because `:load` unloads all previously loaded modules:
         //
         // > All previously loaded modules, except package modules, are forgotten. The new set of
@@ -109,7 +117,8 @@ impl GhciStdin {
         // > to unload all the currently loaded modules and bindings.
         //
         // https://downloads.haskell.org/ghc/latest/docs/users_guide/ghci.html#ghci-cmd-:load
-        self.write_line(stdout, &format!(":add {path}\n")).await
+        self.write_line(stdout, &format!(":add {path}\n"), log)
+            .await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
@@ -117,10 +126,31 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         path: &Utf8Path,
-    ) -> miette::Result<Vec<GhcMessage>> {
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         // `:add *` forces the module to be interpreted, even if it was already loaded from
         // bytecode. This is necessary to access the module's top-level binds for the eval feature.
-        self.write_line(stdout, &format!(":add *{path}\n")).await
+        self.write_line(stdout, &format!(":add *{path}\n"), log)
+            .await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn eval(
+        &mut self,
+        stdout: &mut GhciStdout,
+        module_name: &str,
+        command: &GhciCommand,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.write_line(stdout, &format!(":module + *{module_name}\n"), log)
+            .await?;
+
+        self.run_command(stdout, command, log).await?;
+
+        self.write_line(stdout, &format!(":module - *{module_name}\n"), log)
+            .await?;
+
+        Ok(())
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
@@ -158,29 +188,5 @@ impl GhciStdin {
             .quit()
             .await
             .wrap_err("Failed to wait for ghci to quit")
-    }
-
-    #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn eval(
-        &mut self,
-        stdout: &mut GhciStdout,
-        module_name: &str,
-        command: &GhciCommand,
-    ) -> miette::Result<Vec<GhcMessage>> {
-        let mut messages = Vec::new();
-
-        messages.extend(
-            self.write_line(stdout, &format!(":module + *{module_name}\n"))
-                .await?,
-        );
-
-        messages.extend(self.run_command(stdout, command).await?);
-
-        messages.extend(
-            self.write_line(stdout, &format!(":module - *{module_name}\n"))
-                .await?,
-        );
-
-        Ok(messages)
     }
 }

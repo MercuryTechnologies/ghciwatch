@@ -16,10 +16,10 @@ use crate::incremental_reader::WriteBehavior;
 use super::parse::parse_ghc_messages;
 use super::parse::parse_show_paths;
 use super::parse::parse_show_targets;
-use super::parse::GhcMessage;
 use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
+use super::CompilationLog;
 
 pub struct GhciStdout {
     /// Reader for parsing and forwarding the underlying stdout stream.
@@ -34,8 +34,26 @@ pub struct GhciStdout {
 }
 
 impl GhciStdout {
+    #[instrument(skip_all, level = "debug")]
+    async fn parse_into_log(&self, data: &str, log: &mut CompilationLog) -> miette::Result<()> {
+        // Parse GHCi output into compiler messages.
+        //
+        // These include diagnostics, which modules were compiled, and a compilation summary.
+        let stderr_data = {
+            let (sender, receiver) = oneshot::channel();
+            let _ = self
+                .stderr_sender
+                .send(StderrEvent::GetBuffer { sender })
+                .await;
+            receiver.await.into_diagnostic()?
+        };
+        log.extend(parse_ghc_messages(&data).wrap_err("Failed to parse compiler output")?);
+        log.extend(parse_ghc_messages(&stderr_data).wrap_err("Failed to parse compiler output")?);
+        Ok(())
+    }
+
     #[instrument(skip_all, name = "stdout_initialize", level = "debug")]
-    pub async fn initialize(&mut self) -> miette::Result<()> {
+    pub async fn initialize(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -53,11 +71,13 @@ impl GhciStdout {
             .await?;
         tracing::debug!(data, "ghci started, saw version marker");
 
+        self.parse_into_log(&data, log).await?;
+
         Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn prompt(&mut self, find: FindAt) -> miette::Result<Vec<GhcMessage>> {
+    pub async fn prompt(&mut self, find: FindAt, log: &mut CompilationLog) -> miette::Result<()> {
         self.stderr_sender
             .send(StderrEvent::ClearBuffer)
             .await
@@ -74,21 +94,8 @@ impl GhciStdout {
             .await?;
         tracing::debug!(bytes = data.len(), "Got data from ghci");
 
-        // Parse GHCi output into compiler messages.
-        //
-        // These include diagnostics, which modules were compiled, and a compilation summary.
-        let stderr_data = {
-            let (sender, receiver) = oneshot::channel();
-            let _ = self
-                .stderr_sender
-                .send(StderrEvent::GetBuffer { sender })
-                .await;
-            receiver.await.into_diagnostic()?
-        };
-        let mut messages = parse_ghc_messages(&data).wrap_err("Failed to parse compiler output")?;
-        messages
-            .extend(parse_ghc_messages(&stderr_data).wrap_err("Failed to parse compiler output")?);
-        Ok(messages)
+        self.parse_into_log(&data, log).await?;
+        Ok(())
     }
 
     #[instrument(skip_all, level = "debug")]

@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tracing::instrument;
 
 use crate::event_filter::FileEvent;
+use crate::ghci::CompilationLog;
 use crate::shutdown::ShutdownHandle;
 
 use super::Ghci;
@@ -60,11 +61,12 @@ pub async fn run_ghci(
         .wrap_err("Failed to start `ghci`")?;
 
     // Wait for ghci to finish loading.
+    let mut log = CompilationLog::default();
     tokio::select! {
         _ = handle.on_shutdown_requested() => {
             ghci.stop().await.wrap_err("Failed to quit ghci")?;
         }
-        startup_result = ghci.initialize() => {
+        startup_result = ghci.initialize(&mut log) => {
             startup_result?;
         }
     }
