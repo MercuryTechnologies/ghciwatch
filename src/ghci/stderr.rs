@@ -1,7 +1,6 @@
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
 use miette::IntoDiagnostic;
-use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::Lines;
@@ -11,6 +10,8 @@ use tokio::sync::oneshot;
 use tracing::instrument;
 
 use crate::shutdown::ShutdownHandle;
+
+use super::write::GhciWrite;
 
 /// An event sent to a `ghci` session's stderr channel.
 #[derive(Debug)]
@@ -22,21 +23,18 @@ pub enum StderrEvent {
     GetBuffer { sender: oneshot::Sender<String> },
 }
 
-pub struct GhciStderr<W> {
+pub struct GhciStderr {
     pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
-    pub writer: W,
+    pub writer: Box<dyn GhciWrite>,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,
 }
 
-impl<W> GhciStderr<W> {
+impl GhciStderr {
     #[instrument(skip_all, name = "stderr", level = "debug")]
-    pub async fn run(mut self) -> miette::Result<()>
-    where
-        W: AsyncWrite + Unpin,
-    {
+    pub async fn run(mut self) -> miette::Result<()> {
         let mut backoff = ExponentialBackoff::default();
         while let Some(duration) = backoff.next_backoff() {
             match self.run_inner().await {
@@ -56,10 +54,7 @@ impl<W> GhciStderr<W> {
         Ok(())
     }
 
-    pub async fn run_inner(&mut self) -> miette::Result<()>
-    where
-        W: AsyncWrite + Unpin,
-    {
+    pub async fn run_inner(&mut self) -> miette::Result<()> {
         loop {
             // TODO: Could this cause problems where we get an event and a final stderr line is only
             // processed after we write the error log?
@@ -97,10 +92,7 @@ impl<W> GhciStderr<W> {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()>
-    where
-        W: AsyncWrite + Unpin,
-    {
+    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()> {
         tracing::debug!(line, "Read stderr line");
         line.push('\n');
         self.buffer.push_str(&line);
