@@ -459,7 +459,7 @@ impl Ghci {
                 .await?;
 
             if let Some(CompilationResult::Err) = log.result() {
-                tracing::debug!("Compilation failed, skipping running tests");
+                tracing::error!("Compilation failed in {:.2?}", start_instant.elapsed());
             } else {
                 tracing::info!(
                     "{} Finished reloading in {:.2?}",
