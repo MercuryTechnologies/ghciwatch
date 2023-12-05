@@ -322,12 +322,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86e3bdc80eee6e16b2b6b0f87fbc98c04bee3455e35174c0de1a125d0688c632"
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "545b22097d44f8a9581187cdf93de7a71e4722bf51200cfaba810865b49a495d"
-
-[[package]]
 name = "either"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,7 +506,6 @@ dependencies = [
  "camino",
  "clap",
  "command-group",
- "dyn-clone",
  "enum-iterator",
  "expect-test",
  "humantime",
