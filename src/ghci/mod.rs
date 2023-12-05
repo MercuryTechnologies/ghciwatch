@@ -58,6 +58,10 @@ pub use ghci_command::GhciCommand;
 mod compilation_log;
 pub use compilation_log::CompilationLog;
 
+mod write;
+pub use crate::ghci::write::GhciWrite;
+pub use crate::ghci::write::IntoGhciWrite;
+
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
@@ -98,6 +102,10 @@ pub struct GhciOpts {
     pub restart_globs: GlobMatcher,
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
+    /// Where to write what `ghci` emits to `stdout`. Inherits parent's `stdout` by default.
+    pub stdout_writer: Box<dyn GhciWrite>,
+    /// Where to write what `ghci` emits to `stderr`. Inherits parent's `stderr` by default.
+    pub stderr_writer: Box<dyn GhciWrite>,
 }
 
 impl GhciOpts {
@@ -120,6 +128,8 @@ impl GhciOpts {
             hooks: opts.hooks.clone(),
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
+            stdout_writer: tokio::io::stdout().into_ghci_write(),
+            stderr_writer: tokio::io::stderr().into_ghci_write(),
         })
     }
 }
@@ -138,7 +148,7 @@ pub struct Ghci {
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
-    stdout: GhciStdout,
+    stdout: GhciStdout<Box<dyn GhciWrite>>,
     /// Sender for notifying the process watching job ([`GhciProcess`]) that we're shutting down
     /// the `ghci` session on purpose. If the process watcher sees `ghci` exit, usually it will
     /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
@@ -230,7 +240,7 @@ impl Ghci {
         let (stderr_sender, stderr_receiver) = mpsc::channel(8);
 
         let stdout = GhciStdout {
-            reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
+            reader: IncrementalReader::new(stdout).with_writer(opts.stdout_writer.clone()),
             stderr_sender: stderr_sender.clone(),
             buffer: vec![0; LINE_BUFFER_CAPACITY],
             prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
@@ -246,6 +256,7 @@ impl Ghci {
                 GhciStderr {
                     shutdown,
                     reader: BufReader::new(stderr).lines(),
+                    writer: opts.stderr_writer.clone(),
                     receiver: stderr_receiver,
                     buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
                 }

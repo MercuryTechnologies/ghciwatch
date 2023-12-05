@@ -1,5 +1,8 @@
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use miette::IntoDiagnostic;
+use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::Lines;
 use tokio::process::ChildStderr;
@@ -19,17 +22,21 @@ pub enum StderrEvent {
     GetBuffer { sender: oneshot::Sender<String> },
 }
 
-pub struct GhciStderr {
+pub struct GhciStderr<W> {
     pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
+    pub writer: W,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,
 }
 
-impl GhciStderr {
+impl<W> GhciStderr<W> {
     #[instrument(skip_all, name = "stderr", level = "debug")]
-    pub async fn run(mut self) -> miette::Result<()> {
+    pub async fn run(mut self) -> miette::Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         let mut backoff = ExponentialBackoff::default();
         while let Some(duration) = backoff.next_backoff() {
             match self.run_inner().await {
@@ -49,13 +56,16 @@ impl GhciStderr {
         Ok(())
     }
 
-    pub async fn run_inner(&mut self) -> miette::Result<()> {
+    pub async fn run_inner(&mut self) -> miette::Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         loop {
             // TODO: Could this cause problems where we get an event and a final stderr line is only
             // processed after we write the error log?
             tokio::select! {
                 Ok(Some(line)) = self.reader.next_line() => {
-                    self.ingest_line(line).await;
+                    self.ingest_line(line).await?;
                 }
                 Some(event) = self.receiver.recv() => {
                     self.dispatch(event).await?;
@@ -87,11 +97,18 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn ingest_line(&mut self, line: String) {
+    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         tracing::debug!(line, "Read stderr line");
+        line.push('\n');
         self.buffer.push_str(&line);
-        self.buffer.push('\n');
-        eprintln!("{line}");
+        self.writer
+            .write_all(line.as_bytes())
+            .await
+            .into_diagnostic()?;
+        Ok(())
     }
 
     #[instrument(skip(self), level = "trace")]
