@@ -14,6 +14,7 @@ use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
 use tokio::io::AsyncWrite;
+use tokio::io::Stderr;
 use tokio::io::Stdout;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -85,6 +86,8 @@ use self::parse::parse_eval_commands;
 
 type ClonableStdout = Compat<Arc<Mutex<Compat<Stdout>>>>;
 
+type ClonableStderr = Compat<Arc<Mutex<Compat<Stderr>>>>;
+
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
 pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
@@ -96,7 +99,7 @@ pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
 /// is fully owned; ultimately, this is because [`Ghci`] is run through a [`ShutdownHandle`], which
 /// requires that the task is fully owned.
 #[derive(Debug, Clone)]
-pub struct GhciOpts<W = ClonableStdout> {
+pub struct GhciOpts<O = ClonableStdout, E = ClonableStderr> {
     /// The command used to start the underlying `ghci` session.
     pub command: ClonableCommand,
     /// A path to write `ghci` errors to.
@@ -110,7 +113,9 @@ pub struct GhciOpts<W = ClonableStdout> {
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
     /// TODO(evan): Document
-    pub stdout_writer: W,
+    pub stdout_writer: O,
+    /// TODO(evan): Document
+    pub stderr_writer: E,
 }
 
 impl GhciOpts {
@@ -134,15 +139,16 @@ impl GhciOpts {
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
             stdout_writer: Arc::new(Mutex::new(tokio::io::stdout().compat_write())).compat_write(),
+            stderr_writer: Arc::new(Mutex::new(tokio::io::stderr().compat_write())).compat_write(),
         })
     }
 }
 
-impl<W> GhciOpts<W> {
+impl<O, E> GhciOpts<O, E> {
     /// TODO(evan): Document
-    pub fn with_stdout_writer<W2>(self, stdout_writer: W2) -> GhciOpts<W2>
+    pub fn with_stdout_writer<O2>(self, stdout_writer: O2) -> GhciOpts<O2, E>
     where
-        W: AsyncWrite + Clone,
+        O2: AsyncWrite + Clone,
     {
         GhciOpts {
             command: self.command,
@@ -152,15 +158,33 @@ impl<W> GhciOpts<W> {
             restart_globs: self.restart_globs,
             reload_globs: self.reload_globs,
             stdout_writer,
+            stderr_writer: self.stderr_writer,
+        }
+    }
+
+    /// TODO(evan): Document
+    pub fn with_stderr_writer<E2>(self, stderr_writer: E2) -> GhciOpts<O, E2>
+    where
+        E2: AsyncWrite + Clone,
+    {
+        GhciOpts {
+            command: self.command,
+            error_path: self.error_path,
+            enable_eval: self.enable_eval,
+            hooks: self.hooks,
+            restart_globs: self.restart_globs,
+            reload_globs: self.reload_globs,
+            stdout_writer: self.stdout_writer,
+            stderr_writer,
         }
     }
 }
 
 /// A `ghci` session.
-pub struct Ghci<W = ClonableStdout> {
+pub struct Ghci<O = ClonableStdout, E = ClonableStderr> {
     /// Options used to start this `ghci` session. We keep this around so we can reuse it when
     /// restarting this session.
-    opts: GhciOpts<W>,
+    opts: GhciOpts<O, E>,
     /// The shutdown handle, used for performing or responding to graceful shutdowns.
     shutdown: ShutdownHandle,
     /// The process group ID of the `ghci` session process.
@@ -170,7 +194,7 @@ pub struct Ghci<W = ClonableStdout> {
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
-    stdout: GhciStdout<W>,
+    stdout: GhciStdout<O>,
     /// Sender for notifying the process watching job ([`GhciProcess`]) that we're shutting down
     /// the `ghci` session on purpose. If the process watcher sees `ghci` exit, usually it will
     /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
@@ -202,16 +226,17 @@ impl Debug for Ghci {
     }
 }
 
-impl<W> Ghci<W>
+impl<O, E> Ghci<O, E>
 where
-    W: AsyncWrite + Clone,
+    O: AsyncWrite + Clone,
+    E: AsyncWrite + Unpin + Clone + Send + 'static,
 {
     /// Start a new `ghci` session.
     ///
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts<W>) -> miette::Result<Self> {
+    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts<O, E>) -> miette::Result<Self> {
         let mut command_handles = Vec::new();
         {
             let span = tracing::debug_span!("before_startup_shell");
@@ -284,6 +309,7 @@ where
                 GhciStderr {
                     shutdown,
                     reader: BufReader::new(stderr).lines(),
+                    writer: opts.stderr_writer.clone(),
                     receiver: stderr_receiver,
                     buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
                     mode: Mode::Compiling,

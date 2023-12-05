@@ -1,7 +1,12 @@
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use miette::IntoDiagnostic;
+use std::marker::Unpin;
+use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::Lines;
+use tokio::io::Stderr;
 use tokio::process::ChildStderr;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -24,9 +29,10 @@ pub enum StderrEvent {
     GetBuffer { sender: oneshot::Sender<String> },
 }
 
-pub struct GhciStderr {
+pub struct GhciStderr<W = Stderr> {
     pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
+    pub writer: W,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,
@@ -34,7 +40,10 @@ pub struct GhciStderr {
     pub mode: Mode,
 }
 
-impl GhciStderr {
+impl<W> GhciStderr<W>
+where
+    W: AsyncWrite + Unpin,
+{
     #[instrument(skip_all, name = "stderr", level = "debug")]
     pub async fn run(mut self) -> miette::Result<()> {
         let mut backoff = ExponentialBackoff::default();
@@ -62,7 +71,7 @@ impl GhciStderr {
             // processed after we write the error log?
             tokio::select! {
                 Ok(Some(line)) = self.reader.next_line() => {
-                    self.ingest_line(line).await;
+                    self.ingest_line(line).await?;
                 }
                 Some(event) = self.receiver.recv() => {
                     self.dispatch(event).await?;
@@ -94,11 +103,15 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn ingest_line(&mut self, line: String) {
+    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()> {
         // Then write to our general buffer.
+        line.push('\n');
         self.buffer.push_str(&line);
-        self.buffer.push('\n');
-        eprintln!("{line}");
+        self.writer
+            .write_all(line.as_bytes())
+            .await
+            .into_diagnostic()?;
+        Ok(())
     }
 
     #[instrument(skip(self, sender), level = "trace")]

@@ -40,7 +40,9 @@ async fn main() -> miette::Result<()> {
         let (tui_writer, tui_reader) = tokio::io::duplex(1024);
         let tui_writer = Arc::new(Mutex::new(tui_writer.compat_write())).compat_write();
 
-        let ghci_opts = ghci_opts.with_stdout_writer(tui_writer.clone());
+        let ghci_opts = ghci_opts
+            .with_stdout_writer(tui_writer.clone())
+            .with_stderr_writer(tui_writer.clone());
 
         manager
             .spawn("run_tui".to_owned(), |handle| {

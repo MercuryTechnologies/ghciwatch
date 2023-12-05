@@ -48,13 +48,14 @@ impl GhciEvent {
 
 /// Start the [`Ghci`] subsystem.
 #[instrument(skip_all, level = "debug")]
-pub async fn run_ghci<W>(
+pub async fn run_ghci<O, E>(
     mut handle: ShutdownHandle,
-    opts: GhciOpts<W>,
+    opts: GhciOpts<O, E>,
     mut receiver: mpsc::Receiver<GhciEvent>,
 ) -> miette::Result<()>
 where
-    W: AsyncWrite + Clone + Send + Sync + 'static,
+    O: AsyncWrite + Clone + Send + Sync + 'static,
+    E: AsyncWrite + Unpin + Clone + Send + Sync + 'static,
 {
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
@@ -141,13 +142,14 @@ where
 }
 
 #[instrument(level = "debug", skip(ghci, reload_sender))]
-async fn dispatch<W>(
-    ghci: Arc<Mutex<Ghci<W>>>,
+async fn dispatch<O, E>(
+    ghci: Arc<Mutex<Ghci<O, E>>>,
     event: GhciEvent,
     reload_sender: oneshot::Sender<GhciReloadKind>,
 ) -> miette::Result<()>
 where
-    W: AsyncWrite + Clone,
+    O: AsyncWrite + Clone,
+    E: AsyncWrite + Unpin + Clone + Send + Sync + 'static,
 {
     match event {
         GhciEvent::Reload { events } => {
