@@ -58,9 +58,8 @@ pub use ghci_command::GhciCommand;
 mod compilation_log;
 pub use compilation_log::CompilationLog;
 
-mod write;
-pub use crate::ghci::write::GhciWrite;
-pub use crate::ghci::write::IntoGhciWrite;
+mod writer;
+pub use crate::ghci::writer::GhciWriter;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
@@ -103,9 +102,9 @@ pub struct GhciOpts {
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
     /// Where to write what `ghci` emits to `stdout`. Inherits parent's `stdout` by default.
-    pub stdout_writer: Box<dyn GhciWrite>,
+    pub stdout_writer: GhciWriter,
     /// Where to write what `ghci` emits to `stderr`. Inherits parent's `stderr` by default.
-    pub stderr_writer: Box<dyn GhciWrite>,
+    pub stderr_writer: GhciWriter,
 }
 
 impl GhciOpts {
@@ -128,8 +127,8 @@ impl GhciOpts {
             hooks: opts.hooks.clone(),
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
-            stdout_writer: tokio::io::stdout().into_ghci_write(),
-            stderr_writer: tokio::io::stderr().into_ghci_write(),
+            stdout_writer: GhciWriter::stdout(),
+            stderr_writer: GhciWriter::stderr(),
         })
     }
 }

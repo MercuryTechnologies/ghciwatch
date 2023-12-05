@@ -11,7 +11,7 @@ use tracing::instrument;
 
 use crate::shutdown::ShutdownHandle;
 
-use super::write::GhciWrite;
+use super::writer::GhciWriter;
 
 /// An event sent to a `ghci` session's stderr channel.
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub enum StderrEvent {
 pub struct GhciStderr {
     pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
-    pub writer: Box<dyn GhciWrite>,
+    pub writer: GhciWriter,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,

@@ -18,12 +18,12 @@ use super::parse::parse_show_targets;
 use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
-use super::write::GhciWrite;
+use super::writer::GhciWriter;
 use super::CompilationLog;
 
 pub struct GhciStdout {
     /// Reader for parsing and forwarding the underlying stdout stream.
-    pub reader: IncrementalReader<ChildStdout, Box<dyn GhciWrite>>,
+    pub reader: IncrementalReader<ChildStdout, GhciWriter>,
     /// Channel for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
     /// Prompt patterns to match. Constructing these `AhoCorasick` automatons is costly so we store
