@@ -148,7 +148,7 @@ pub struct Ghci {
     /// The stdin writer.
     stdin: GhciStdin,
     /// The stdout reader.
-    stdout: GhciStdout<Box<dyn GhciWrite>>,
+    stdout: GhciStdout,
     /// Sender for notifying the process watching job ([`GhciProcess`]) that we're shutting down
     /// the `ghci` session on purpose. If the process watcher sees `ghci` exit, usually it will
     /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
