@@ -29,12 +29,14 @@ mod incremental_reader;
 mod maybe_async_command;
 mod normal_path;
 mod shutdown;
+mod string_case;
 mod tracing;
 mod watcher;
 
 pub(crate) use cwd::current_dir;
 pub(crate) use cwd::current_dir_utf8;
 pub(crate) use format_bulleted_list::format_bulleted_list;
+pub(crate) use string_case::StringCase;
 
 pub use ghci::manager::run_ghci;
 pub use ghci::Ghci;

@@ -40,12 +40,23 @@ impl Display for LifecycleEvent {
 }
 
 impl LifecycleEvent {
-    fn event_name(&self) -> &'static str {
+    /// Get the event name, like `test` or `reload`.
+    pub fn event_name(&self) -> &'static str {
         match self {
             LifecycleEvent::Test => "test",
             LifecycleEvent::Startup(_) => "startup",
             LifecycleEvent::Reload(_) => "reload",
             LifecycleEvent::Restart(_) => "restart",
+        }
+    }
+
+    /// Get the noun form of the event name, like `testing` or `reloading`.
+    pub fn event_noun(&self) -> &'static str {
+        match self {
+            LifecycleEvent::Test => "testing",
+            LifecycleEvent::Startup(_) => "starting up",
+            LifecycleEvent::Reload(_) => "reloading",
+            LifecycleEvent::Restart(_) => "restarting",
         }
     }
 
