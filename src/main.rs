@@ -11,12 +11,12 @@ use async_dup::Mutex;
 use clap::Parser;
 use ghciwatch::cli;
 use ghciwatch::run_ghci;
+use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
-use ghciwatch::{run_tui, write_hello_world};
 use tokio::sync::mpsc;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -53,12 +53,6 @@ async fn main() -> miette::Result<()> {
         manager
             .spawn("run_ghci".to_owned(), |handle| {
                 run_ghci(handle, ghci_opts, ghci_receiver)
-            })
-            .await;
-
-        manager
-            .spawn("write_hello_world".to_owned(), |_| {
-                write_hello_world(tui_writer.clone())
             })
             .await;
     } else {
