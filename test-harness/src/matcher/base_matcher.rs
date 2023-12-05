@@ -143,7 +143,7 @@ impl BaseMatcher {
 
     /// Match when `ghciwatch` completes its initial load.
     pub fn ghci_started() -> Self {
-        Self::message(r"^ghci started in \d+\.\d+m?s$")
+        Self::message(r"(Starting up failed|Finished starting up) in \d+\.\d+m?s$")
     }
 
     /// Match when the filesystem worker starts.

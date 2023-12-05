@@ -73,6 +73,7 @@ use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
+use crate::StringCase;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -298,22 +299,18 @@ impl Ghci {
 
         // Perform start-of-session initialization.
         self.stdin.initialize(&mut self.stdout, log).await?;
-        self.run_hooks(LifecycleEvent::Startup(hooks::When::After), log)
-            .await?;
 
         // Get the initial list of targets.
         self.refresh_targets().await?;
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
 
-        tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
-
-        // Run the eval commands, if any.
-        self.eval(log).await?;
-        // Run the user-provided test command, if any.
-        self.test(log).await?;
-
-        self.write_error_log(log).await?;
+        self.finish_compilation(
+            start_instant,
+            log,
+            LifecycleEvent::Startup(hooks::When::After),
+        )
+        .await?;
 
         Ok(())
     }
@@ -455,23 +452,12 @@ impl Ghci {
         }
 
         if actions.needs_add_or_reload() {
-            self.run_hooks(LifecycleEvent::Reload(hooks::When::After), &mut log)
-                .await?;
-
-            if let Some(CompilationResult::Err) = log.result() {
-                tracing::error!("Compilation failed in {:.2?}", start_instant.elapsed());
-            } else {
-                tracing::info!(
-                    "{} Finished reloading in {:.2?}",
-                    "All good!".if_supports_color(Stdout, |text| text.green()),
-                    start_instant.elapsed()
-                );
-                // If we loaded or reloaded any modules, we should run tests/eval commands.
-                self.eval(&mut log).await?;
-                self.test(&mut log).await?;
-            }
-
-            self.write_error_log(&log).await?;
+            self.finish_compilation(
+                start_instant,
+                &mut log,
+                LifecycleEvent::Reload(hooks::When::After),
+            )
+            .await?;
         }
 
         self.prune_command_handles();
@@ -713,6 +699,42 @@ impl Ghci {
     #[instrument(skip_all, level = "trace")]
     fn prune_command_handles(&mut self) {
         self.command_handles.retain(|handle| !handle.is_finished());
+    }
+
+    /// Finish a compilation process.
+    ///
+    /// This outputs how long the compilation took (since `compilation_start`), runs eval and test
+    /// commands (if compilation succeeded), and writes the error log.
+    #[instrument(skip_all, level = "trace")]
+    async fn finish_compilation(
+        &mut self,
+        compilation_start: Instant,
+        log: &mut CompilationLog,
+        event: LifecycleEvent,
+    ) -> miette::Result<()> {
+        self.run_hooks(event, log).await?;
+
+        if let Some(CompilationResult::Err) = log.result() {
+            tracing::error!(
+                "{} failed in {:.2?}",
+                event.event_noun().first_char_to_ascii_uppercase(),
+                compilation_start.elapsed()
+            );
+        } else {
+            tracing::info!(
+                "{} Finished {} in {:.2?}",
+                "All good!".if_supports_color(Stdout, |text| text.green()),
+                event.event_noun(),
+                compilation_start.elapsed()
+            );
+            // Run the eval commands, if any.
+            self.eval(log).await?;
+            // Run the user-provided test command, if any.
+            self.test(log).await?;
+        }
+
+        self.write_error_log(log).await?;
+        Ok(())
     }
 
     #[instrument(skip(self), level = "trace")]
