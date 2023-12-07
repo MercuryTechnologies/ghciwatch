@@ -41,6 +41,7 @@ pub(crate) use string_case::StringCase;
 pub use ghci::manager::run_ghci;
 pub use ghci::Ghci;
 pub use ghci::GhciOpts;
+pub use ghci::GhciWriter;
 pub use shutdown::ShutdownError;
 pub use shutdown::ShutdownHandle;
 pub use shutdown::ShutdownManager;
