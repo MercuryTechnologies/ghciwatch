@@ -30,7 +30,6 @@ mod maybe_async_command;
 mod normal_path;
 mod shutdown;
 mod string_case;
-mod terminal;
 mod tracing;
 mod tui;
 mod watcher;
