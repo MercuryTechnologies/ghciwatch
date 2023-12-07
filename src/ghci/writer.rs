@@ -14,27 +14,37 @@ use tokio_util::compat::Compat;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
+/// A dynamically reconfigurable sink for `ghci` process output. Built for use in `GhciOpts`, but
+/// usable as a general purpose clonable [`AsyncWrite`]r.
 #[derive(Debug)]
 pub enum GhciWriter {
+    /// Write to `stdout`.
     Stdout(Stdout),
+    /// Write to `stderr`.
     Stderr(Stderr),
+    /// Write to an in-memory buffer.
     DuplexStream(Compat<Arc<Mutex<Compat<DuplexStream>>>>),
+    /// Write to the void.
     Sink(Sink),
 }
 
 impl GhciWriter {
+    /// Write to `stdout`.
     pub fn stdout() -> Self {
         Self::Stdout(tokio::io::stdout())
     }
 
+    /// Write to `stderr`.
     pub fn stderr() -> Self {
         Self::Stderr(tokio::io::stderr())
     }
 
+    /// Write to an in-memory buffer.
     pub fn duplex_stream(duplex_stream: DuplexStream) -> Self {
         Self::DuplexStream(Arc::new(Mutex::new(duplex_stream.compat_write())).compat_write())
     }
 
+    /// Write to the void.
     pub fn sink() -> Self {
         Self::Sink(tokio::io::sink())
     }
