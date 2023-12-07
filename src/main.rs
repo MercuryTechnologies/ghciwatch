@@ -9,6 +9,7 @@ use std::time::Duration;
 use clap::Parser;
 use ghciwatch::cli;
 use ghciwatch::run_ghci;
+use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
@@ -29,6 +30,9 @@ async fn main() -> miette::Result<()> {
     let watcher_opts = WatcherOpts::from_cli(&opts);
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
+    if opts.tui {
+        manager.spawn("run_tui", run_tui).await;
+    }
     manager
         .spawn("run_ghci", |handle| {
             run_ghci(handle, ghci_opts, ghci_receiver)

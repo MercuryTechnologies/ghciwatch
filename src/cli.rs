@@ -49,6 +49,10 @@ pub struct Opts {
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
+
+    /// Enable TUI mode (experimental).
+    #[arg(long, hide = true)]
+    pub tui: bool,
 }
 
 /// Options for watching files.
