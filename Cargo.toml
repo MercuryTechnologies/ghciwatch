@@ -34,6 +34,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 aho-corasick = "1.0.2"
+async-dup = "1.2.4"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
 clap = { version = "4.3.2", features = ["derive", "wrap_help", "env", "string"] }
@@ -57,6 +58,7 @@ strip-ansi-escapes = "0.2.0"
 tap = "1.0.1"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
+tokio-util = { version = "0.7.10", features = ["compat"] }
 tracing = "0.1.37"
 tracing-human-layer = "0.1.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "time", "json", "registry"] }

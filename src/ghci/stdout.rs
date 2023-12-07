@@ -1,7 +1,6 @@
 use aho_corasick::AhoCorasick;
 use miette::Context;
 use miette::IntoDiagnostic;
-use tokio::io::Stdout;
 use tokio::process::ChildStdout;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -19,11 +18,12 @@ use super::parse::parse_show_targets;
 use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
+use super::writer::GhciWriter;
 use super::CompilationLog;
 
 pub struct GhciStdout {
     /// Reader for parsing and forwarding the underlying stdout stream.
-    pub reader: IncrementalReader<ChildStdout, Stdout>,
+    pub reader: IncrementalReader<ChildStdout, GhciWriter>,
     /// Channel for communicating with the stderr task.
     pub stderr_sender: mpsc::Sender<StderrEvent>,
     /// Prompt patterns to match. Constructing these `AhoCorasick` automatons is costly so we store
