@@ -59,6 +59,10 @@ pub struct Opts {
     /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
     #[arg(long)]
     pub no_interrupt_reloads: bool,
+
+    /// Enable TUI mode (experimental).
+    #[arg(long, hide = true)]
+    pub tui: bool,
 }
 
 /// Options for watching files.
