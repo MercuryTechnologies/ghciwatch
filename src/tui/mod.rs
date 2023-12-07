@@ -1,4 +1,5 @@
-use crate::terminal;
+mod terminal;
+
 use crate::ShutdownHandle;
 use crossterm::event::Event;
 use crossterm::event::EventStream;
