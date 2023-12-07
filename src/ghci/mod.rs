@@ -252,7 +252,7 @@ impl Ghci {
         };
 
         shutdown
-            .spawn("stderr".to_owned(), |shutdown| {
+            .spawn("stderr", |shutdown| {
                 GhciStderr {
                     shutdown,
                     reader: BufReader::new(stderr).lines(),
@@ -267,7 +267,7 @@ impl Ghci {
         let (restart_sender, restart_receiver) = mpsc::channel(1);
 
         shutdown
-            .spawn("ghci_process".to_owned(), |shutdown| {
+            .spawn("ghci_process", |shutdown| {
                 GhciProcess {
                     shutdown,
                     restart_receiver,

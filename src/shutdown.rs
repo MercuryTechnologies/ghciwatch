@@ -61,8 +61,9 @@ impl ShutdownManager {
 
     /// Run a new task in this manager.
     #[instrument(level = "debug", skip_all)]
-    pub async fn spawn<F, Fut>(&mut self, name: String, make_task: F)
+    pub async fn spawn<S, F, Fut>(&mut self, name: S, make_task: F)
     where
+        S: Into<String>,
         F: FnOnce(ShutdownHandle) -> Fut,
         Fut: Future<Output = miette::Result<()>> + Send + 'static,
     {
@@ -75,7 +76,7 @@ impl ShutdownManager {
             handles: self.handles.clone(),
         }));
         self.handles
-            .push(Task::new(name, handle, self.sender.clone()))
+            .push(Task::new(name.into(), handle, self.sender.clone()))
             .await;
     }
 
@@ -232,14 +233,15 @@ impl ShutdownHandle {
     }
 
     /// Spawn a new task under this handle.
-    pub async fn spawn<F, Fut>(&mut self, name: String, make_task: F)
+    pub async fn spawn<S, F, Fut>(&mut self, name: S, make_task: F)
     where
+        S: Into<String>,
         F: FnOnce(ShutdownHandle) -> Fut,
         Fut: Future<Output = miette::Result<()>> + Send + 'static,
     {
         let handle = tokio::task::spawn(make_task(self.clone()));
         self.handles
-            .push(Task::new(name, handle, self.sender.clone()))
+            .push(Task::new(name.into(), handle, self.sender.clone()))
             .await;
     }
 }
