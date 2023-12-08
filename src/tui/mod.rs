@@ -1,5 +1,6 @@
 mod terminal;
 
+use crate::async_buffer_redirect::AsyncBufferRedirect;
 use crate::ShutdownHandle;
 use crossterm::event::Event;
 use crossterm::event::EventStream;
@@ -27,11 +28,16 @@ pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     mut ghci_reader: DuplexStream,
 ) -> miette::Result<()> {
+    let mut tracing_reader = AsyncBufferRedirect::stderr()
+        .into_diagnostic()
+        .wrap_err("Failed to capture stderr")?;
+
+    let mut ghci_buffer = [0; 1024];
+    let mut tracing_buffer = [0; 1024];
+
     let mut terminal = terminal::enter()?;
 
     let mut tui = Tui::default();
-
-    let mut ghci_buffer = [0; 1024];
 
     let mut event_stream = EventStream::new();
 
@@ -64,6 +70,18 @@ pub async fn run_tui(
                     tui.scrollback.push_str(str);
                     ghci_buffer = [0; 1024];
                 }
+            }
+
+            output = tracing_reader.read(&mut tracing_buffer) => {
+                output
+                    .into_diagnostic()
+                    .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
+                // TODO(evan): It's not always valid UTF-8!!
+                let str = str::from_utf8(&tracing_buffer[..])
+                    .into_diagnostic()
+                    .wrap_err("Bytes are not valid UTF-8")?;
+                tui.scrollback.push_str(str);
+                tracing_buffer = [0; 1024];
             }
 
             output = event_stream.next() => {

@@ -3,6 +3,7 @@
 use camino::Utf8Path;
 use miette::Context;
 use miette::IntoDiagnostic;
+use tracing_human_layer::OutputStream;
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::fmt::format::JsonFields;
@@ -22,6 +23,8 @@ pub struct TracingOpts<'opts> {
     pub trace_spans: &'opts [FmtSpan],
     /// If given, log as JSON to the given path.
     pub json_log_path: Option<&'opts Utf8Path>,
+    /// The stream log messages are written to.
+    pub output_stream: OutputStream,
 }
 
 impl<'opts> TracingOpts<'opts> {
@@ -32,6 +35,11 @@ impl<'opts> TracingOpts<'opts> {
             filter_directives: &opts.logging.log_filter,
             trace_spans: &opts.logging.trace_spans,
             json_log_path: opts.logging.log_json.as_deref(),
+            output_stream: if opts.tui {
+                OutputStream::Stderr
+            } else {
+                OutputStream::Stdout
+            },
         }
     }
 
@@ -46,6 +54,7 @@ impl<'opts> TracingOpts<'opts> {
 
         let human_layer = tracing_human_layer::HumanLayer::default()
             .with_span_events(fmt_span.clone())
+            .with_output_stream(self.output_stream)
             .with_filter(env_filter);
 
         let registry = tracing_subscriber::registry();
