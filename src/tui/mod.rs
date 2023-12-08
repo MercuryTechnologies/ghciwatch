@@ -7,6 +7,7 @@ use crossterm::event::Event;
 use crossterm::event::EventStream;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
+use crossterm::event::MouseEventKind;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
@@ -15,6 +16,7 @@ use ratatui::prelude::Rect;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use std::cmp::min;
 use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
@@ -23,6 +25,8 @@ use tokio_stream::StreamExt;
 struct Tui {
     quit: bool,
     scrollback: Vec<u8>,
+    // TODO(evan): Follow output when scrolled to bottom
+    scroll_offset: usize,
 }
 
 /// TODO(evan): Document
@@ -102,15 +106,32 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
     let text = tui.scrollback.into_text().into_diagnostic()?;
 
+    let scroll_offset = u16::try_from(tui.scroll_offset).unwrap();
+
     Paragraph::new(text)
         .wrap(Wrap::default())
+        .scroll((scroll_offset, 0))
         .render(area, buffer);
 
     Ok(())
 }
 
+const SCROLL_AMOUNT: usize = 1;
+
 fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {
     match event {
+        // TODO(evan): Scrolling is excruciatingly slow
+        Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
+            tui.scroll_offset = tui.scroll_offset.saturating_sub(SCROLL_AMOUNT);
+        }
+        Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollDown => {
+            let last_line = tui
+                .scrollback
+                .split(|byte| *byte == b'\n')
+                .count()
+                .saturating_sub(1);
+            tui.scroll_offset = min(last_line, tui.scroll_offset + SCROLL_AMOUNT);
+        }
         Event::Key(key)
             if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') =>
         {
