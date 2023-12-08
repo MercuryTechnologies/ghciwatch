@@ -2,6 +2,7 @@ mod terminal;
 
 use crate::async_buffer_redirect::AsyncBufferRedirect;
 use crate::ShutdownHandle;
+use ansi_to_tui::IntoText;
 use crossterm::event::Event;
 use crossterm::event::EventStream;
 use crossterm::event::KeyCode;
@@ -11,8 +12,9 @@ use miette::IntoDiagnostic;
 use miette::WrapErr;
 use ratatui::prelude::Buffer;
 use ratatui::prelude::Rect;
-use ratatui::prelude::Style;
-use std::str;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
@@ -20,7 +22,7 @@ use tokio_stream::StreamExt;
 #[derive(Default)]
 struct Tui {
     quit: bool,
-    scrollback: String,
+    scrollback: Vec<u8>,
 }
 
 /// TODO(evan): Document
@@ -42,14 +44,16 @@ pub async fn run_tui(
     let mut event_stream = EventStream::new();
 
     while !tui.quit {
+        let mut render_result = Ok(());
         terminal
             .draw(|frame| {
                 let area = frame.size();
                 let buffer = frame.buffer_mut();
-                render(&tui, area, buffer);
+                render_result = render(&tui, area, buffer);
             })
             .into_diagnostic()
             .wrap_err("Failed to draw to terminal")?;
+        render_result?;
 
         tokio::select! {
             _ = shutdown.on_shutdown_requested() => {
@@ -63,11 +67,7 @@ pub async fn run_tui(
                 if n == 0 {
                     tui.quit = true;
                 } else {
-                    // TODO(evan): It's not always valid UTF-8!!
-                    let str = str::from_utf8(&ghci_buffer[..])
-                        .into_diagnostic()
-                        .wrap_err("Bytes are not valid UTF-8")?;
-                    tui.scrollback.push_str(str);
+                    tui.scrollback.extend(ghci_buffer);
                     ghci_buffer = [0; 1024];
                 }
             }
@@ -76,11 +76,7 @@ pub async fn run_tui(
                 output
                     .into_diagnostic()
                     .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
-                // TODO(evan): It's not always valid UTF-8!!
-                let str = str::from_utf8(&tracing_buffer[..])
-                    .into_diagnostic()
-                    .wrap_err("Bytes are not valid UTF-8")?;
-                tui.scrollback.push_str(str);
+                tui.scrollback.extend(tracing_buffer);
                 tracing_buffer = [0; 1024];
             }
 
@@ -99,21 +95,18 @@ pub async fn run_tui(
     Ok(())
 }
 
-// TODO(evan): Soft wrap lines
-fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) {
+fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
     if area.width == 0 || area.height == 0 {
-        return;
+        return Ok(());
     }
 
-    let lines = tui.scrollback.lines().collect::<Vec<_>>();
+    let text = tui.scrollback.into_text().into_diagnostic()?;
 
-    for y in area.top()..area.bottom() {
-        let Some(line) = lines.get(usize::from(y)) else {
-            break;
-        };
+    Paragraph::new(text)
+        .wrap(Wrap::default())
+        .render(area, buffer);
 
-        buffer.set_stringn(area.x, y, line, usize::from(area.width), Style::default());
-    }
+    Ok(())
 }
 
 fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {

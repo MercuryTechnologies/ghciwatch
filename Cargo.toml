@@ -34,6 +34,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 aho-corasick = "1.0.2"
+ansi-to-tui = "3.1.0"
 async-dup = "1.2.4"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
