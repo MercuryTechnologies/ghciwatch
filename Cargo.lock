@@ -454,6 +454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "filedescriptor"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7199d965852c3bac31f779ef99cbb4537f80e952e2d6aa0ffeb30cce00f4f46e"
+dependencies = [
+ "libc",
+ "thiserror",
+ "winapi",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -536,6 +547,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gag"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a713bee13966e9fbffdf7193af71d54a6b35a0bb34997cd6c9519ebeb5005972"
+dependencies = [
+ "filedescriptor",
+ "tempfile",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -559,6 +580,7 @@ dependencies = [
  "crossterm",
  "enum-iterator",
  "expect-test",
+ "gag",
  "humantime",
  "ignore",
  "indoc 1.0.9",
@@ -577,6 +599,7 @@ dependencies = [
  "shell-words",
  "strip-ansi-escapes",
  "tap",
+ "tempfile",
  "test-harness",
  "textwrap 0.16.0",
  "tokio",
@@ -1730,12 +1753,13 @@ dependencies = [
 
 [[package]]
 name = "tracing-human-layer"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f535a660245c04f845c9b0059fc48442f368fdfbc590ed3c4207a09945de70b"
+checksum = "42cda93c23a1ce96b78c24052b75c5dd6f580eab093bdf9b5ea0bb72c7d955af"
 dependencies = [
  "itertools",
  "owo-colors",
+ "parking_lot",
  "textwrap 0.16.0",
  "tracing",
  "tracing-subscriber",

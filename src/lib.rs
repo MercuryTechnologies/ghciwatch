@@ -13,6 +13,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod aho_corasick;
+mod async_buffer_redirect;
 mod buffers;
 mod clap;
 pub mod cli;
