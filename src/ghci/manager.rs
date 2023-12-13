@@ -114,21 +114,19 @@ pub async fn run_ghci(
             }
             Some(new_event) = receiver.recv() => {
                 tracing::debug!(?new_event, "Received ghci event from watcher while reloading");
-                if !no_interrupt_reloads {
-                    if should_interrupt(reload_receiver).await {
-                        // Merge the events together so we don't lose progress.
-                        // Then, the next iteration of the loop will pick up the `maybe_event` value
-                        // and respond immediately.
-                        event.merge(new_event);
-                        maybe_event = Some(event);
+                if !no_interrupt_reloads && should_interrupt(reload_receiver).await {
+                    // Merge the events together so we don't lose progress.
+                    // Then, the next iteration of the loop will pick up the `maybe_event` value
+                    // and respond immediately.
+                    event.merge(new_event);
+                    maybe_event = Some(event);
 
-                        // Cancel the in-progress reload. This releases the `ghci` lock to prevent a deadlock.
-                        task.abort();
+                    // Cancel the in-progress reload. This releases the `ghci` lock to prevent a deadlock.
+                    task.abort();
 
-                        // Send a SIGINT to interrupt the reload.
-                        // NB: This may take a couple seconds to register.
-                        ghci.lock().await.send_sigint().await?;
-                    }
+                    // Send a SIGINT to interrupt the reload.
+                    // NB: This may take a couple seconds to register.
+                    ghci.lock().await.send_sigint().await?;
                 }
             }
             ret = &mut task => {
