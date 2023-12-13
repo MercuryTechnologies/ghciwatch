@@ -56,6 +56,7 @@ pub async fn run_ghci(
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
 
+    let no_interrupt_reloads = opts.no_interrupt_reloads;
     let mut ghci = Ghci::new(handle.clone(), opts)
         .await
         .wrap_err("Failed to start `ghci`")?;
@@ -113,7 +114,7 @@ pub async fn run_ghci(
             }
             Some(new_event) = receiver.recv() => {
                 tracing::debug!(?new_event, "Received ghci event from watcher while reloading");
-                if should_interrupt(reload_receiver).await {
+                if !no_interrupt_reloads && should_interrupt(reload_receiver).await {
                     // Merge the events together so we don't lose progress.
                     // Then, the next iteration of the loop will pick up the `maybe_event` value
                     // and respond immediately.

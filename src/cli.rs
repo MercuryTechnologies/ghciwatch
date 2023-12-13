@@ -49,6 +49,12 @@ pub struct Opts {
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
+
+    /// Don't interrupt reloads when files change.
+    ///
+    /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
+    #[arg(long)]
+    pub no_interrupt_reloads: bool,
 }
 
 /// Options for watching files.
