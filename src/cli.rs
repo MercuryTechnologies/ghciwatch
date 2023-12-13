@@ -50,9 +50,10 @@ pub struct Opts {
     #[command(flatten)]
     pub logging: LoggingOpts,
 
-    /// By default, ghciwatch will interrupt reloads if a file changes. If you want ghciwatch to
-    /// avoid interrupting reloads, set this flag.
-    #[arg(long = "no-interrupt-reloads")]
+    /// Don't interrupt reloads when files change.
+    ///
+    /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
+    #[arg(long)]
     pub no_interrupt_reloads: bool,
 }
 
