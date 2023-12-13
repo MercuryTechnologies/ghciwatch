@@ -51,6 +51,11 @@ pub struct Opts {
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
+
+    /// By default, ghciwatch will interrupt reloads if a file changes. If you want ghciwatch to
+    /// avoid interrupting reloads, set this flag.
+    #[arg(long = "no-interrupt-reloads")]
+    pub no_interrupt_reloads: bool,
 }
 
 /// Options for watching files.
@@ -105,6 +110,7 @@ pub struct WatchOpts {
     #[allow(rustdoc::bare_urls)]
     #[arg(long = "restart-glob")]
     pub restart_globs: Vec<String>,
+
 }
 
 impl WatchOpts {

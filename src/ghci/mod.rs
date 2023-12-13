@@ -96,6 +96,8 @@ pub struct GhciOpts {
     pub restart_globs: GlobMatcher,
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
+    /// Determines whether we should interrupt a reload in progress or not.
+    pub no_interrupt_reloads: bool,
 }
 
 impl GhciOpts {
@@ -118,6 +120,7 @@ impl GhciOpts {
             hooks: opts.hooks.clone(),
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
+            no_interrupt_reloads: opts.no_interrupt_reloads,
         })
     }
 }
