@@ -102,15 +102,12 @@ pub struct GhciOpts {
     pub restart_globs: GlobMatcher,
     /// Reload the `ghci` session when paths matching these globs are changed.
     pub reload_globs: GlobMatcher,
-<<<<<<< HEAD
     /// Determines whether we should interrupt a reload in progress or not.
     pub no_interrupt_reloads: bool,
-=======
     /// Where to write what `ghci` emits to `stdout`. Inherits parent's `stdout` by default.
     pub stdout_writer: GhciWriter,
     /// Where to write what `ghci` emits to `stderr`. Inherits parent's `stderr` by default.
     pub stderr_writer: GhciWriter,
->>>>>>> d2725f3ca1aa02230f2d118a7d164197ca7e9ffd
 }
 
 impl GhciOpts {
@@ -133,12 +130,9 @@ impl GhciOpts {
             hooks: opts.hooks.clone(),
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
-<<<<<<< HEAD
             no_interrupt_reloads: opts.no_interrupt_reloads,
-=======
             stdout_writer: GhciWriter::stdout(),
             stderr_writer: GhciWriter::stderr(),
->>>>>>> d2725f3ca1aa02230f2d118a7d164197ca7e9ffd
         })
     }
 }
