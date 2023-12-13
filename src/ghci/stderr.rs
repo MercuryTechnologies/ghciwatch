@@ -1,5 +1,7 @@
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use miette::IntoDiagnostic;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::Lines;
 use tokio::process::ChildStderr;
@@ -9,29 +11,25 @@ use tracing::instrument;
 
 use crate::shutdown::ShutdownHandle;
 
-use super::Mode;
+use super::writer::GhciWriter;
 
 /// An event sent to a `ghci` session's stderr channel.
 #[derive(Debug)]
 pub enum StderrEvent {
-    /// Set the writer's mode.
-    Mode {
-        mode: Mode,
-        sender: oneshot::Sender<()>,
-    },
+    /// Clear the buffer contents.
+    ClearBuffer,
 
-    /// Get the buffer contents since the last `Mode` event.
+    /// Get the buffer contents since the last `ClearBuffer` event.
     GetBuffer { sender: oneshot::Sender<String> },
 }
 
 pub struct GhciStderr {
     pub shutdown: ShutdownHandle,
     pub reader: Lines<BufReader<ChildStderr>>,
+    pub writer: GhciWriter,
     pub receiver: mpsc::Receiver<StderrEvent>,
     /// Output buffer.
     pub buffer: String,
-    /// The mode we're currently reading output in.
-    pub mode: Mode,
 }
 
 impl GhciStderr {
@@ -62,7 +60,7 @@ impl GhciStderr {
             // processed after we write the error log?
             tokio::select! {
                 Ok(Some(line)) = self.reader.next_line() => {
-                    self.ingest_line(line).await;
+                    self.ingest_line(line).await?;
                 }
                 Some(event) = self.receiver.recv() => {
                     self.dispatch(event).await?;
@@ -82,8 +80,8 @@ impl GhciStderr {
 
     async fn dispatch(&mut self, event: StderrEvent) -> miette::Result<()> {
         match event {
-            StderrEvent::Mode { mode, sender } => {
-                self.set_mode(sender, mode).await;
+            StderrEvent::ClearBuffer => {
+                self.clear_buffer().await;
             }
             StderrEvent::GetBuffer { sender } => {
                 self.get_buffer(sender).await;
@@ -94,18 +92,20 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn ingest_line(&mut self, line: String) {
-        // Then write to our general buffer.
+    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()> {
+        tracing::debug!(line, "Read stderr line");
+        line.push('\n');
         self.buffer.push_str(&line);
-        self.buffer.push('\n');
-        eprintln!("{line}");
+        self.writer
+            .write_all(line.as_bytes())
+            .await
+            .into_diagnostic()?;
+        Ok(())
     }
 
-    #[instrument(skip(self, sender), level = "trace")]
-    async fn set_mode(&mut self, sender: oneshot::Sender<()>, mode: Mode) {
-        self.mode = mode;
+    #[instrument(skip(self), level = "trace")]
+    async fn clear_buffer(&mut self) {
         self.buffer.clear();
-        let _ = sender.send(());
     }
 
     #[instrument(skip(self, sender), level = "debug")]

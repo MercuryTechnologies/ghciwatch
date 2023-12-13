@@ -1,12 +1,20 @@
 CABAL_OPTS ?=
 CABAL ?= cabal \
-	--offline \
 	$(if $(GHC), --with-compiler=$(GHC)) \
 	$(CABAL_OPTS)
 
+EXTRA_GHC_OPTS ?=
+GHC_OPTS ?= \
+	-fwrite-interface \
+	$(EXTRA_GHC_OPTS)
+
+GHCI_OPTS ?= \
+	$(GHC_OPTS) \
+	-hisuf ghci_hi
+
 CABAL_REPL ?= $(CABAL) \
-	--repl-option -fdiagnostics-color=always \
-	-flocal-dev v2-repl lib:test-dev
+	--repl-options='$(GHCI_OPTS)' \
+	v2-repl lib:test-dev
 
 GHCIWATCH_OPTS ?=
 GHCIWATCH ?= ../../../target/release/ghciwatch \
@@ -20,12 +28,13 @@ GHCIWATCH ?= ../../../target/release/ghciwatch \
 my-simple-package.cabal: package.yaml
 	hpack .
 
+.PHONY: build
+build: my-simple-package.cabal
+	$(CABAL) --ghc-options='$(GHC_OPTS)' build lib:test-dev
+
 .PHONY: test
-test: my-simple-package.cabal
-	$(CABAL) build
+test: my-simple-package.cabal build
 	$(CABAL) test
-	$(CABAL) -flocal-dev build
-	$(CABAL) -flocal-dev test
 	echo ":quit" | $(CABAL_REPL)
 
 .PHONY: ghci

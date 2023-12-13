@@ -11,9 +11,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use crate::clap::FmtSpanParserFactory;
 use crate::clap::RustBacktrace;
 use crate::clonable_command::ClonableCommand;
-use crate::ghci::GhciCommand;
 use crate::ignore::GlobMatcher;
-use crate::maybe_async_command::MaybeAsyncCommand;
 use crate::normal_path::NormalPath;
 
 /// A `ghci`-based file watcher and Haskell recompiler.
@@ -42,7 +40,7 @@ pub struct Opts {
 
     /// Lifecycle hooks and commands to run at various points.
     #[command(flatten)]
-    pub hooks: HookOpts,
+    pub hooks: crate::hooks::HookOpts,
 
     /// Options to modify file watching.
     #[command(flatten)]
@@ -165,75 +163,6 @@ pub struct LoggingOpts {
     /// Path to write JSON logs to.
     #[arg(long, value_name = "PATH")]
     pub log_json: Option<Utf8PathBuf>,
-}
-
-/// Lifecycle hooks.
-///
-/// These are commands (mostly `ghci` commands) to run at various points in the `ghciwatch`
-/// lifecycle.
-#[derive(Debug, Clone, clap::Args)]
-#[clap(next_help_heading = "Lifecycle hooks")]
-pub struct HookOpts {
-    /// `ghci` commands which runs tests, like `TestMain.testMain`. If given, these commands will be
-    /// run after reloads.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub test_ghci: Vec<GhciCommand>,
-
-    /// Shell commands to run before starting or restarting `ghci`.
-    ///
-    /// This can be used to regenerate `.cabal` files with `hpack`.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "SHELL_COMMAND")]
-    pub before_startup_shell: Vec<MaybeAsyncCommand>,
-
-    /// `ghci` commands to run on startup. Use `:set args ...` in combination with `--test` to set
-    /// the command-line arguments for tests.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub after_startup_ghci: Vec<GhciCommand>,
-
-    /// `ghci` commands to run before reloading `ghci`.
-    ///
-    /// These are run when modules are change on disk; this does not necessarily correspond to a
-    /// `:reload` command.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub before_reload_ghci: Vec<GhciCommand>,
-
-    /// `ghci` commands to run after reloading `ghci`.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub after_reload_ghci: Vec<GhciCommand>,
-
-    /// Shell commands to run after reloading `ghci`.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "SHELL_COMMAND")]
-    pub after_reload_shell: Vec<MaybeAsyncCommand>,
-
-    /// `ghci` commands to run before restarting `ghci`.
-    ///
-    /// See `--after-restart-ghci` for more details.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub before_restart_ghci: Vec<GhciCommand>,
-
-    /// `ghci` commands to run after restarting `ghci`.
-    /// Can be given multiple times.
-    ///
-    /// `ghci` cannot reload after files are deleted due to a bug, so `ghciwatch` has to restart the
-    /// underlying `ghci` session when this happens. Note that the `--before-restart-ghci` and
-    /// `--after-restart-ghci` commands will therefore run in different `ghci` sessions without
-    /// shared context.
-    ///
-    /// See: https://gitlab.haskell.org/ghc/ghc/-/issues/9648
-    #[arg(long, value_name = "GHCI_COMMAND")]
-    pub after_restart_ghci: Vec<GhciCommand>,
-
-    /// Shell commands to run after restarting `ghci`.
-    /// Can be given multiple times.
-    #[arg(long, value_name = "SHELL_COMMAND")]
-    pub after_restart_shell: Vec<MaybeAsyncCommand>,
 }
 
 impl Opts {

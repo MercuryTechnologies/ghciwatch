@@ -6,8 +6,7 @@ use tokio::io::BufWriter;
 use tracing::instrument;
 
 use super::parse::CompilationResult;
-use super::parse::CompilationSummary;
-use super::parse::GhcMessage;
+use super::CompilationLog;
 
 /// Error log writer.
 ///
@@ -24,12 +23,8 @@ impl ErrorLog {
     }
 
     /// Write the error log, if any, with the given compilation summary and diagnostic messages.
-    #[instrument(skip(self, messages), name = "error_log_write", level = "debug")]
-    pub async fn write(
-        &mut self,
-        compilation_summary: Option<CompilationSummary>,
-        messages: &[GhcMessage],
-    ) -> miette::Result<()> {
+    #[instrument(skip(self, log), name = "error_log_write", level = "debug")]
+    pub async fn write(&mut self, log: &CompilationLog) -> miette::Result<()> {
         let path = match &self.path {
             Some(path) => path,
             None => {
@@ -41,7 +36,7 @@ impl ErrorLog {
         let file = File::create(path).await.into_diagnostic()?;
         let mut writer = BufWriter::new(file);
 
-        if let Some(summary) = compilation_summary {
+        if let Some(summary) = log.summary {
             // `ghcid` only writes the headline if there's no errors.
             if let CompilationResult::Ok = summary.result {
                 tracing::debug!(%path, "Writing 'All good'");
@@ -57,13 +52,11 @@ impl ErrorLog {
             }
         }
 
-        for message in messages {
-            if let GhcMessage::Diagnostic(diagnostic) = message {
-                writer
-                    .write_all(diagnostic.to_string().as_bytes())
-                    .await
-                    .into_diagnostic()?;
-            }
+        for diagnostic in &log.diagnostics {
+            writer
+                .write_all(diagnostic.to_string().as_bytes())
+                .await
+                .into_diagnostic()?;
         }
 
         // This is load-bearing! If we don't properly flush/shutdown the handle, nothing gets

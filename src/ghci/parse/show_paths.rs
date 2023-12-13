@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
@@ -15,6 +16,7 @@ use winnow::Parser;
 
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::haskell_source_file::HASKELL_SOURCE_EXTENSIONS;
+use crate::normal_path::NormalPath;
 
 use super::lines::until_newline;
 
@@ -28,6 +30,11 @@ pub struct ShowPaths {
 }
 
 impl ShowPaths {
+    /// Make a path relative to the working directory of this session.
+    pub fn make_relative(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
+        NormalPath::new(path, &self.cwd)
+    }
+
     /// Convert a target (from `:show targets` output) to a module source path.
     pub fn target_to_path(&self, target: &str) -> miette::Result<Utf8PathBuf> {
         let target_path = Utf8Path::new(target);

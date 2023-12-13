@@ -103,7 +103,13 @@ fn save_test_logs(test_name: String, cargo_target_tmpdir: PathBuf) {
 /// 1. Kill the process set by [`set_ghciwatch_process`].
 /// 2. Remove the [`TEMPDIR`] from the filesystem.
 async fn cleanup() {
-    let mut child = take_ghciwatch_process().unwrap();
+    let mut child = match take_ghciwatch_process() {
+        Ok(child) => child,
+        Err(err) => {
+            tracing::info!("No `ghciwatch` process found, skipping cleanup: {err}");
+            return;
+        }
+    };
     let _ = send_signal(&child, Signal::SIGINT);
     match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
         Err(_) => {
@@ -210,7 +216,7 @@ pub(crate) fn take_ghciwatch_process() -> miette::Result<Child> {
 }
 
 /// Send a signal to a child process.
-fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
+pub(crate) fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
     signal::kill(
         Pid::from_raw(
             child
