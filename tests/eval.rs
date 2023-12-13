@@ -3,6 +3,8 @@ use indoc::indoc;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::Fs;
+use test_harness::FullGhcVersion;
+use test_harness::GhcVersion;
 use test_harness::GhciWatchBuilder;
 use test_harness::Matcher;
 
@@ -109,4 +111,75 @@ async fn can_load_new_eval_commands_multiline() {
         .wait_for_log(BaseMatcher::reload_completes().but_not(eval_message))
         .await
         .unwrap();
+}
+
+/// Test that `ghciwatch` can eval commands in non-interpreted modules.
+///
+/// See: <https://github.com/MercuryTechnologies/ghciwatch/pull/171>
+#[test]
+async fn can_eval_commands_in_non_interpreted_modules() {
+    if FullGhcVersion::current().unwrap().major < GhcVersion::Ghc96 {
+        tracing::info!(
+            "This test relies on the `-fwrite-if-simplified-core` flag, added in GHC 9.6"
+        );
+        return;
+    }
+
+    let module_path = "src/MyModule.hs";
+    let cmd = "-- $> example ++ example";
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_arg("--enable-eval")
+        .with_ghc_arg("-fwrite-if-simplified-core")
+        .with_cabal_arg("--repl-no-load")
+        .before_start(move |path| async move {
+            Fs::new()
+                .append(path.join(module_path), format!("\n{cmd}\n"))
+                .await
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let module_path = session.path(module_path);
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch didn't start in time");
+
+    // Touch the module so `ghci` compiles it.
+    session.fs().touch(&module_path).await.unwrap();
+    session
+        .wait_for_log(BaseMatcher::reload_completes())
+        .await
+        .unwrap();
+
+    // Restart so it loads the compiled, non-interpreted module.
+    session.restart_ghciwatch().await.unwrap();
+
+    // Touch the module so `ghciwatch` loads it.
+    session.fs().touch(&module_path).await.unwrap();
+
+    session
+        .assert_logged_or_wait(
+            // Adds the module succesfully.
+            BaseMatcher::message("All good!")
+                // Evals the command.
+                .and(BaseMatcher::message(
+                    r"MyModule.hs:\d+:\d+: example \+\+ example",
+                ))
+                // Reads eval output.
+                .and(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
+                // Finishes the reload.
+                .and(BaseMatcher::reload_completes())
+                .but_not(
+                    BaseMatcher::message("Read stderr line")
+                        .with_field("line", "defined in multiple files"),
+                )
+                .but_not(
+                    BaseMatcher::message("Read stderr line")
+                        .with_field("line", "module '.*' is not interpreted"),
+                ),
+        )
+        .await
+        .expect("ghciwatch evals commands");
 }

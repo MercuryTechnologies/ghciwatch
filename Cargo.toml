@@ -17,7 +17,7 @@ publish = false # Don't do `cargo publish`.
 # Define the root package: https://doc.rust-lang.org/cargo/reference/workspaces.html#root-package
 [package]
 name = "ghciwatch"
-version = "0.5.0"
+version = "0.5.5"
 edition = "2021"
 authors = [
     "Rebecca Turner <rebeccat@mercury.com>"
@@ -34,12 +34,15 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 aho-corasick = "1.0.2"
+async-dup = "1.2.4"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
-clap = { version = "4.3.2", features = ["derive", "wrap_help", "env"] }
+clap = { version = "4.3.2", features = ["derive", "wrap_help", "env", "string"] }
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
+enum-iterator = "1.4.1"
 humantime = "2.1.0"
 ignore = "0.4.20"
+indoc = "1.0.6"
 itertools = "0.11.0"
 line-span = "0.1.5"
 miette = { version = "5.9.0", features = ["fancy"] }
@@ -55,15 +58,16 @@ strip-ansi-escapes = "0.2.0"
 tap = "1.0.1"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.28.2", features = ["full", "tracing"] }
+tokio-util = { version = "0.7.10", features = ["compat"] }
 tracing = "0.1.37"
 tracing-human-layer = "0.1.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "time", "json", "registry"] }
+unindent = "0.2.3"
 winnow = "0.5.15"
 
 [dev-dependencies]
 test-harness = { path = "test-harness" }
 expect-test = "1.4.0"
-indoc = "1.0.6"
 pretty_assertions = "1.2.1"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 

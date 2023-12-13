@@ -3,11 +3,12 @@
 use command_group::AsyncCommandGroup;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
+use owo_colors::OwoColorize;
+use owo_colors::Stream::Stdout;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::fmt::Display;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
@@ -45,32 +46,37 @@ mod error_log;
 use error_log::ErrorLog;
 
 pub mod parse;
+use parse::parse_eval_commands;
 use parse::CompilationResult;
 use parse::EvalCommand;
-use parse::GhcDiagnostic;
-use parse::GhcMessage;
 use parse::ModuleSet;
-use parse::Severity;
 use parse::ShowPaths;
 
 mod ghci_command;
 pub use ghci_command::GhciCommand;
 
+mod compilation_log;
+pub use compilation_log::CompilationLog;
+
+mod writer;
+pub use crate::ghci::writer::GhciWriter;
+
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
-use crate::cli::HookOpts;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
 use crate::haskell_source_file::is_haskell_source_file;
+use crate::hooks;
+use crate::hooks::HookOpts;
+use crate::hooks::LifecycleEvent;
 use crate::ignore::GlobMatcher;
 use crate::incremental_reader::IncrementalReader;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
-
-use self::parse::parse_eval_commands;
+use crate::StringCase;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -98,6 +104,10 @@ pub struct GhciOpts {
     pub reload_globs: GlobMatcher,
     /// Determines whether we should interrupt a reload in progress or not.
     pub no_interrupt_reloads: bool,
+    /// Where to write what `ghci` emits to `stdout`. Inherits parent's `stdout` by default.
+    pub stdout_writer: GhciWriter,
+    /// Where to write what `ghci` emits to `stderr`. Inherits parent's `stderr` by default.
+    pub stderr_writer: GhciWriter,
 }
 
 impl GhciOpts {
@@ -121,6 +131,8 @@ impl GhciOpts {
             restart_globs: opts.watch.restart_globs()?,
             reload_globs: opts.watch.reload_globs()?,
             no_interrupt_reloads: opts.no_interrupt_reloads,
+            stdout_writer: GhciWriter::stdout(),
+            stderr_writer: GhciWriter::stderr(),
         })
     }
 }
@@ -182,10 +194,12 @@ impl Ghci {
         {
             let span = tracing::debug_span!("before_startup_shell");
             let _enter = span.enter();
-            for command in &opts.hooks.before_startup_shell {
-                tracing::info!(%command, "Running before-startup command");
-                command.run_on(&mut command_handles).await?;
-            }
+            opts.hooks
+                .run_shell_hooks(
+                    LifecycleEvent::Startup(hooks::When::Before),
+                    &mut command_handles,
+                )
+                .await?;
         }
 
         let mut group = {
@@ -229,11 +243,10 @@ impl Ghci {
         let (stderr_sender, stderr_receiver) = mpsc::channel(8);
 
         let stdout = GhciStdout {
-            reader: IncrementalReader::new(stdout).with_writer(tokio::io::stdout()),
+            reader: IncrementalReader::new(stdout).with_writer(opts.stdout_writer.clone()),
             stderr_sender: stderr_sender.clone(),
             buffer: vec![0; LINE_BUFFER_CAPACITY],
             prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
-            mode: Mode::Compiling,
         };
 
         let stdin = GhciStdin {
@@ -242,13 +255,13 @@ impl Ghci {
         };
 
         shutdown
-            .spawn("stderr".to_owned(), |shutdown| {
+            .spawn("stderr", |shutdown| {
                 GhciStderr {
                     shutdown,
                     reader: BufReader::new(stderr).lines(),
+                    writer: opts.stderr_writer.clone(),
                     receiver: stderr_receiver,
                     buffer: String::with_capacity(LINE_BUFFER_CAPACITY),
-                    mode: Mode::Compiling,
                 }
                 .run()
             })
@@ -257,7 +270,7 @@ impl Ghci {
         let (restart_sender, restart_receiver) = mpsc::channel(1);
 
         shutdown
-            .spawn("ghci_process".to_owned(), |shutdown| {
+            .spawn("ghci_process", |shutdown| {
                 GhciProcess {
                     shutdown,
                     restart_receiver,
@@ -288,31 +301,29 @@ impl Ghci {
     }
 
     /// Perform post-startup initialization.
+    ///
+    /// Diagnostics will be added to the given `log`, and the error log will be written.
     #[instrument(level = "debug", skip_all)]
-    pub async fn initialize(&mut self) -> miette::Result<()> {
+    pub async fn initialize(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
         let start_instant = Instant::now();
 
         // Wait for the stdout job to start up.
-        self.stdout.initialize().await?;
+        self.stdout.initialize(log).await?;
 
         // Perform start-of-session initialization.
-        let messages = self
-            .stdin
-            .initialize(&mut self.stdout, &self.opts.hooks.after_startup_ghci)
-            .await?;
-        self.process_ghc_messages(messages).await?;
+        self.stdin.initialize(&mut self.stdout, log).await?;
 
         // Get the initial list of targets.
         self.refresh_targets().await?;
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
 
-        tracing::info!("ghci started in {:.2?}", start_instant.elapsed());
-
-        // Run the eval commands, if any.
-        self.eval().await?;
-        // Run the user-provided test command, if any.
-        self.test().await?;
+        self.finish_compilation(
+            start_instant,
+            log,
+            LifecycleEvent::Startup(hooks::When::After),
+        )
+        .await?;
 
         Ok(())
     }
@@ -411,6 +422,7 @@ impl Ghci {
         events: BTreeSet<FileEvent>,
         kind_sender: oneshot::Sender<GhciReloadKind>,
     ) -> miette::Result<()> {
+        let start_instant = Instant::now();
         let actions = self.get_reload_actions(events).await?;
         let _ = kind_sender.send(actions.kind());
 
@@ -425,14 +437,12 @@ impl Ghci {
             return Ok(());
         }
 
-        if actions.needs_add_or_reload() {
-            for command in &self.opts.hooks.before_reload_ghci {
-                tracing::info!(%command, "Running before-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
-        }
+        let mut log = CompilationLog::default();
 
-        let mut compilation_failed = false;
+        if actions.needs_add_or_reload() {
+            self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
+                .await?;
+        }
 
         if !actions.needs_add.is_empty() {
             tracing::info!(
@@ -440,10 +450,7 @@ impl Ghci {
                 format_bulleted_list(&actions.needs_add)
             );
             for path in &actions.needs_add {
-                let add_result = self.add_module(path).await?;
-                if let Some(CompilationResult::Err) = add_result {
-                    compilation_failed = true;
-                }
+                self.add_module(path, &mut log).await?;
             }
         }
 
@@ -452,31 +459,18 @@ impl Ghci {
                 "Reloading ghci:\n{}",
                 format_bulleted_list(&actions.needs_reload)
             );
-            let messages = self.stdin.reload(&mut self.stdout).await?;
-            if let Some(CompilationResult::Err) = self.process_ghc_messages(messages).await? {
-                compilation_failed = true;
-            }
+            self.stdin.reload(&mut self.stdout, &mut log).await?;
             self.refresh_eval_commands_for_paths(&actions.needs_reload)
                 .await?;
         }
 
         if actions.needs_add_or_reload() {
-            for command in &self.opts.hooks.after_reload_ghci {
-                tracing::info!(%command, "Running after-reload command");
-                self.stdin.run_command(&mut self.stdout, command).await?;
-            }
-            for command in &self.opts.hooks.after_reload_shell {
-                tracing::info!(%command, "Running after-reload command");
-                command.run_on(&mut self.command_handles).await?;
-            }
-
-            if compilation_failed {
-                tracing::debug!("Compilation failed, skipping running tests.");
-            } else {
-                // If we loaded or reloaded any modules, we should run tests/eval commands.
-                self.eval().await?;
-                self.test().await?;
-            }
+            self.finish_compilation(
+                start_instant,
+                &mut log,
+                LifecycleEvent::Reload(hooks::When::After),
+            )
+            .await?;
         }
 
         self.prune_command_handles();
@@ -487,47 +481,54 @@ impl Ghci {
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
     async fn restart(&mut self) -> miette::Result<()> {
-        for command in &self.opts.hooks.before_restart_ghci {
-            tracing::info!(%command, "Running before-restart command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
+        let mut log = CompilationLog::default();
+
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::Before), &mut log)
+            .await?;
         self.stop().await?;
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
-        self.initialize().await?;
-        for command in &self.opts.hooks.after_restart_ghci {
-            tracing::info!(%command, "Running after-restart command");
-            self.stdin.run_command(&mut self.stdout, command).await?;
-        }
-        for command in &self.opts.hooks.after_restart_shell {
-            tracing::info!(%command, "Running after-restart command");
-            command.run_on(&mut self.command_handles).await?;
-        }
+        self.initialize(&mut log).await?;
+        self.run_hooks(LifecycleEvent::Restart(hooks::When::After), &mut log)
+            .await?;
+
+        self.write_error_log(&log).await?;
         Ok(())
     }
 
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
-    async fn test(&mut self) -> miette::Result<()> {
-        self.stdin
-            .test(&mut self.stdout, &self.opts.hooks.test_ghci)
-            .await?;
+    async fn test(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
+        self.run_hooks(LifecycleEvent::Test, log).await?;
         Ok(())
     }
 
     /// Run the eval commands, if enabled.
     #[instrument(skip_all, level = "debug")]
-    async fn eval(&mut self) -> miette::Result<()> {
+    async fn eval(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
         }
 
-        for (path, commands) in &self.eval_commands {
+        // TODO: This `clone` is ugly but I can't get the borrow checker to accept it otherwise.
+        // Might be more efficient to swap it out for a default, but then it gets trickier to
+        // restore the old value when the function returns.
+        for (path, commands) in self.eval_commands.clone() {
             for command in commands {
                 tracing::info!("{path}:{command}");
-                let module_name = self.search_paths.path_to_module(path)?;
+                // If the `module` was already compiled, `ghci` may have loaded the interface file instead
+                // of the interpreted bytecode, giving us this error message when we attempt to
+                // load the top-level scope with `:module + *{module}`:
+                //
+                //     module 'Mercury.Typescript.Golden' is not interpreted
+                //
+                // We use `:add *{module}` to force interpreting the module. We do this here instead of in
+                // `add_module` to save time if eval commands aren't used (or aren't needed for a
+                // particular module).
+                self.interpret_module(&path, log).await?;
+                let module = self.search_paths.path_to_module(&path)?;
                 self.stdin
-                    .eval(&mut self.stdout, &module_name, &command.command)
+                    .eval(&mut self.stdout, &module, &command.command, log)
                     .await?;
             }
         }
@@ -610,24 +611,49 @@ impl Ghci {
     ///
     /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
-    async fn add_module(&mut self, path: &NormalPath) -> miette::Result<Option<CompilationResult>> {
+    async fn add_module(
+        &mut self,
+        path: &NormalPath,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
         if self.targets.contains_source_path(path.absolute()) {
             tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
-            return Ok(None);
+            return Ok(());
         }
 
-        let messages = self
-            .stdin
-            .add_module(&mut self.stdout, path.relative())
+        self.stdin
+            .add_module(&mut self.stdout, path.relative(), log)
             .await?;
 
         self.targets.insert_source_path(path.clone());
 
-        let result = self.process_ghc_messages(messages).await?;
+        self.refresh_eval_commands_for_paths(std::iter::once(path))
+            .await?;
+
+        Ok(())
+    }
+
+    /// `:add *` a module to the `ghci` session by path.
+    ///
+    /// This forces it to be interpreted.
+    ///
+    /// Optionally returns a compilation result.
+    #[instrument(skip(self), level = "debug")]
+    async fn interpret_module(
+        &mut self,
+        path: &NormalPath,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.stdin
+            .interpret_module(&mut self.stdout, path.relative(), log)
+            .await?;
+
+        self.targets.insert_source_path(path.clone());
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
             .await?;
-        Ok(result)
+
+        Ok(())
     }
 
     /// Stop this `ghci` session and cancel the async tasks associated with it.
@@ -640,51 +666,9 @@ impl Ghci {
         Ok(())
     }
 
-    /// Processes a set of diagnostics and messages parsed from GHC output.
-    #[instrument(skip_all, level = "trace")]
-    async fn process_ghc_messages(
-        &mut self,
-        messages: Vec<GhcMessage>,
-    ) -> miette::Result<Option<CompilationResult>> {
-        let mut compilation_summary = None;
-        for message in &messages {
-            match message {
-                GhcMessage::Compiling(module) => {
-                    tracing::debug!(module = %module.name, path = %module.path, "Compiling");
-                }
-                GhcMessage::Diagnostic(GhcDiagnostic {
-                    severity: Severity::Error,
-                    path: Some(path),
-                    message,
-                    ..
-                }) => {
-                    // We can't use 'message' for the field name because that's what tracing uses
-                    // for the message.
-                    tracing::debug!(%path, error = message, "Module failed to compile");
-                }
-                GhcMessage::Summary(summary) => {
-                    compilation_summary = Some(*summary);
-                    match summary.result {
-                        CompilationResult::Ok => {
-                            tracing::debug!("Compilation succeeded");
-                        }
-                        CompilationResult::Err => {
-                            tracing::debug!("Compilation failed");
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        self.error_log.write(compilation_summary, &messages).await?;
-
-        Ok(None)
-    }
-
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
-        NormalPath::new(path, &self.search_paths.cwd)
+        self.search_paths.make_relative(path)
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -694,7 +678,11 @@ impl Ghci {
             .into_diagnostic()
             .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
         self.stdout
-            .prompt(crate::incremental_reader::FindAt::Anywhere)
+            .prompt(
+                crate::incremental_reader::FindAt::Anywhere,
+                // Ignore compilation messages.
+                &mut Default::default(),
+            )
             .await?;
         tracing::debug!("Interrupted ghci in {:.2?}", start_instant.elapsed());
         Ok(())
@@ -725,39 +713,73 @@ impl Ghci {
     fn prune_command_handles(&mut self) {
         self.command_handles.retain(|handle| !handle.is_finished());
     }
-}
 
-/// The mode a `ghci` session is in. This is used to track output, particularly for the error log
-/// (`ghcid.txt`).
-///
-/// Note: The [`Ord`] implementation on this type determines the order in which sections will be
-/// written to the error log.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Mode {
-    /// We're doing something private, like initializing the session, refreshing the list of loaded
-    /// modules, etc.
+    /// Finish a compilation process.
     ///
-    /// Stderr messages sent when the session is in this mode are not written to the error log.
-    Internal,
+    /// This outputs how long the compilation took (since `compilation_start`), runs eval and test
+    /// commands (if compilation succeeded), and writes the error log.
+    #[instrument(skip_all, level = "trace")]
+    async fn finish_compilation(
+        &mut self,
+        compilation_start: Instant,
+        log: &mut CompilationLog,
+        event: LifecycleEvent,
+    ) -> miette::Result<()> {
+        self.run_hooks(event, log).await?;
 
-    /// Compiling, loading, reloading, adding modules. We expect chunks of this output to end with
-    /// a string like this before the prompt:
-    ///
-    /// 1. `Ok, [0-9]+ modules loaded.`
-    /// 2. `Failed, [0-9]+ modules loaded.`
-    Compiling,
-
-    /// Running tests.
-    Testing,
-}
-
-impl Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Mode::Internal => write!(f, "internal"),
-            Mode::Compiling => write!(f, "compilation"),
-            Mode::Testing => write!(f, "test"),
+        if let Some(CompilationResult::Err) = log.result() {
+            tracing::error!(
+                "{} failed in {:.2?}",
+                event.event_noun().first_char_to_ascii_uppercase(),
+                compilation_start.elapsed()
+            );
+        } else {
+            tracing::info!(
+                "{} Finished {} in {:.2?}",
+                "All good!".if_supports_color(Stdout, |text| text.green()),
+                event.event_noun(),
+                compilation_start.elapsed()
+            );
+            // Run the eval commands, if any.
+            self.eval(log).await?;
+            // Run the user-provided test command, if any.
+            self.test(log).await?;
         }
+
+        self.write_error_log(log).await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self), level = "trace")]
+    async fn run_hooks(
+        &mut self,
+        event: LifecycleEvent,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        for hook in self.opts.hooks.select(event) {
+            tracing::info!(command = %hook.command, "Running {hook} command");
+            match &hook.command {
+                hooks::Command::Ghci(command) => {
+                    let start_time = Instant::now();
+                    self.stdin
+                        .run_command(&mut self.stdout, command, log)
+                        .await?;
+                    if let LifecycleEvent::Test = &hook.event {
+                        tracing::info!("Finished running tests in {:.2?}", start_time.elapsed());
+                    }
+                }
+                hooks::Command::Shell(command) => {
+                    command.run_on(&mut self.command_handles).await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[instrument(skip(self), level = "trace")]
+    async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
+        self.error_log.write(log).await
     }
 }
 
