@@ -108,7 +108,6 @@ pub struct WatchOpts {
     #[allow(rustdoc::bare_urls)]
     #[arg(long = "restart-glob")]
     pub restart_globs: Vec<String>,
-
 }
 
 impl WatchOpts {
