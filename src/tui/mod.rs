@@ -73,12 +73,12 @@ pub async fn run_tui(
             (result, buffer)
         });
 
-        let mut tracing_reader = tracing_reader.clone();
-        let mut tracing_future = tokio::spawn(async move {
-            let mut buffer = [0; 1024];
-            let result = tracing_reader.read(&mut buffer).await;
-            (result, buffer)
-        });
+        // let mut tracing_reader = tracing_reader.clone();
+        // let mut tracing_future = tokio::spawn(async move {
+        //     let mut buffer = [0; 1024];
+        //     let result = tracing_reader.read(&mut buffer).await;
+        //     (result, buffer)
+        // });
 
         tokio::select! {
             _ = shutdown.on_shutdown_requested() => {
@@ -99,15 +99,15 @@ pub async fn run_tui(
                 }
             }
 
-            task_result = &mut tracing_future => {
-                let (read_result, buffer) = task_result
-                    .into_diagnostic()
-                    .wrap_err("tracing read task failed to execute to completion")?;
-                read_result
-                    .into_diagnostic()
-                    .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
-                tui.scrollback.extend(buffer);
-            }
+            // task_result = &mut tracing_future => {
+            //     let (read_result, buffer) = task_result
+            //         .into_diagnostic()
+            //         .wrap_err("tracing read task failed to execute to completion")?;
+            //     read_result
+            //         .into_diagnostic()
+            //         .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
+            //     tui.scrollback.extend(buffer);
+            // }
 
             output = event_stream.next() => {
                 let event = output
