@@ -3,6 +3,7 @@ mod terminal;
 use crate::async_buffer_redirect::AsyncBufferRedirect;
 use crate::ShutdownHandle;
 use ansi_to_tui::IntoText;
+use async_dup::{Arc, Mutex};
 use crossterm::event::Event;
 use crossterm::event::EventStream;
 use crossterm::event::KeyCode;
@@ -20,6 +21,9 @@ use std::cmp::min;
 use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
+use tokio_util::compat::Compat;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 #[derive(Default)]
 struct Tui {
@@ -32,14 +36,17 @@ struct Tui {
 /// TODO(evan): Document
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
-    mut ghci_reader: DuplexStream,
+    ghci_reader: DuplexStream,
 ) -> miette::Result<()> {
-    let mut tracing_reader = AsyncBufferRedirect::stderr()
+    let tracing_reader = AsyncBufferRedirect::stderr()
         .into_diagnostic()
         .wrap_err("Failed to capture stderr")?;
 
-    let mut ghci_buffer = [0; 1024];
-    let mut tracing_buffer = [0; 1024];
+    let ghci_reader: Compat<Arc<Mutex<Compat<DuplexStream>>>> =
+        Arc::new(Mutex::new(ghci_reader.compat())).compat();
+
+    let tracing_reader: Compat<Arc<Mutex<Compat<AsyncBufferRedirect>>>> =
+        Arc::new(Mutex::new(tracing_reader.compat())).compat();
 
     let mut terminal = terminal::enter()?;
 
@@ -59,29 +66,47 @@ pub async fn run_tui(
             .wrap_err("Failed to draw to terminal")?;
         render_result?;
 
+        let mut ghci_reader = ghci_reader.clone();
+        let mut ghci_future = tokio::spawn(async move {
+            let mut buffer = [0; 1024];
+            let result = ghci_reader.read(&mut buffer).await;
+            (result, buffer)
+        });
+
+        let mut tracing_reader = tracing_reader.clone();
+        let mut tracing_future = tokio::spawn(async move {
+            let mut buffer = [0; 1024];
+            let result = tracing_reader.read(&mut buffer).await;
+            (result, buffer)
+        });
+
         tokio::select! {
             _ = shutdown.on_shutdown_requested() => {
                 tui.quit = true;
             }
 
-            output = ghci_reader.read(&mut ghci_buffer) => {
-                let n = output
+            task_result = &mut ghci_future => {
+                let (read_result, buffer) = task_result
+                    .into_diagnostic()
+                    .wrap_err("GHCi read task failed to execute to completion")?;
+                let n = read_result
                     .into_diagnostic()
                     .wrap_err("Failed to read bytes from GHCi into TUI buffer")?;
                 if n == 0 {
                     tui.quit = true;
                 } else {
-                    tui.scrollback.extend(ghci_buffer);
-                    ghci_buffer = [0; 1024];
+                    tui.scrollback.extend(buffer);
                 }
             }
 
-            output = tracing_reader.read(&mut tracing_buffer) => {
-                output
+            task_result = &mut tracing_future => {
+                let (read_result, buffer) = task_result
+                    .into_diagnostic()
+                    .wrap_err("tracing read task failed to execute to completion")?;
+                read_result
                     .into_diagnostic()
                     .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
-                tui.scrollback.extend(tracing_buffer);
-                tracing_buffer = [0; 1024];
+                tui.scrollback.extend(buffer);
             }
 
             output = event_stream.next() => {
