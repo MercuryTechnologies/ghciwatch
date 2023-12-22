@@ -1,6 +1,5 @@
 mod terminal;
 
-use crate::async_buffer_redirect::AsyncBufferRedirect;
 use crate::ShutdownHandle;
 use ansi_to_tui::IntoText;
 use crossterm::event::Event;
@@ -33,13 +32,10 @@ struct Tui {
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     mut ghci_reader: DuplexStream,
+    mut tracing_reader: DuplexStream,
 ) -> miette::Result<()> {
-    let mut tracing_reader = AsyncBufferRedirect::stderr()
-        .into_diagnostic()
-        .wrap_err("Failed to capture stderr")?;
-
-    let mut ghci_buffer = [0; 1024];
-    let mut tracing_buffer = [0; 1024];
+    let mut ghci_buffer = [0; crate::buffers::GHCI_BUFFER_CAPACITY];
+    let mut tracing_buffer = [0; crate::buffers::TRACING_BUFFER_CAPACITY];
 
     let mut terminal = terminal::enter()?;
 
