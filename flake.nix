@@ -5,7 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs";
     crane = {
       url = "github:ipetkov/crane";
-      inputs.flake-compat.follows = "flake-compat";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     systems.url = "github:nix-systems/default";
@@ -78,6 +77,7 @@
       "ghc92"
       "ghc94"
       "ghc96"
+      "ghc98"
     ];
   in {
     packages = eachSystem (

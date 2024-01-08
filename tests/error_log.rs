@@ -91,7 +91,7 @@ async fn can_write_error_log_compilation_errors() {
             3 | myIdent = "Uh oh!"
               |           ^^^^^^^^
         "#]],
-        Ghc96 => expect![[r#"
+        Ghc96 | Ghc98 => expect![[r#"
             src/My/Module.hs:3:11: error: [GHC-83865]
                 * Couldn't match type `[Char]' with `()'
                   Expected: ()

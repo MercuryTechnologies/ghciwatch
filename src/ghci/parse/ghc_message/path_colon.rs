@@ -1,13 +1,13 @@
 use camino::Utf8Path;
 use winnow::combinator::terminated;
-use winnow::token::take_till1;
+use winnow::token::take_till;
 use winnow::PResult;
 use winnow::Parser;
 
 /// A filename, followed by a `:`.
 pub fn path_colon<'i>(input: &mut &'i str) -> PResult<&'i Utf8Path> {
     // TODO: Support Windows drive letters.
-    terminated(take_till1((':', '\n')), ":")
+    terminated(take_till(1.., (':', '\n')), ":")
         .parse_next(input)
         .map(Utf8Path::new)
 }
