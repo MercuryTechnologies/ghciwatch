@@ -4,11 +4,10 @@
   inputs,
 }:
 lib.makeScope newScope (
-  self: let
-    packagesFromDirectory = (import ./packagesFromDirectory.nix) {
-      inherit lib;
+  self:
+    {inherit inputs;}
+    // (lib.packagesFromDirectoryRecursive {
       inherit (self) callPackage;
-    };
-  in
-    {inherit inputs;} // (packagesFromDirectory ./packages)
+      directory = ./packages;
+    })
 )

@@ -13,6 +13,7 @@ mod matcher;
 pub use matcher::BaseMatcher;
 pub use matcher::IntoMatcher;
 pub use matcher::Matcher;
+pub use matcher::OptionMatcher;
 pub use matcher::OrMatcher;
 
 mod fs;

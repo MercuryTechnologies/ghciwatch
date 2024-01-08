@@ -9,7 +9,6 @@ use winnow::combinator::fold_repeat;
 use winnow::prelude::*;
 
 mod position;
-pub use position::Position;
 pub use position::PositionRange;
 
 mod severity;
