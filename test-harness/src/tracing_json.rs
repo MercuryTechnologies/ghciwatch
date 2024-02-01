@@ -80,7 +80,7 @@ impl TryFrom<JsonEvent> for Event {
                 .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to parse tracing level: {}", event.level))?,
             message: event.fields.message,
-            fields: event.fields.rest,
+            fields: event.fields.fields,
             target: event.target,
             span: event.span,
             spans: event.spans,
@@ -106,7 +106,7 @@ pub struct Span {
     pub name: String,
     /// The span's fields; extra data attached to this span.
     #[serde(flatten)]
-    pub rest: HashMap<String, serde_json::Value>,
+    pub fields: HashMap<String, serde_json::Value>,
 }
 
 impl Span {
@@ -114,14 +114,14 @@ impl Span {
     pub fn new(name: impl Display) -> Self {
         Self {
             name: name.to_string(),
-            rest: Default::default(),
+            fields: Default::default(),
         }
     }
 }
 
 impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.name, display_map(&self.rest))
+        write!(f, "{}{}", self.name, display_map(&self.fields))
     }
 }
 
@@ -129,7 +129,7 @@ impl Display for Span {
 struct Fields {
     message: String,
     #[serde(flatten)]
-    rest: HashMap<String, serde_json::Value>,
+    fields: HashMap<String, serde_json::Value>,
 }
 
 fn display_map(hashmap: &HashMap<String, serde_json::Value>) -> String {

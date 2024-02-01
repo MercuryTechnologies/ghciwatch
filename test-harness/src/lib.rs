@@ -15,6 +15,7 @@ pub use matcher::IntoMatcher;
 pub use matcher::Matcher;
 pub use matcher::OptionMatcher;
 pub use matcher::OrMatcher;
+pub use matcher::SpanMatcher;
 
 mod fs;
 pub use fs::Fs;
