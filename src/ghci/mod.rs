@@ -750,7 +750,7 @@ impl Ghci {
         Ok(())
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(skip_all, fields(%event), level = "trace")]
     async fn run_hooks(
         &mut self,
         event: LifecycleEvent,
