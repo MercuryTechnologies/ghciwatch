@@ -2,8 +2,10 @@ use std::time::Duration;
 
 use test_harness::test;
 use test_harness::BaseMatcher;
+use test_harness::Fs;
 use test_harness::GhciWatch;
 use test_harness::GhciWatchBuilder;
+use test_harness::SpanMatcher;
 
 /// Test that `ghciwatch` can run its lifecycle hooks.
 ///
@@ -143,4 +145,100 @@ async fn shell_hook(session: &mut GhciWatch, hook: &str, index: &str) {
         .wait_for_path(wait_duration, &session.path(format!("{hook}-{index}")))
         .await
         .unwrap();
+}
+
+/// Test that `ghciwatch` lifecycle hooks can observe the error log.
+///
+/// That is, the error log is updated before `--after-startup-shell` and `--after-reload-shell`.
+#[test]
+async fn hooks_can_observe_error_log() {
+    let module_path = "src/MyModule.hs";
+    let after_startup = shell_requote("grep -q '^src/MyModule.hs:4:11' ghcid.txt");
+    let after_reload = shell_requote("grep -q '^src/MyModule.hs:5:11' ghcid.txt");
+    let after_restart = shell_requote("grep -q '^src/MyCoolModule.hs:1:8' ghcid.txt");
+
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .before_start(move |path| async move {
+            Fs::new()
+                .replace(path.join(module_path), "example :: String", "example :: ()")
+                .await
+        })
+        .with_args([
+            "--errors",
+            "ghcid.txt",
+            "--after-startup-shell",
+            &after_startup,
+            "--after-reload-shell",
+            &after_reload,
+            "--after-restart-shell",
+            &after_restart,
+        ])
+        .with_tracing_filter("ghciwatch::ghci[run_hooks]=trace")
+        .start()
+        .await
+        .expect("ghciwatch starts");
+
+    session
+        .wait_for_log(
+            BaseMatcher::message("Running after-startup command")
+                .with_field("command", &regex::escape(&after_startup)),
+        )
+        .await
+        .unwrap();
+    session
+        .wait_for_log(
+            BaseMatcher::message("grep finished successfully")
+                .in_spans([SpanMatcher::new("run_hooks").with_field("event", "after-startup")]),
+        )
+        .await
+        .unwrap();
+
+    session.wait_until_ready().await.unwrap();
+
+    let module_path = session.path(module_path);
+
+    // Add a newline to change the line numbers. This makes each hook unique.
+    session
+        .fs()
+        .replace(&module_path, "example :: ()", "\nexample :: ()")
+        .await
+        .unwrap();
+
+    session
+        .wait_for_log(
+            BaseMatcher::message("Running after-reload command")
+                .with_field("command", &regex::escape(&after_reload)),
+        )
+        .await
+        .unwrap();
+    session
+        .wait_for_log(
+            BaseMatcher::message("grep finished successfully")
+                .in_spans([SpanMatcher::new("run_hooks").with_field("event", "after-reload")]),
+        )
+        .await
+        .unwrap();
+
+    // Rename the module.
+    let new_path = session.path("src/MyCoolModule.hs");
+    session.fs().rename(module_path, new_path).await.unwrap();
+
+    session
+        .wait_for_log(
+            BaseMatcher::message("Running after-restart command")
+                .with_field("command", &regex::escape(&after_restart)),
+        )
+        .await
+        .unwrap();
+    session
+        .wait_for_log(
+            BaseMatcher::message("grep finished successfully")
+                .in_spans([SpanMatcher::new("run_hooks").with_field("event", "after-restart")]),
+        )
+        .await
+        .unwrap();
+}
+
+fn shell_requote(cmd: &str) -> String {
+    shell_words::join(shell_words::split(cmd).unwrap())
 }

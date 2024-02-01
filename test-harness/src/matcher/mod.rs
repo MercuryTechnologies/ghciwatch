@@ -2,6 +2,12 @@ use std::fmt::Display;
 
 use crate::Event;
 
+mod span_matcher;
+pub use span_matcher::SpanMatcher;
+
+mod field_matcher;
+pub(crate) use field_matcher::FieldMatcher;
+
 mod into_matcher;
 pub use into_matcher::IntoMatcher;
 

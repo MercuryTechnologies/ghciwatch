@@ -1,21 +1,22 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use itertools::Itertools;
 use regex::Regex;
-use serde_json::Value;
 
 use crate::Event;
 use crate::Matcher;
+
+use super::FieldMatcher;
+use super::SpanMatcher;
 
 /// An [`Event`] matcher.
 #[derive(Clone)]
 pub struct BaseMatcher {
     message: Regex,
     target: Option<String>,
-    leaf_span: Option<String>,
-    spans: Vec<String>,
-    fields: HashMap<String, Regex>,
+    leaf_span: Option<SpanMatcher>,
+    spans: Vec<SpanMatcher>,
+    fields: FieldMatcher,
 }
 
 impl BaseMatcher {
@@ -30,8 +31,8 @@ impl BaseMatcher {
             message,
             target: None,
             leaf_span: None,
-            spans: Vec::new(),
-            fields: HashMap::new(),
+            spans: Default::default(),
+            fields: Default::default(),
         }
     }
 
@@ -99,7 +100,7 @@ impl BaseMatcher {
     ///
     /// Note that this will overwrite any previously-set spans.
     pub fn in_leaf_span(mut self, span: &str) -> Self {
-        self.leaf_span = Some(span.to_owned());
+        self.leaf_span = Some(SpanMatcher::new(span));
         self
     }
 
@@ -112,8 +113,8 @@ impl BaseMatcher {
     /// "anchored" or uninterrupted.
     ///
     /// Note that this will overwrite any previously-set spans.
-    pub fn in_spans(mut self, spans: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        self.spans = spans.into_iter().map(|s| s.as_ref().to_owned()).collect();
+    pub fn in_spans(mut self, spans: impl IntoIterator<Item = impl Into<SpanMatcher>>) -> Self {
+        self.spans = spans.into_iter().map(|s| s.into()).collect();
         self
     }
 
@@ -134,10 +135,7 @@ impl BaseMatcher {
     ///
     /// If the `value_regex` fails to compile.
     pub fn with_field(mut self, name: &str, value_regex: &str) -> Self {
-        self.fields.insert(
-            name.to_owned(),
-            Regex::new(value_regex).expect("Value regex failed to compile"),
-        );
+        self.fields = self.fields.with_field(name, value_regex);
         self
     }
 
@@ -176,18 +174,11 @@ impl Display for BaseMatcher {
         }
 
         if !self.spans.is_empty() {
-            write!(f, " in spans {:?}", self.spans.join(", "))?;
+            write!(f, " in spans {:?}", self.spans.iter().join(", "))?;
         }
 
         if !self.fields.is_empty() {
-            write!(
-                f,
-                " with fields {}",
-                self.fields
-                    .iter()
-                    .map(|(k, v)| format!("{k}={v:?}"))
-                    .join(", ")
-            )?;
+            write!(f, " {}", self.fields)?;
         }
 
         Ok(())
@@ -202,11 +193,11 @@ impl Matcher for BaseMatcher {
 
         if !self.spans.is_empty() {
             let mut spans = event.spans();
-            for expected_name in &self.spans {
+            for span_matcher in &self.spans {
                 loop {
                     match spans.next() {
                         Some(span) => {
-                            if &span.name == expected_name {
+                            if span_matcher.matches(span) {
                                 // Found this expected span, move on to the next one.
                                 break;
                             }
@@ -223,9 +214,9 @@ impl Matcher for BaseMatcher {
             }
         }
 
-        if let Some(leaf_span) = &self.leaf_span {
+        if let Some(leaf_span_matcher) = &self.leaf_span {
             match event.spans().last() {
-                Some(actual_leaf_span) if &actual_leaf_span.name == leaf_span => {}
+                Some(leaf_span) if leaf_span_matcher.matches(leaf_span) => {}
                 _ => {
                     // Expected a leaf span, but the event is missing a leaf span or doesn't have
                     // the correct leaf span.
@@ -240,32 +231,8 @@ impl Matcher for BaseMatcher {
             }
         }
 
-        for (name, value_regex) in &self.fields {
-            let value = event.fields.get(name);
-            match value {
-                None => {
-                    // We expected the field to be present.
-                    return Ok(false);
-                }
-                Some(value) => {
-                    match value {
-                        Value::Null
-                        | Value::Bool(_)
-                        | Value::Number(_)
-                        | Value::Array(_)
-                        | Value::Object(_) => {
-                            // We expected the value to be a string.
-                            return Ok(false);
-                        }
-                        Value::String(value) => {
-                            if !value_regex.is_match(value) {
-                                // We expected the regex to match.
-                                return Ok(false);
-                            }
-                        }
-                    }
-                }
-            }
+        if !self.fields.matches(|name| event.fields.get(name)) {
+            return Ok(false);
         }
 
         Ok(true)
@@ -293,11 +260,11 @@ mod tests {
             target: "ghciwatch::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }),
             spans: vec![Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }],
         };
         assert!(matcher.matches(&event).unwrap());
@@ -395,11 +362,11 @@ mod tests {
             target: "ghciwatch::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }),
             spans: vec![Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }],
         };
 
@@ -494,7 +461,7 @@ mod tests {
                 target: "ghciwatch::ghci::error_log".into(),
                 span: Some(Span {
                     name: "error_log_write".into(),
-                    rest: [(
+                    fields: [(
                         "compilation_summary".into(),
                         "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
                     )]
@@ -523,7 +490,7 @@ mod tests {
                     Span::new("reload"),
                     Span {
                         name: "error_log_write".into(),
-                        rest: [(
+                        fields: [(
                             "compilation_summary".into(),
                             "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
                         )]
@@ -552,7 +519,7 @@ mod tests {
                     Span::new("on_action"),
                     Span {
                         name: "error_log_write".into(),
-                        rest: [(
+                        fields: [(
                             "compilation_summary".into(),
                             "Some(CompilationSummary { result: Ok, modules_loaded: 4 })".into()
                         )]

@@ -489,10 +489,12 @@ impl Ghci {
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
         self.initialize(&mut log).await?;
+
+        // Allow hooks to consume the error log by updating it before running the hooks.
+        self.write_error_log(&log).await?;
         self.run_hooks(LifecycleEvent::Restart(hooks::When::After), &mut log)
             .await?;
 
-        self.write_error_log(&log).await?;
         Ok(())
     }
 
@@ -725,6 +727,9 @@ impl Ghci {
         log: &mut CompilationLog,
         event: LifecycleEvent,
     ) -> miette::Result<()> {
+        // Allow hooks to consume the error log by updating it before running the hooks.
+        self.write_error_log(log).await?;
+
         self.run_hooks(event, log).await?;
 
         if let Some(CompilationResult::Err) = log.result() {
@@ -746,11 +751,10 @@ impl Ghci {
             self.test(log).await?;
         }
 
-        self.write_error_log(log).await?;
         Ok(())
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(skip_all, fields(%event), level = "trace")]
     async fn run_hooks(
         &mut self,
         event: LifecycleEvent,
