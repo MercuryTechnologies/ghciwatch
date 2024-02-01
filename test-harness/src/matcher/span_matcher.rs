@@ -33,15 +33,7 @@ impl SpanMatcher {
 
     /// Determine if this matcher matches the given [`Span`].
     pub fn matches(&self, span: &Span) -> bool {
-        if span.name != self.name {
-            return false;
-        }
-
-        if !self.fields.matches(|name| span.fields.get(name)) {
-            return false;
-        }
-
-        true
+        span.name == self.name && self.fields.matches(|name| span.fields.get(name))
     }
 }
 
