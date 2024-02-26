@@ -29,7 +29,7 @@ impl<'opts> TracingOpts<'opts> {
     /// commmand-line interface arguments as [`Opts`].
     pub fn from_cli(opts: &'opts Opts) -> Self {
         Self {
-            filter_directives: &opts.logging.tracing_filter,
+            filter_directives: &opts.logging.log_filter,
             trace_spans: &opts.logging.trace_spans,
             json_log_path: opts.logging.log_json.as_deref(),
         }

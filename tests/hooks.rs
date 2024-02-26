@@ -173,7 +173,7 @@ async fn hooks_can_observe_error_log() {
             "--after-restart-shell",
             &after_restart,
         ])
-        .with_tracing_filter("ghciwatch::ghci[run_hooks]=trace")
+        .with_log_filter("ghciwatch::ghci[run_hooks]=trace")
         .start()
         .await
         .expect("ghciwatch starts");

@@ -131,7 +131,7 @@ impl WatchOpts {
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "Logging options")]
 pub struct LoggingOpts {
-    /// Tracing filter.
+    /// Log message filter.
     ///
     /// Can be any of "error", "warn", "info", "debug", or "trace". Supports more granular
     /// filtering, as well.
@@ -143,7 +143,7 @@ pub struct LoggingOpts {
     ///
     /// A nice value is "ghciwatch=debug".
     #[arg(long, default_value = "ghciwatch=info")]
-    pub tracing_filter: String,
+    pub log_filter: String,
 
     /// How to display backtraces in error messages.
     #[arg(long, env = "RUST_BACKTRACE", default_value = "0")]
