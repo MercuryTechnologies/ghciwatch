@@ -42,7 +42,7 @@ pub struct GhciWatchBuilder {
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
     default_timeout: Duration,
     startup_timeout: Duration,
-    tracing_filters: Vec<String>,
+    log_filters: Vec<String>,
 }
 
 impl GhciWatchBuilder {
@@ -57,7 +57,7 @@ impl GhciWatchBuilder {
             before_start: None,
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
-            tracing_filters: Default::default(),
+            log_filters: Default::default(),
         }
     }
 
@@ -146,20 +146,19 @@ impl GhciWatchBuilder {
         GhciWatch::from_builder(self).await
     }
 
-    /// Add a `--tracing-filter` clause to the `ghciwatch` invocation.
-    pub fn with_tracing_filter(mut self, tracing_filter: impl AsRef<str>) -> Self {
-        self.tracing_filters
-            .push(tracing_filter.as_ref().to_owned());
+    /// Add a `--log-filter` clause to the `ghciwatch` invocation.
+    pub fn with_log_filter(mut self, log_filter: impl AsRef<str>) -> Self {
+        self.log_filters.push(log_filter.as_ref().to_owned());
         self
     }
 
-    /// Add multiple `--tracing-filter` clauses to the `ghciwatch` invocation.
-    pub fn with_tracing_filters(
+    /// Add multiple `--log-filter` clauses to the `ghciwatch` invocation.
+    pub fn with_log_filters(
         mut self,
-        tracing_filters: impl IntoIterator<Item = impl AsRef<str>>,
+        log_filters: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> Self {
-        self.tracing_filters
-            .extend(tracing_filters.into_iter().map(|s| s.as_ref().to_owned()));
+        self.log_filters
+            .extend(log_filters.into_iter().map(|s| s.as_ref().to_owned()));
         self
     }
 }
@@ -293,9 +292,9 @@ impl GhciWatch {
             .chain(builder.make_args.iter().map(|s| s.as_str())),
         );
 
-        let tracing_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
+        let log_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
             .into_iter()
-            .chain(builder.tracing_filters.iter().map(|s| s.as_ref()))
+            .chain(builder.log_filters.iter().map(|s| s.as_ref()))
             .join(",");
 
         let command = ClonableCommand::new(test_bin::get_test_bin("ghciwatch").get_program())
@@ -306,8 +305,8 @@ impl GhciWatch {
                 &repl_command,
                 "--before-startup-shell",
                 "hpack --force .",
-                "--tracing-filter",
-                &tracing_filters,
+                "--log-filter",
+                &log_filters,
                 "--trace-spans",
                 "new,close",
                 "--poll",
