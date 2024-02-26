@@ -38,6 +38,10 @@ pub struct Opts {
     #[arg(long, alias = "allow-eval")]
     pub enable_eval: bool,
 
+    /// Clear the screen before reloads and restarts.
+    #[arg(long)]
+    pub clear: bool,
+
     /// Lifecycle hooks and commands to run at various points.
     #[command(flatten)]
     pub hooks: crate::hooks::HookOpts,

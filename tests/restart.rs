@@ -22,9 +22,9 @@ async fn can_restart_after_module_move() {
             &module_path,
             indoc!(
                 "module My.Module (myIdent) where
-            myIdent :: ()
-            myIdent = ()
-            "
+                myIdent :: ()
+                myIdent = ()
+                "
             ),
         )
         .await

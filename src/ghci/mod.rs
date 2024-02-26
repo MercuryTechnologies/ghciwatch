@@ -108,6 +108,8 @@ pub struct GhciOpts {
     pub stdout_writer: GhciWriter,
     /// Where to write what `ghci` emits to `stderr`. Inherits parent's `stderr` by default.
     pub stderr_writer: GhciWriter,
+    /// Whether to clear the screen before reloads and restarts.
+    pub clear: bool,
 }
 
 impl GhciOpts {
@@ -133,7 +135,18 @@ impl GhciOpts {
             no_interrupt_reloads: opts.no_interrupt_reloads,
             stdout_writer: GhciWriter::stdout(),
             stderr_writer: GhciWriter::stderr(),
+            clear: opts.clear,
         })
+    }
+
+    #[instrument(skip_all, level = "trace")]
+    fn clear(&self) {
+        if self.clear {
+            tracing::trace!("Clearing the screen");
+            if let Err(err) = clearscreen::clear() {
+                tracing::debug!("Failed to clear the terminal: {err}");
+            }
+        }
     }
 }
 
@@ -427,6 +440,7 @@ impl Ghci {
         let _ = kind_sender.send(actions.kind());
 
         if actions.needs_restart() {
+            self.opts.clear();
             tracing::info!(
                 "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
@@ -440,6 +454,7 @@ impl Ghci {
         let mut log = CompilationLog::default();
 
         if actions.needs_add_or_reload() {
+            self.opts.clear();
             self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
                 .await?;
         }
