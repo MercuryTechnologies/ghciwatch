@@ -34,13 +34,13 @@ async fn main() -> miette::Result<()> {
     if opts.tui {
         let tracing_reader =
             maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
-        let (tui_writer, tui_reader) = tokio::io::duplex(1024);
-        let tui_writer = GhciWriter::duplex_stream(tui_writer);
-        ghci_opts.stdout_writer = tui_writer.clone();
-        ghci_opts.stderr_writer = tui_writer.clone();
+        let (ghci_writer, ghci_reader) = tokio::io::duplex(1024);
+        let ghci_writer = GhciWriter::duplex_stream(ghci_writer);
+        ghci_opts.stdout_writer = ghci_writer.clone();
+        ghci_opts.stderr_writer = ghci_writer.clone();
         manager
             .spawn("run_tui", |handle| {
-                run_tui(handle, tui_reader, tracing_reader)
+                run_tui(handle, ghci_reader, tracing_reader)
             })
             .await;
     }
