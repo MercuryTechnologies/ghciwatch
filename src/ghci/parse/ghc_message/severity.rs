@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
 use winnow::combinator::dispatch;
+use winnow::combinator::empty;
 use winnow::combinator::fail;
-use winnow::combinator::success;
 use winnow::combinator::terminated;
-use winnow::token::take_until1;
+use winnow::token::take_until;
 use winnow::PResult;
 use winnow::Parser;
 
@@ -29,9 +29,9 @@ impl Display for Severity {
 /// Parse a severity followed by a `:`, either `Warning` or `Error`.
 pub fn parse_severity_colon(input: &mut &str) -> PResult<Severity> {
     terminated(
-        dispatch! {take_until1(":");
-            "warning"|"Warning" => success(Severity::Warning),
-            "error"|"Error" => success(Severity::Error),
+        dispatch! { take_until(1.., ":");
+            "warning"|"Warning" => empty.value(Severity::Warning),
+            "error"|"Error" => empty.value(Severity::Error),
             _ => fail,
         },
         ":",

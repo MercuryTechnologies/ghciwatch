@@ -5,7 +5,7 @@ use std::fmt::Display;
 use camino::Utf8PathBuf;
 use miette::miette;
 use winnow::combinator::alt;
-use winnow::combinator::fold_repeat;
+use winnow::combinator::repeat;
 use winnow::prelude::*;
 
 mod position;
@@ -164,7 +164,7 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
         Ignore,
     }
 
-    fold_repeat(
+    repeat(
         0..,
         alt((
             compiling.map(Item::One),
@@ -179,16 +179,15 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
                 Item::Ignore
             }),
         )),
-        Vec::new,
-        |mut messages, item| {
-            match item {
-                Item::One(item) => messages.push(item),
-                Item::Many(items) => messages.extend(items),
-                Item::Ignore => {}
-            }
-            messages
-        },
     )
+    .fold(Vec::new, |mut messages, item| {
+        match item {
+            Item::One(item) => messages.push(item),
+            Item::Many(items) => messages.extend(items),
+            Item::Ignore => {}
+        }
+        messages
+    })
     .parse_next(input)
 }
 

@@ -11,7 +11,7 @@ use winnow::error::ErrMode;
 use winnow::error::StrContext;
 use winnow::error::StrContextValue;
 use winnow::token::take_till;
-use winnow::token::take_until1;
+use winnow::token::take_until;
 use winnow::PResult;
 use winnow::Parser;
 
@@ -59,7 +59,7 @@ pub fn module_and_files(input: &mut &str) -> PResult<Module> {
     // Parse this bit: `( Foo.hs, Foo.o, interpreted )`
     let _ = "( ".parse_next(input)?;
     let mut paths: Vec<_> = repeat(0.., (take_till(1.., (',', '\n')), ", ")).parse_next(input)?;
-    let final_path = (take_until1(" )"), " )").parse_next(input)?;
+    let final_path = (take_until(1.., " )"), " )").parse_next(input)?;
     paths.push(final_path);
 
     let mut module_path = None;
