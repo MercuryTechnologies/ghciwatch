@@ -34,7 +34,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 aho-corasick = "1.0.2"
-ansi-to-tui = "4.0.0"
+ansi-to-tui = { git = "https://github.com/9999years/ansi-to-tui.git", branch = "fix-reset" }
 async-dup = "1.2.4"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
