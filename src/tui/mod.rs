@@ -16,7 +16,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use std::cmp::min;
-use tokio::io::AsyncReadExt;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::BufReader;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
 use tracing::instrument;
@@ -34,11 +35,11 @@ struct Tui {
 #[instrument(level = "debug", skip_all)]
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
-    mut ghci_reader: DuplexStream,
-    mut tracing_reader: DuplexStream,
+    ghci_reader: DuplexStream,
+    tracing_reader: DuplexStream,
 ) -> miette::Result<()> {
-    let mut ghci_buffer = [0; crate::buffers::GHCI_BUFFER_CAPACITY];
-    let mut tracing_buffer = [0; crate::buffers::TRACING_BUFFER_CAPACITY];
+    let mut ghci_reader = BufReader::new(ghci_reader).lines();
+    let mut tracing_reader = BufReader::new(tracing_reader).lines();
 
     let mut terminal = terminal::enter()?;
 
@@ -65,24 +66,25 @@ pub async fn run_tui(
                 tui.quit = true;
             }
 
-            output = ghci_reader.read(&mut ghci_buffer) => {
-                let n = output
-                    .into_diagnostic()
-                    .wrap_err("Failed to read bytes from GHCi into TUI buffer")?;
-                if n == 0 {
-                    tui.quit = true;
-                } else {
-                    tui.scrollback.extend(ghci_buffer);
-                    ghci_buffer = [0; 1024];
+            line = ghci_reader.next_line() => {
+                let line = line.into_diagnostic().wrap_err("Failed to read line from GHCI")?;
+                match line {
+                    Some(line) => {
+                        tui.scrollback.extend(line.bytes());
+                        tui.scrollback.push(b'\n');
+                    },
+                    None => {
+                        tui.quit = true;
+                    },
                 }
             }
 
-            output = tracing_reader.read(&mut tracing_buffer) => {
-                output
-                    .into_diagnostic()
-                    .wrap_err("Failed to read bytes from tracing into TUI buffer")?;
-                tui.scrollback.extend(tracing_buffer);
-                tracing_buffer = [0; 1024];
+            line = tracing_reader.next_line() => {
+                let line = line.into_diagnostic().wrap_err("Failed to read line from tracing")?;
+                if let Some(line) = line {
+                    tui.scrollback.extend(line.bytes());
+                    tui.scrollback.push(b'\n');
+                }
             }
 
             output = event_stream.next() => {
