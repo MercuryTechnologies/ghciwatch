@@ -22,7 +22,14 @@ pub const TRACING_BUFFER_CAPACITY: usize = 1024;
 
 /// Size of a buffer for `ghci` output. Used to implement the TUI.
 pub const GHCI_BUFFER_CAPACITY: usize = 1024;
+<<<<<<< HEAD
 
 /// Initial capacity for the TUI scrollback buffer, containing data written from `ghci` and
 /// `tracing` log messages.
 pub const TUI_SCROLLBACK_CAPACITY: usize = 16 * 1024;
+||||||| parent of 315af77 (Cleanup)
+=======
+
+/// Size of the scrollback buffer for TUI mode.
+pub const TERMINAL_BUFFER_CAPACITY: usize = 16384;
+>>>>>>> 315af77 (Cleanup)
