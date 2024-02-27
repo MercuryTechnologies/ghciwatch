@@ -8,10 +8,10 @@ use winnow::ascii::line_ending;
 use winnow::ascii::space0;
 use winnow::combinator::alt;
 use winnow::combinator::eof;
-use winnow::combinator::fold_repeat;
 use winnow::combinator::opt;
 use winnow::combinator::peek;
-use winnow::combinator::repeat_till0;
+use winnow::combinator::repeat;
+use winnow::combinator::repeat_till;
 use winnow::Located;
 use winnow::PResult;
 use winnow::Parser;
@@ -117,22 +117,21 @@ fn eval_commands(input: &mut Located<&str>) -> PResult<VecDeque<ByteSpanCommand>
         Ignore,
     }
 
-    fold_repeat(
+    repeat(
         0..,
         alt((
             line_eval_command.map(Item::Command),
             multiline_eval_command.map(Item::Command),
             rest_of_line.map(|_| Item::Ignore),
         )),
-        VecDeque::new,
-        |mut commands, item| {
-            match item {
-                Item::Command(command) => commands.push_back(command),
-                Item::Ignore => {}
-            }
-            commands
-        },
     )
+    .fold(VecDeque::new, |mut commands, item| {
+        match item {
+            Item::Command(command) => commands.push_back(command),
+            Item::Ignore => {}
+        }
+        commands
+    })
     .parse_next(input)
 }
 
@@ -168,7 +167,7 @@ fn multiline_eval_command(input: &mut Located<&str>) -> PResult<ByteSpanCommand>
         (space0, "<$ -}").void().parse_next(input)
     }
     let (command, span) =
-        repeat_till0::<_, _, (), _, _, _, _>(rest_of_line, peek(multiline_eval_end))
+        repeat_till::<_, _, (), _, _, _, _>(0.., rest_of_line, peek(multiline_eval_end))
             .recognize()
             .with_span()
             .parse_next(input)?;

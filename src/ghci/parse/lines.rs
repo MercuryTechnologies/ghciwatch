@@ -1,5 +1,5 @@
 use winnow::ascii::line_ending;
-use winnow::ascii::not_line_ending;
+use winnow::ascii::till_line_ending;
 use winnow::combinator::alt;
 use winnow::combinator::eof;
 use winnow::error::ContextError;
@@ -33,7 +33,7 @@ where
     <I as Stream>::Token: Clone,
     <I as Stream>::Slice: SliceLen,
 {
-    let line = not_line_ending.parse_next(input)?;
+    let line = till_line_ending.parse_next(input)?;
     let ending = alt((line_ending, eof)).parse_next(input)?;
 
     if line.slice_len() == 0 && ending.slice_len() == 0 {
