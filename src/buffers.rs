@@ -16,3 +16,9 @@ pub const VEC_BUFFER_CAPACITY: usize = 1024;
 
 /// If we need to split a codepiont in half, we know it won't have more than 4 bytes total.
 pub const SPLIT_UTF8_CODEPOINT_CAPACITY: usize = 4;
+
+/// Size of a buffer for tracing output. Used to implement the TUI.
+pub const TRACING_BUFFER_CAPACITY: usize = 1024;
+
+/// Size of a buffer for `ghci` output. Used to implement the TUI.
+pub const GHCI_BUFFER_CAPACITY: usize = 1024;

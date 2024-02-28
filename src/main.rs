@@ -23,7 +23,7 @@ async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let mut opts = cli::Opts::parse();
     opts.init()?;
-    TracingOpts::from_cli(&opts).install()?;
+    let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
 
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
 
@@ -32,12 +32,16 @@ async fn main() -> miette::Result<()> {
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
     if opts.tui {
-        let (tui_writer, tui_reader) = tokio::io::duplex(1024);
-        let tui_writer = GhciWriter::duplex_stream(tui_writer);
-        ghci_opts.stdout_writer = tui_writer.clone();
-        ghci_opts.stderr_writer = tui_writer.clone();
+        let tracing_reader =
+            maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
+        let (ghci_writer, ghci_reader) = tokio::io::duplex(1024);
+        let ghci_writer = GhciWriter::duplex_stream(ghci_writer);
+        ghci_opts.stdout_writer = ghci_writer.clone();
+        ghci_opts.stderr_writer = ghci_writer.clone();
         manager
-            .spawn("run_tui", |handle| run_tui(handle, tui_reader))
+            .spawn("run_tui", |handle| {
+                run_tui(handle, ghci_reader, tracing_reader)
+            })
             .await;
     }
     manager
