@@ -106,7 +106,8 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
     let text = tui.scrollback.into_text().into_diagnostic()?;
 
-    let scroll_offset = u16::try_from(tui.scroll_offset).unwrap();
+    let scroll_offset = u16::try_from(tui.scroll_offset)
+        .expect("Failed to convert `scroll_offset` from usize to u16");
 
     Paragraph::new(text)
         .wrap(Wrap::default())
