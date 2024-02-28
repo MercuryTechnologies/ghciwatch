@@ -32,10 +32,13 @@ impl DerefMut for TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let result = exit().wrap_err("Failed to exit terminal during drop");
-        // Ignore the `Result` if we're already panicking; aborting is undesirable
-        if !std::thread::panicking() {
-            result.unwrap();
+        if let Err(error) = exit().wrap_err("Failed to exit terminal during drop") {
+            if std::thread::panicking() {
+                // Ignore the `Result` if we're already panicking; aborting is undesirable.
+                tracing::error!("{error}");
+            } else {
+                panic!("{error}");
+            }
         }
     }
 }
