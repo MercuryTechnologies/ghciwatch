@@ -20,6 +20,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
 
+/// State data for drawing the TUI.
 #[derive(Default)]
 struct Tui {
     quit: bool,
@@ -28,7 +29,7 @@ struct Tui {
     scroll_offset: usize,
 }
 
-/// TODO(evan): Document
+/// Start the terminal event loop, reading output from the given readers.
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     mut ghci_reader: DuplexStream,

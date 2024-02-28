@@ -12,6 +12,7 @@ use std::panic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+/// A wrapper around a [`Terminal`] that disables the terminal's raw mode when it's dropped.
 pub struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
@@ -43,8 +44,12 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// Are we currently inside a raw-mode terminal?
+///
+/// This helps us avoid entering or exiting raw-mode twice.
 static INSIDE: AtomicBool = AtomicBool::new(false);
 
+/// Enter raw-mode for the terminal on stdout, set up a panic hook, etc.
 pub fn enter() -> miette::Result<TerminalGuard> {
     use event::KeyboardEnhancementFlags as KEF;
 
@@ -89,6 +94,7 @@ pub fn enter() -> miette::Result<TerminalGuard> {
     Ok(TerminalGuard { terminal })
 }
 
+/// Exits terminal raw-mode.
 pub fn exit() -> miette::Result<()> {
     if !INSIDE.load(Ordering::SeqCst) {
         return Ok(());
