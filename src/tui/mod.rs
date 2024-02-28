@@ -19,6 +19,7 @@ use std::cmp::min;
 use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
+use tracing::instrument;
 
 /// State data for drawing the TUI.
 #[derive(Default)]
@@ -30,6 +31,7 @@ struct Tui {
 }
 
 /// Start the terminal event loop, reading output from the given readers.
+#[instrument(level = "debug", skip_all)]
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     mut ghci_reader: DuplexStream,
@@ -96,6 +98,7 @@ pub async fn run_tui(
     Ok(())
 }
 
+#[instrument(level = "trace", skip_all)]
 fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
     if area.width == 0 || area.height == 0 {
         return Ok(());
@@ -115,6 +118,7 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
 const SCROLL_AMOUNT: usize = 1;
 
+#[instrument(level = "trace", skip(tui))]
 fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {
     match event {
         // TODO(evan): Scrolling is excruciatingly slow

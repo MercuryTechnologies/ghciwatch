@@ -11,6 +11,7 @@ use std::ops::DerefMut;
 use std::panic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use tracing::instrument;
 
 /// A wrapper around a [`Terminal`] that disables the terminal's raw mode when it's dropped.
 pub struct TerminalGuard {
@@ -50,6 +51,7 @@ impl Drop for TerminalGuard {
 static INSIDE: AtomicBool = AtomicBool::new(false);
 
 /// Enter raw-mode for the terminal on stdout, set up a panic hook, etc.
+#[instrument(level = "debug")]
 pub fn enter() -> miette::Result<TerminalGuard> {
     use event::KeyboardEnhancementFlags as KEF;
 
@@ -95,6 +97,7 @@ pub fn enter() -> miette::Result<TerminalGuard> {
 }
 
 /// Exits terminal raw-mode.
+#[instrument(level = "debug")]
 pub fn exit() -> miette::Result<()> {
     if !INSIDE.load(Ordering::SeqCst) {
         return Ok(());
