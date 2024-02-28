@@ -1,6 +1,7 @@
 use crossterm::cursor;
 use crossterm::event;
 use crossterm::terminal;
+use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use ratatui::prelude::CrosstermBackend;
@@ -55,7 +56,11 @@ static INSIDE: AtomicBool = AtomicBool::new(false);
 pub fn enter() -> miette::Result<TerminalGuard> {
     use event::KeyboardEnhancementFlags as KEF;
 
-    INSIDE.store(true, Ordering::SeqCst);
+    if INSIDE.load(Ordering::SeqCst) {
+        return Err(miette!(
+            "Cannot enter raw mode; the terminal is already set up"
+        ));
+    }
 
     let mut stdout = std::io::stdout();
 
@@ -92,6 +97,8 @@ pub fn enter() -> miette::Result<TerminalGuard> {
     let terminal = Terminal::new(backend)
         .into_diagnostic()
         .wrap_err("Failed to create ratatui terminal")?;
+
+    INSIDE.store(true, Ordering::SeqCst);
 
     Ok(TerminalGuard { terminal })
 }
