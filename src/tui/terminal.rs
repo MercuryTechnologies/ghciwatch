@@ -62,6 +62,9 @@ pub fn enter() -> miette::Result<TerminalGuard> {
         ));
     }
 
+    // Set `INSIDE` immediately so that a partial load is rolled back by `exit()`.
+    INSIDE.store(true, Ordering::SeqCst);
+
     let mut stdout = std::io::stdout();
 
     terminal::enable_raw_mode()
@@ -97,8 +100,6 @@ pub fn enter() -> miette::Result<TerminalGuard> {
     let terminal = Terminal::new(backend)
         .into_diagnostic()
         .wrap_err("Failed to create ratatui terminal")?;
-
-    INSIDE.store(true, Ordering::SeqCst);
 
     Ok(TerminalGuard { terminal })
 }

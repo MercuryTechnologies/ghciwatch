@@ -124,7 +124,6 @@ const SCROLL_AMOUNT: usize = 1;
 #[instrument(level = "trace", skip(tui))]
 fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {
     match event {
-        // TODO(evan): Scrolling is excruciatingly slow
         Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
             tui.scroll_offset = tui.scroll_offset.saturating_sub(SCROLL_AMOUNT);
         }
