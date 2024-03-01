@@ -1,8 +1,12 @@
 //! Extensions and utilities for the [`tracing`] crate.
+use std::io::Write;
 
 use camino::Utf8Path;
 use miette::Context;
 use miette::IntoDiagnostic;
+use tokio::io::DuplexStream;
+use tokio_util::io::SyncIoBridge;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::fmt::format::JsonFields;
@@ -22,6 +26,10 @@ pub struct TracingOpts<'opts> {
     pub trace_spans: &'opts [FmtSpan],
     /// If given, log as JSON to the given path.
     pub json_log_path: Option<&'opts Utf8Path>,
+    /// Are we running in TUI mode?
+    ///
+    /// A `(reader, writer)` pair to write to the TUI.
+    pub tui: Option<(DuplexStream, DuplexStream)>, // Mutex<VecDeque>?
 }
 
 impl<'opts> TracingOpts<'opts> {
@@ -32,11 +40,16 @@ impl<'opts> TracingOpts<'opts> {
             filter_directives: &opts.logging.log_filter,
             trace_spans: &opts.logging.trace_spans,
             json_log_path: opts.logging.log_json.as_deref(),
+            tui: if opts.tui {
+                Some(tokio::io::duplex(crate::buffers::TRACING_BUFFER_CAPACITY))
+            } else {
+                None
+            },
         }
     }
 
     /// Initialize the [`tracing`] logging framework.
-    pub fn install(&self) -> miette::Result<()> {
+    pub fn install(&mut self) -> miette::Result<(Option<DuplexStream>, WorkerGuard)> {
         let env_filter = EnvFilter::try_new(self.filter_directives).into_diagnostic()?;
 
         let fmt_span = self
@@ -44,8 +57,24 @@ impl<'opts> TracingOpts<'opts> {
             .iter()
             .fold(FmtSpan::NONE, |result, item| result | item.clone());
 
+        let mut tracing_reader = None;
+        let tracing_writer: Box<dyn Write + Send + Sync + 'static> = match self.tui.take() {
+            Some((reader, writer)) => {
+                tracing_reader = Some(reader);
+                Box::new(SyncIoBridge::new(writer))
+            }
+            None => Box::new(std::io::stderr()),
+        };
+        let (tracing_writer, worker_guard) = tracing_appender::non_blocking(tracing_writer);
+
         let human_layer = tracing_human_layer::HumanLayer::default()
             .with_span_events(fmt_span.clone())
+            .with_color_output(
+                supports_color::on(supports_color::Stream::Stdout)
+                    .map(|colors| colors.has_basic)
+                    .unwrap_or(false),
+            )
+            .with_output_writer(tracing_writer)
             .with_filter(env_filter);
 
         let registry = tracing_subscriber::registry();
@@ -62,7 +91,7 @@ impl<'opts> TracingOpts<'opts> {
             }
         }
 
-        Ok(())
+        Ok((tracing_reader, worker_guard))
     }
 }
 

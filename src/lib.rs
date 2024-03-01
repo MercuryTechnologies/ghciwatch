@@ -31,6 +31,7 @@ mod normal_path;
 mod shutdown;
 mod string_case;
 mod tracing;
+mod tui;
 mod watcher;
 
 pub(crate) use cwd::current_dir;
@@ -46,6 +47,7 @@ pub use shutdown::ShutdownError;
 pub use shutdown::ShutdownHandle;
 pub use shutdown::ShutdownManager;
 pub use tracing::TracingOpts;
+pub use tui::run_tui;
 pub use watcher::run_watcher;
 pub use watcher::WatcherOpts;
 
