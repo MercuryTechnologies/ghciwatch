@@ -170,7 +170,7 @@ impl Tui {
 
                 #[allow(clippy::single_match)]
                 KeyModifiers::SHIFT => match key.code {
-                    KeyCode::Char('G') => {
+                    KeyCode::Char('g' | 'G') => {
                         self.scroll_to(usize::MAX);
                     }
                     _ => {}
