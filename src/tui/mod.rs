@@ -73,6 +73,8 @@ impl TuiState {
 
 struct Tui {
     terminal: TerminalGuard,
+    /// The last terminal size seen. This is updated on every `render` call.
+    size: Rect,
     state: TuiState,
 }
 
@@ -91,19 +93,17 @@ impl DerefMut for Tui {
 }
 
 impl Tui {
-    fn new(terminal: TerminalGuard) -> Self {
+    fn new(mut terminal: TerminalGuard) -> Self {
+        let area = terminal.get_frame().size();
         Self {
             terminal,
+            size: area,
             state: Default::default(),
         }
     }
 
-    fn size(&mut self) -> Rect {
-        self.terminal.get_frame().size()
-    }
-
     fn half_height(&mut self) -> usize {
-        (self.size().height / 2) as usize
+        (self.size.height / 2) as usize
     }
 
     fn scroll_up(&mut self, amount: usize) {
@@ -133,9 +133,9 @@ impl Tui {
         let mut render_result = Ok(());
         self.terminal
             .draw(|frame| {
-                let area = frame.size();
+                self.size = frame.size();
                 let buffer = frame.buffer_mut();
-                render_result = self.state.render_inner(area, buffer);
+                render_result = self.state.render_inner(self.size, buffer);
             })
             .into_diagnostic()
             .wrap_err("Failed to draw to terminal")?;
