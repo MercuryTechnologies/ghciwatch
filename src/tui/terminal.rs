@@ -1,6 +1,7 @@
 use crossterm::cursor;
 use crossterm::event;
 use crossterm::terminal;
+use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use ratatui::prelude::CrosstermBackend;
@@ -11,7 +12,9 @@ use std::ops::DerefMut;
 use std::panic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use tracing::instrument;
 
+/// A wrapper around a [`Terminal`] that disables the terminal's raw mode when it's dropped.
 pub struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
@@ -32,19 +35,34 @@ impl DerefMut for TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let result = exit().wrap_err("Failed to exit terminal during drop");
-        // Ignore the `Result` if we're already panicking; aborting is undesirable
-        if !std::thread::panicking() {
-            result.unwrap();
+        if let Err(error) = exit().wrap_err("Failed to exit terminal during drop") {
+            if std::thread::panicking() {
+                // Ignore the `Result` if we're already panicking; aborting is undesirable.
+                tracing::error!("{error}");
+            } else {
+                panic!("{error}");
+            }
         }
     }
 }
 
+/// Are we currently inside a raw-mode terminal?
+///
+/// This helps us avoid entering or exiting raw-mode twice.
 static INSIDE: AtomicBool = AtomicBool::new(false);
 
+/// Enter raw-mode for the terminal on stdout, set up a panic hook, etc.
+#[instrument(level = "debug")]
 pub fn enter() -> miette::Result<TerminalGuard> {
     use event::KeyboardEnhancementFlags as KEF;
 
+    if INSIDE.load(Ordering::SeqCst) {
+        return Err(miette!(
+            "Cannot enter raw mode; the terminal is already set up"
+        ));
+    }
+
+    // Set `INSIDE` immediately so that a partial load is rolled back by `exit()`.
     INSIDE.store(true, Ordering::SeqCst);
 
     let mut stdout = std::io::stdout();
@@ -86,6 +104,8 @@ pub fn enter() -> miette::Result<TerminalGuard> {
     Ok(TerminalGuard { terminal })
 }
 
+/// Exits terminal raw-mode.
+#[instrument(level = "debug")]
 pub fn exit() -> miette::Result<()> {
     if !INSIDE.load(Ordering::SeqCst) {
         return Ok(());

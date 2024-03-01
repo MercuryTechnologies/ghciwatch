@@ -13,6 +13,7 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
+use tokio::io::DuplexStream;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -59,6 +60,7 @@ mod compilation_log;
 pub use compilation_log::CompilationLog;
 
 mod writer;
+use crate::buffers::TUI_SCROLLBACK_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
 
 use crate::aho_corasick::AhoCorasickExt;
@@ -117,7 +119,10 @@ impl GhciOpts {
     ///
     /// This extracts the bits of an [`Opts`] struct relevant to the [`Ghci`] session without
     /// cloning or taking ownership of the entire thing.
-    pub fn from_cli(opts: &Opts) -> miette::Result<Self> {
+    ///
+    /// If running in TUI mode, `ghci` output (from `stdout_writer` and `stderr_writer`) is sent to
+    /// the stream given by the second return value.
+    pub fn from_cli(opts: &Opts) -> miette::Result<(Self, Option<DuplexStream>)> {
         // TODO: implement fancier default command
         // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
         let command = opts
@@ -125,18 +130,37 @@ impl GhciOpts {
             .clone()
             .unwrap_or_else(|| ClonableCommand::new("cabal").arg("repl"));
 
-        Ok(Self {
-            command,
-            error_path: opts.errors.clone(),
-            enable_eval: opts.enable_eval,
-            hooks: opts.hooks.clone(),
-            restart_globs: opts.watch.restart_globs()?,
-            reload_globs: opts.watch.reload_globs()?,
-            no_interrupt_reloads: opts.no_interrupt_reloads,
-            stdout_writer: GhciWriter::stdout(),
-            stderr_writer: GhciWriter::stderr(),
-            clear: opts.clear,
-        })
+        let stdout_writer: GhciWriter;
+        let stderr_writer: GhciWriter;
+        let tui_reader;
+
+        if opts.tui {
+            let (tui_writer, tui_reader_inner) = tokio::io::duplex(TUI_SCROLLBACK_CAPACITY);
+            let tui_writer = GhciWriter::duplex_stream(tui_writer);
+            stdout_writer = tui_writer.clone();
+            stderr_writer = tui_writer.clone();
+            tui_reader = Some(tui_reader_inner);
+        } else {
+            stdout_writer = GhciWriter::stdout();
+            stderr_writer = GhciWriter::stderr();
+            tui_reader = None;
+        }
+
+        Ok((
+            Self {
+                command,
+                error_path: opts.errors.clone(),
+                enable_eval: opts.enable_eval,
+                hooks: opts.hooks.clone(),
+                restart_globs: opts.watch.restart_globs()?,
+                reload_globs: opts.watch.reload_globs()?,
+                no_interrupt_reloads: opts.no_interrupt_reloads,
+                stdout_writer,
+                stderr_writer,
+                clear: opts.clear,
+            },
+            tui_reader,
+        ))
     }
 
     #[instrument(skip_all, level = "trace")]

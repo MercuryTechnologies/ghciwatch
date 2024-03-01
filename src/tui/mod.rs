@@ -19,7 +19,9 @@ use std::cmp::min;
 use tokio::io::AsyncReadExt;
 use tokio::io::DuplexStream;
 use tokio_stream::StreamExt;
+use tracing::instrument;
 
+/// State data for drawing the TUI.
 #[derive(Default)]
 struct Tui {
     quit: bool,
@@ -28,7 +30,8 @@ struct Tui {
     scroll_offset: usize,
 }
 
-/// TODO(evan): Document
+/// Start the terminal event loop, reading output from the given readers.
+#[instrument(level = "debug", skip_all)]
 pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     mut ghci_reader: DuplexStream,
@@ -42,6 +45,8 @@ pub async fn run_tui(
     let mut tui = Tui::default();
 
     let mut event_stream = EventStream::new();
+
+    tracing::warn!("`--tui` mode is experimental and may contain bugs or change drastically in future releases.");
 
     while !tui.quit {
         let mut render_result = Ok(());
@@ -95,6 +100,7 @@ pub async fn run_tui(
     Ok(())
 }
 
+#[instrument(level = "trace", skip_all)]
 fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
     if area.width == 0 || area.height == 0 {
         return Ok(());
@@ -102,7 +108,8 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
     let text = tui.scrollback.into_text().into_diagnostic()?;
 
-    let scroll_offset = u16::try_from(tui.scroll_offset).unwrap();
+    let scroll_offset = u16::try_from(tui.scroll_offset)
+        .expect("Failed to convert `scroll_offset` from usize to u16");
 
     Paragraph::new(text)
         .wrap(Wrap::default())
@@ -114,9 +121,9 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
 const SCROLL_AMOUNT: usize = 1;
 
+#[instrument(level = "trace", skip(tui))]
 fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {
     match event {
-        // TODO(evan): Scrolling is excruciatingly slow
         Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
             tui.scroll_offset = tui.scroll_offset.saturating_sub(SCROLL_AMOUNT);
         }
