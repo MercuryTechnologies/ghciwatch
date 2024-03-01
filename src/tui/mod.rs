@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::num::Saturating;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
@@ -36,8 +36,8 @@ const SCROLL_AMOUNT: usize = 3;
 struct TuiState {
     quit: bool,
     scrollback: Vec<u8>,
-    line_count: usize,
-    scroll_offset: usize,
+    line_count: Saturating<usize>,
+    scroll_offset: Saturating<usize>,
 }
 
 impl Default for TuiState {
@@ -45,8 +45,8 @@ impl Default for TuiState {
         Self {
             quit: false,
             scrollback: Vec::with_capacity(TUI_SCROLLBACK_CAPACITY),
-            line_count: 1,
-            scroll_offset: 0,
+            line_count: Saturating(1),
+            scroll_offset: Saturating(0),
         }
     }
 }
@@ -60,7 +60,9 @@ impl TuiState {
 
         let text = self.scrollback.into_text().into_diagnostic()?;
 
-        let scroll_offset = u16::try_from(self.scroll_offset).unwrap();
+        let scroll_offset = u16::try_from(self.scroll_offset.0)
+            .into_diagnostic()
+            .wrap_err("Scroll offset doesn't fit into 16 bits")?;
 
         Paragraph::new(text)
             .wrap(Wrap::default())
@@ -102,29 +104,30 @@ impl Tui {
         }
     }
 
-    fn half_height(&mut self) -> usize {
-        (self.size.height / 2) as usize
+    fn half_height(&self) -> Saturating<usize> {
+        Saturating((self.size.height / 2) as usize)
     }
 
     fn scroll_up(&mut self, amount: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+        self.scroll_offset -= amount;
     }
 
     fn scroll_down(&mut self, amount: usize) {
-        self.scroll_offset = min(self.scroll_max(), self.scroll_offset.saturating_add(amount));
+        self.scroll_offset += amount;
+        self.scroll_offset = self.scroll_offset.min(self.scroll_max());
     }
 
-    fn scroll_max(&mut self) -> usize {
-        self.line_count.saturating_sub(self.half_height())
+    fn scroll_max(&self) -> Saturating<usize> {
+        self.line_count - self.half_height()
     }
 
     fn scroll_to(&mut self, scroll_offset: usize) {
-        self.scroll_offset = min(self.scroll_max(), scroll_offset);
+        self.scroll_offset = self.scroll_max().min(Saturating(scroll_offset));
     }
 
     fn maybe_follow(&mut self) {
         let height = self.size.height as usize;
-        if self.scroll_offset >= self.line_count - height - 1 {
+        if self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1) {
             self.scroll_offset += 1;
         }
     }
@@ -186,12 +189,10 @@ impl Tui {
 
                 KeyModifiers::CONTROL => match key.code {
                     KeyCode::Char('u') => {
-                        let half_height = self.half_height();
-                        self.scroll_up(half_height);
+                        self.scroll_up(self.half_height().0);
                     }
                     KeyCode::Char('d') => {
-                        let half_height = self.half_height();
-                        self.scroll_down(half_height);
+                        self.scroll_down(self.half_height().0);
                     }
                     KeyCode::Char('e') => {
                         self.scroll_down(1);
