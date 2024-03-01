@@ -133,6 +133,8 @@ fn handle_event(tui: &mut Tui, event: Event, frame: Frame<'_>) -> miette::Result
         .count()
         .saturating_sub(1);
 
+    // TODO: Steal Evan's declarative key matching macros?
+    // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
     match event {
         Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
             tui.scroll_offset = tui.scroll_offset.saturating_sub(SCROLL_AMOUNT);
