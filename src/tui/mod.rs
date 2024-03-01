@@ -94,6 +94,8 @@ pub async fn run_tui(
                     .ok_or_else(|| miette!("No more crossterm events"))?
                     .into_diagnostic()
                     .wrap_err("Failed to get next crossterm event")?;
+                // TODO: `get_frame` is an expensive call, delay if possible.
+                // https://github.com/MercuryTechnologies/ghciwatch/pull/206#discussion_r1508364135
                 handle_event(&mut tui, event, terminal.get_frame())?;
             }
         }
