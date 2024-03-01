@@ -60,7 +60,7 @@ mod compilation_log;
 pub use compilation_log::CompilationLog;
 
 mod writer;
-use crate::buffers::TUI_SCROLLBACK_CAPACITY;
+use crate::buffers::GHCI_BUFFER_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
 
 use crate::aho_corasick::AhoCorasickExt;
@@ -135,7 +135,7 @@ impl GhciOpts {
         let tui_reader;
 
         if opts.tui {
-            let (tui_writer, tui_reader_inner) = tokio::io::duplex(TUI_SCROLLBACK_CAPACITY);
+            let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
             let tui_writer = GhciWriter::duplex_stream(tui_writer);
             stdout_writer = tui_writer.clone();
             stderr_writer = tui_writer.clone();
