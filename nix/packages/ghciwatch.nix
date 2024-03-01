@@ -11,6 +11,7 @@
   inputs,
   rustPlatform,
   rust-analyzer,
+  asciinema,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -92,7 +93,10 @@
   checks = {
     ghciwatch-tests = craneLib.cargoNextest (commonArgs
       // {
-        buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
+        buildInputs =
+          (commonArgs.buildInputs or [])
+          ++ ghcBuildInputs
+          ++ [asciinema];
         NEXTEST_PROFILE = "ci";
         NEXTEST_HIDE_PROGRESS_BAR = "true";
 
