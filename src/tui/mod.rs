@@ -15,7 +15,9 @@ use ratatui::prelude::Rect;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use ratatui::Frame;
 use std::cmp::min;
+use tap::Conv;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::io::DuplexStream;
@@ -92,7 +94,9 @@ pub async fn run_tui(
                     .ok_or_else(|| miette!("No more crossterm events"))?
                     .into_diagnostic()
                     .wrap_err("Failed to get next crossterm event")?;
-                handle_event(&mut tui, event)?;
+                // TODO: `get_frame` is an expensive call, delay if possible.
+                // https://github.com/MercuryTechnologies/ghciwatch/pull/206#discussion_r1508364135
+                handle_event(&mut tui, event, terminal.get_frame())?;
             }
         }
     }
@@ -123,27 +127,72 @@ fn render(tui: &Tui, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
 
 const SCROLL_AMOUNT: usize = 1;
 
-#[instrument(level = "trace", skip(tui))]
-fn handle_event(tui: &mut Tui, event: Event) -> miette::Result<()> {
+#[instrument(level = "trace", skip(tui, frame))]
+fn handle_event(tui: &mut Tui, event: Event, frame: Frame<'_>) -> miette::Result<()> {
+    let last_line = tui
+        .scrollback
+        .split(|byte| *byte == b'\n')
+        .count()
+        .saturating_sub(1);
+
+    // TODO: Steal Evan's declarative key matching macros?
+    // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
     match event {
         Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
             tui.scroll_offset = tui.scroll_offset.saturating_sub(SCROLL_AMOUNT);
         }
         Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollDown => {
-            let last_line = tui
-                .scrollback
-                .split(|byte| *byte == b'\n')
-                .count()
-                .saturating_sub(1);
-            tui.scroll_offset = min(last_line, tui.scroll_offset + SCROLL_AMOUNT);
+            tui.scroll_offset += SCROLL_AMOUNT;
         }
-        Event::Key(key)
-            if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') =>
-        {
-            tui.quit = true;
-        }
+        Event::Key(key) => match key.modifiers {
+            KeyModifiers::NONE => match key.code {
+                KeyCode::Char('j') => {
+                    tui.scroll_offset += 1;
+                }
+                KeyCode::Char('k') => {
+                    tui.scroll_offset = tui.scroll_offset.saturating_sub(1);
+                }
+                KeyCode::Char('g') => {
+                    tui.scroll_offset = 0;
+                }
+                _ => {}
+            },
+
+            #[allow(clippy::single_match)]
+            KeyModifiers::SHIFT => match key.code {
+                KeyCode::Char('G') => {
+                    tui.scroll_offset = last_line;
+                }
+                _ => {}
+            },
+
+            KeyModifiers::CONTROL => match key.code {
+                KeyCode::Char('u') => {
+                    tui.scroll_offset = tui
+                        .scroll_offset
+                        .saturating_sub((frame.size().height / 2).into());
+                }
+                KeyCode::Char('d') => {
+                    tui.scroll_offset += (frame.size().height / 2).conv::<usize>();
+                }
+                KeyCode::Char('e') => {
+                    tui.scroll_offset += 1;
+                }
+                KeyCode::Char('y') => {
+                    tui.scroll_offset = tui.scroll_offset.saturating_sub(1);
+                }
+                KeyCode::Char('c') => {
+                    tui.quit = true;
+                }
+                _ => {}
+            },
+
+            _ => {}
+        },
         _ => {}
     }
+
+    tui.scroll_offset = min(last_line, tui.scroll_offset);
 
     Ok(())
 }
