@@ -122,10 +122,18 @@ impl Tui {
         self.scroll_offset = min(self.scroll_max(), scroll_offset);
     }
 
+    fn maybe_follow(&mut self) {
+        let height = self.size.height as usize;
+        if self.scroll_offset >= self.line_count - height - 1 {
+            self.scroll_offset += 1;
+        }
+    }
+
     fn push_line(&mut self, line: String) {
         self.scrollback.extend(line.into_bytes());
         self.scrollback.push(b'\n');
         self.line_count += 1;
+        self.maybe_follow();
     }
 
     #[instrument(level = "trace", skip(self))]
