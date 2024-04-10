@@ -8,6 +8,7 @@ mod module_and_files;
 mod module_set;
 mod show_paths;
 mod show_targets;
+mod target_kind;
 
 use haskell_grammar::module_name;
 use lines::rest_of_line;
@@ -26,3 +27,4 @@ pub use module_set::ModuleSet;
 pub use show_paths::parse_show_paths;
 pub use show_paths::ShowPaths;
 pub use show_targets::parse_show_targets;
+pub use target_kind::TargetKind;

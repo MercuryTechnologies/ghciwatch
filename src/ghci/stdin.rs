@@ -125,12 +125,12 @@ impl GhciStdin {
     pub async fn interpret_module(
         &mut self,
         stdout: &mut GhciStdout,
-        path: &Utf8Path,
+        module: &str,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
         // `:add *` forces the module to be interpreted, even if it was already loaded from
         // bytecode. This is necessary to access the module's top-level binds for the eval feature.
-        self.write_line(stdout, &format!(":add *{path}\n"), log)
+        self.write_line(stdout, &format!(":add *{module}\n"), log)
             .await
     }
 
