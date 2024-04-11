@@ -7,6 +7,7 @@ use crate::Matcher;
 
 /// Wraps two matchers. The first matcher is used as normal, except if the negative matcher
 /// matches an event, [`Matcher::matches`] errors.
+#[derive(Clone)]
 pub struct NegativeMatcher<M, N> {
     inner: M,
     negative: N,

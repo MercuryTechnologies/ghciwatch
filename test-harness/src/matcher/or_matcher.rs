@@ -4,6 +4,7 @@ use crate::Event;
 use crate::Matcher;
 
 /// A [`Matcher`] that can match either of two other matchers.
+#[derive(Clone)]
 pub struct OrMatcher<A, B>(pub A, pub B);
 
 impl<A, B> Display for OrMatcher<A, B>
