@@ -245,8 +245,8 @@ pub struct GhciWatch {
     startup_timeout: Duration,
     /// Filesystem helpers.
     fs: Fs,
-    /// Data for this particular `ghciwatch` run. This changes when [`GhciWatch::restart`] is
-    /// called.
+    /// Data for this particular `ghciwatch` run. This changes when
+    /// [`GhciWatch::restart_ghciwatch`] is called.
     ghciwatch: Session,
 }
 

@@ -6,6 +6,7 @@ pub use serde_json::Value as JsonValue;
 
 mod tracing_json;
 pub use tracing_json::Event;
+pub use tracing_json::Span;
 
 mod tracing_reader;
 

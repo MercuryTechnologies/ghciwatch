@@ -106,7 +106,7 @@
       });
     ghciwatch-doc = craneLib.cargoDoc (commonArgs
       // {
-        cargoDocExtraArgs = "--document-private-items";
+        cargoDocExtraArgs = "--document-private-items --no-deps --workspace";
         RUSTDOCFLAGS = "-D warnings";
       });
     ghciwatch-fmt = craneLib.cargoFmt commonArgs;
