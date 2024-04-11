@@ -14,7 +14,7 @@ use super::SpanMatcher;
 pub struct BaseMatcher {
     message: Regex,
     target: Option<String>,
-    leaf_span: Option<SpanMatcher>,
+    leaf_spans: Vec<SpanMatcher>,
     spans: Vec<SpanMatcher>,
     fields: FieldMatcher,
 }
@@ -29,8 +29,8 @@ impl BaseMatcher {
         let message = Regex::new(message_regex).expect("Message regex failed to compile");
         Self {
             message,
-            target: None,
-            leaf_span: None,
+            target: Default::default(),
+            leaf_spans: Default::default(),
             spans: Default::default(),
             fields: Default::default(),
         }
@@ -78,7 +78,7 @@ impl BaseMatcher {
     /// adding modules. (E.g., if all the changed files are ignored, a 'reload' may be a no-op.)
     pub fn reload_completes() -> Self {
         Self::span_close()
-            .in_leaf_span("reload")
+            .in_leaf_spans(["reload"])
             .in_module("ghciwatch::ghci")
     }
 
@@ -93,14 +93,25 @@ impl BaseMatcher {
         Self::message("^Restarting ghci:\n")
     }
 
-    /// Require that matching events be in a leaf span with the given name.
+    /// Require that matching events be in leaf spans with the given name.
     ///
     /// A leaf span is the inner-most span; i.e. if you have an event in spans `c` (root),
-    /// `b`, and `a` (leaf), then `in_leaf_span("a")` will match but `in_leaf_span("b")` will not.
+    /// `b`, and `a` (leaf), then `in_leaf_span(["a"])` will match the event but
+    /// `in_leaf_span(["b"])` will not match the event.
     ///
-    /// Note that this will overwrite any previously-set spans.
-    pub fn in_leaf_span(mut self, span: &str) -> Self {
-        self.leaf_span = Some(SpanMatcher::new(span));
+    /// Spans are listed from the outside in; that is, a call to `in_leaf_spans(["a", "b", "c"])` will
+    /// require that events be emitted from a span `c` nested directly in a span `b` nested
+    /// directly in a span `a`.
+    ///
+    /// The listed spans must be uninterrupted (there cannot be other spans between them on the
+    /// matching events).
+    ///
+    /// Note that this will overwrite any previously-set leaf spans.
+    pub fn in_leaf_spans(
+        mut self,
+        spans: impl IntoIterator<Item = impl Into<SpanMatcher>>,
+    ) -> Self {
+        self.leaf_spans = spans.into_iter().map(|s| s.into()).collect();
         self
     }
 
@@ -191,35 +202,35 @@ impl Matcher for BaseMatcher {
             return Ok(false);
         }
 
-        if !self.spans.is_empty() {
-            let mut spans = event.spans();
-            for span_matcher in &self.spans {
-                loop {
-                    match spans.next() {
-                        Some(span) => {
-                            if span_matcher.matches(span) {
-                                // Found this expected span, move on to the next one.
-                                break;
-                            }
-                            // Otherwise, this span isn't the expected one, but the next span might
-                            // be.
+        let mut spans = event.spans();
+        for span_matcher in &self.spans {
+            loop {
+                match spans.next() {
+                    Some(span) => {
+                        if span_matcher.matches(span) {
+                            // Found this expected span, move on to the next one.
+                            break;
                         }
-                        None => {
-                            // We still expect to see another span, but there's no spans left in
-                            // the event.
-                            return Ok(false);
-                        }
+                        // Otherwise, this span isn't the expected one, but the next span might
+                        // be.
+                    }
+                    None => {
+                        // We still expect to see another span, but there's no spans left in
+                        // the event.
+                        return Ok(false);
                     }
                 }
             }
         }
 
-        if let Some(leaf_span_matcher) = &self.leaf_span {
-            match event.spans().last() {
-                Some(leaf_span) if leaf_span_matcher.matches(leaf_span) => {}
+        let mut spans = event.spans().rev();
+
+        for span_matcher in self.leaf_spans.iter().rev() {
+            match spans.next() {
+                Some(span) if span_matcher.matches(span) => {}
                 _ => {
-                    // Expected a leaf span, but the event is missing a leaf span or doesn't have
-                    // the correct leaf span.
+                    // Expected a span, but the event is missing a span or doesn't have
+                    // the correct span.
                     return Ok(false);
                 }
             }
@@ -447,7 +458,7 @@ mod tests {
     #[test]
     fn test_matcher_in_span() {
         assert!(BaseMatcher::span_close()
-            .in_leaf_span("error_log_write")
+            .in_leaf_spans(["error_log_write"])
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
                 level: Level::DEBUG,
@@ -472,7 +483,7 @@ mod tests {
             .unwrap());
 
         assert!(BaseMatcher::span_close()
-            .in_leaf_span("error_log_write")
+            .in_leaf_spans(["error_log_write"])
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
                 level: Level::DEBUG,
@@ -502,7 +513,7 @@ mod tests {
 
         // Span exists, but it's not the leaf span.
         assert!(BaseMatcher::span_close()
-            .in_leaf_span("error_log_write")
+            .in_leaf_spans(["error_log_write"])
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
                 level: Level::DEBUG,
