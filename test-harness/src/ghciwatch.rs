@@ -388,7 +388,7 @@ impl GhciWatch {
     ///
     /// The `index` can be an individual [`Checkpoint`] or any [`std::ops::Range`] of checkpoints.
     fn events_in_checkpoints(&self, index: impl CheckpointIndex) -> impl Iterator<Item = &Event> {
-        self.events[index.into_index()].iter().flatten()
+        self.events[index.as_index()].iter().flatten()
     }
 
     /// Read an event from the `ghciwatch` session.
@@ -414,7 +414,7 @@ impl GhciWatch {
 
         Err(miette!(
             "No log message matching {matcher} found in checkpoint {:?}",
-            checkpoints.into_index()
+            checkpoints.as_index()
         ))
     }
 
