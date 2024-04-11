@@ -53,6 +53,7 @@ impl ErrorLog {
         }
 
         for diagnostic in &log.diagnostics {
+            tracing::debug!(%diagnostic, "Writing diagnostic");
             writer
                 .write_all(diagnostic.to_string().as_bytes())
                 .await
