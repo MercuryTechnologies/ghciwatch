@@ -38,18 +38,29 @@ impl Display for Checkpoint {
 }
 
 /// A type that can be used to index a set of checkpoints.
-pub trait CheckpointIndex: Clone {
+pub trait CheckpointIndex: Clone + Debug {
     /// The resulting index type.
-    type Index: SliceIndex<[Vec<Event>], Output = [Vec<Event>]> + Debug;
+    type Index: SliceIndex<[Vec<Event>], Output = [Vec<Event>]> + Debug + Clone;
 
     /// Convert the value into an index.
-    fn into_index(self) -> Self::Index;
+    fn as_index(&self) -> Self::Index;
+}
+
+impl<C> CheckpointIndex for &C
+where
+    C: Clone + Debug + CheckpointIndex,
+{
+    type Index = <C as CheckpointIndex>::Index;
+
+    fn as_index(&self) -> Self::Index {
+        <C as CheckpointIndex>::as_index(self)
+    }
 }
 
 impl CheckpointIndex for Checkpoint {
     type Index = RangeInclusive<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         let index = self.into_inner();
         index..=index
     }
@@ -58,7 +69,7 @@ impl CheckpointIndex for Checkpoint {
 impl CheckpointIndex for Range<Checkpoint> {
     type Index = Range<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         self.start.into_inner()..self.end.into_inner()
     }
 }
@@ -66,7 +77,7 @@ impl CheckpointIndex for Range<Checkpoint> {
 impl CheckpointIndex for RangeFrom<Checkpoint> {
     type Index = RangeFrom<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         self.start.into_inner()..
     }
 }
@@ -74,15 +85,15 @@ impl CheckpointIndex for RangeFrom<Checkpoint> {
 impl CheckpointIndex for RangeFull {
     type Index = RangeFull;
 
-    fn into_index(self) -> Self::Index {
-        self
+    fn as_index(&self) -> Self::Index {
+        *self
     }
 }
 
 impl CheckpointIndex for RangeInclusive<Checkpoint> {
     type Index = RangeInclusive<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         self.start().into_inner()..=self.end().into_inner()
     }
 }
@@ -90,7 +101,7 @@ impl CheckpointIndex for RangeInclusive<Checkpoint> {
 impl CheckpointIndex for RangeTo<Checkpoint> {
     type Index = RangeTo<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         ..self.end.into_inner()
     }
 }
@@ -98,7 +109,7 @@ impl CheckpointIndex for RangeTo<Checkpoint> {
 impl CheckpointIndex for RangeToInclusive<Checkpoint> {
     type Index = RangeToInclusive<usize>;
 
-    fn into_index(self) -> Self::Index {
+    fn as_index(&self) -> Self::Index {
         ..=self.end.into_inner()
     }
 }
