@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::Matcher;
 
 /// A matcher that never matches.
+#[derive(Clone)]
 pub struct NeverMatcher;
 
 impl Display for NeverMatcher {

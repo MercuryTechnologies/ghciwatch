@@ -8,6 +8,7 @@ use super::NeverMatcher;
 /// A matcher which may or may not contain a matcher.
 ///
 /// If it does not contain a matcher, it never matches.
+#[derive(Clone)]
 pub struct OptionMatcher<M>(Option<M>);
 
 impl OptionMatcher<NeverMatcher> {

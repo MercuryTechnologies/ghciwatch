@@ -4,6 +4,7 @@ use crate::Matcher;
 
 /// Wraps another [`Matcher`] and stops calling [`Matcher::matches`] on it after it first returns
 /// `true`.
+#[derive(Clone)]
 pub struct FusedMatcher<M> {
     inner: M,
     matched: bool,
