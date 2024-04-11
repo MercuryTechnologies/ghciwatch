@@ -399,23 +399,41 @@ impl GhciWatch {
         Ok(chunk.last().expect("We just inserted this event"))
     }
 
-    /// Assert that a matching event was logged in one of the given `checkpoints`.
-    pub fn assert_logged_in_checkpoint(
+    /// Find a matching event logged in one of the given `checkpoints`.
+    ///
+    /// Returns the first matching event, or `None` if no matching events were found.
+    pub fn find_logged_in_checkpoint(
         &self,
         checkpoints: impl CheckpointIndex,
         matcher: impl IntoMatcher,
-    ) -> miette::Result<&Event> {
+    ) -> miette::Result<Option<&Event>> {
+        let mut ret = None;
         let mut matcher = matcher.into_matcher()?;
-        for event in self.events_in_checkpoints(checkpoints.clone()) {
-            if matcher.matches(event)? {
-                return Ok(event);
+        for event in self.events_in_checkpoints(checkpoints) {
+            if matcher.matches(event)? && ret.is_none() {
+                ret = Some(event)
             }
         }
 
-        Err(miette!(
-            "No log message matching {matcher} found in checkpoint {:?}",
-            checkpoints.as_index()
-        ))
+        Ok(ret)
+    }
+
+    /// Assert that a matching event was logged in one of the given `checkpoints`.
+    ///
+    /// Returns the first matching event.
+    pub fn assert_logged_in_checkpoint(
+        &self,
+        checkpoints: impl CheckpointIndex + Clone,
+        matcher: impl IntoMatcher,
+    ) -> miette::Result<&Event> {
+        let mut matcher = matcher.into_matcher()?;
+        self.find_logged_in_checkpoint(&checkpoints, &mut matcher)?
+            .ok_or_else(|| {
+                miette!(
+                    "No log message matching {matcher} found in checkpoint {:?}",
+                    checkpoints.as_index()
+                )
+            })
     }
 
     /// Assert that a matching event was logged since the last [`Checkpoint`].
@@ -440,7 +458,7 @@ impl GhciWatch {
 
         // First check if it was logged in `checkpoints`.
         if let Some(checkpoints) = checkpoints {
-            if let Ok(event) = self.assert_logged_in_checkpoint(checkpoints, &mut matcher) {
+            if let Some(event) = self.find_logged_in_checkpoint(checkpoints, &mut matcher)? {
                 return Ok(event.clone());
             }
         }
