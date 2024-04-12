@@ -35,7 +35,7 @@ thread_local! {
 ///
 /// Then we run the user test code. If it errors, we save the logs to `CARGO_TARGET_TMPDIR`.
 ///
-/// Finally, we wait for the process set by [`set_ghciwatch_process`] to exit and clean up the
+/// Finally, we wait for the process set by `set_ghciwatch_process` to exit and clean up the
 /// temporary directory `GhciWatch` created.
 pub async fn wrap_test(
     test: impl Future<Output = ()> + Send + 'static,
