@@ -30,9 +30,13 @@ async fn can_eval_commands() {
         .await
         .expect("ghciwatch didn't start in time");
 
-    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example");
+    let defined_in_multiple_files =
+        BaseMatcher::message("Read stderr line").with_field("line", "defined in multiple files");
+
+    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example")
+        .but_not(defined_in_multiple_files.clone());
     session
-        .assert_logged_or_wait(&eval_message)
+        .assert_logged_or_wait(eval_message.clone())
         .await
         .expect("ghciwatch evals commands");
     session
@@ -41,6 +45,14 @@ async fn can_eval_commands() {
         )
         .await
         .expect("ghciwatch evals commands");
+    session
+        .assert_logged_or_wait(
+            BaseMatcher::span_close()
+                .in_leaf_spans(["run_ghci", "initialize"])
+                .but_not(defined_in_multiple_files.clone()),
+        )
+        .await
+        .expect("ghciwatch finishes initializing");
 
     // Erase the command.
     session.fs().replace(module_path, cmd, "").await.unwrap();

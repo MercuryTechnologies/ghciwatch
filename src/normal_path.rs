@@ -61,6 +61,18 @@ impl NormalPath {
     pub fn relative(&self) -> &Utf8Path {
         self.relative.as_deref().unwrap_or_else(|| self.absolute())
     }
+
+    /// Get the absolute path, consuming this value.
+    pub fn into_absolute(self) -> Utf8PathBuf {
+        self.normal
+    }
+
+    /// Get the relative path, consuming this value.
+    ///
+    /// If no relative path is present, the absolute (normalized) path is used instead.
+    pub fn into_relative(self) -> Utf8PathBuf {
+        self.relative.unwrap_or(self.normal)
+    }
 }
 
 // Hash, Eq, and Ord delegate to the normalized path.

@@ -19,6 +19,7 @@ use crate::haskell_source_file::HASKELL_SOURCE_EXTENSIONS;
 use crate::normal_path::NormalPath;
 
 use super::lines::until_newline;
+use super::TargetKind;
 
 /// Parsed `:show paths` output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,13 +37,13 @@ impl ShowPaths {
     }
 
     /// Convert a target (from `:show targets` output) to a module source path.
-    pub fn target_to_path(&self, target: &str) -> miette::Result<Utf8PathBuf> {
+    pub fn target_to_path(&self, target: &str) -> miette::Result<(Utf8PathBuf, TargetKind)> {
         let target_path = Utf8Path::new(target);
         if is_haskell_source_file(target_path) {
             // The target is already a path.
             if let Some(path) = self.target_path_to_path(target_path) {
                 tracing::trace!(%path, %target, "Target is path");
-                return Ok(path);
+                return Ok((path, TargetKind::Path));
             }
         } else {
             // Else, split by `.` to get path components.
@@ -54,7 +55,7 @@ impl ShowPaths {
 
                 if let Some(path) = self.target_path_to_path(&path) {
                     tracing::trace!(%path, %target, "Found path for target");
-                    return Ok(path);
+                    return Ok((path, TargetKind::Module));
                 }
             }
         }

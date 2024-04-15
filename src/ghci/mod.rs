@@ -80,6 +80,8 @@ use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
 use crate::StringCase;
 
+use self::parse::TargetKind;
+
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
 pub const PROMPT: &str = "###~GHCIWATCH-PROMPT~###";
@@ -666,7 +668,8 @@ impl Ghci {
             .add_module(&mut self.stdout, path.relative(), log)
             .await?;
 
-        self.targets.insert_source_path(path.clone());
+        self.targets
+            .insert_source_path(path.clone(), TargetKind::Path);
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
             .await?;
@@ -685,11 +688,15 @@ impl Ghci {
         path: &NormalPath,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
+        let (import_name, _target_kind) =
+            self.targets.module_import_name(&self.search_paths, path)?;
+
         self.stdin
-            .interpret_module(&mut self.stdout, path.relative(), log)
+            .interpret_module(&mut self.stdout, &import_name, log)
             .await?;
 
-        self.targets.insert_source_path(path.clone());
+        self.targets
+            .insert_source_path(path.clone(), TargetKind::Path);
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
             .await?;
