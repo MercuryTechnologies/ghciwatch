@@ -38,7 +38,8 @@ ansi-to-tui = "4.0.1"
 async-dup = "1.2.4"
 backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
-clap = { version = "4.3.2", features = ["derive", "wrap_help", "env", "string"] }
+# 4.4 for MSRV reasons.
+clap = { version = "~4.4", features = ["derive", "wrap_help", "env", "string"] }
 clearscreen = "2.0.1"
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
