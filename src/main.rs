@@ -24,6 +24,8 @@ async fn main() -> miette::Result<()> {
     opts.init()?;
     let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
 
+    std::env::set_var("IN_GHCIWATCH", "1");
+
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
 
     let (ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts)?;
