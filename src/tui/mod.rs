@@ -1,4 +1,3 @@
-use std::num::Saturating;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
@@ -16,6 +15,7 @@ use ratatui::prelude::Rect;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use saturating::Saturating;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::io::DuplexStream;
@@ -109,11 +109,11 @@ impl Tui {
     }
 
     fn scroll_up(&mut self, amount: usize) {
-        self.scroll_offset -= amount;
+        self.scroll_offset -= Saturating(amount);
     }
 
     fn scroll_down(&mut self, amount: usize) {
-        self.scroll_offset += amount;
+        self.scroll_offset += Saturating(amount);
         self.scroll_offset = self.scroll_offset.min(self.scroll_max());
     }
 
@@ -128,14 +128,14 @@ impl Tui {
     fn maybe_follow(&mut self) {
         let height = self.size.height as usize;
         if self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1) {
-            self.scroll_offset += 1;
+            self.scroll_offset += Saturating(1);
         }
     }
 
     fn push_line(&mut self, line: String) {
         self.scrollback.extend(line.into_bytes());
         self.scrollback.push(b'\n');
-        self.line_count += 1;
+        self.line_count += Saturating(1);
         self.maybe_follow();
     }
 
