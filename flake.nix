@@ -2,7 +2,7 @@
   description = "ghci-based file watcher and recompiler for Haskell projects";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     crane = {
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -51,8 +51,8 @@
           (import rust-overlay)
           (
             final: prev: {
-              # TODO: Any chance this overlay will clobber something useful?
-              rustToolchain = final.pkgsBuildHost.rust-bin.stable.latest.default.override {
+              # TODO: Bump the Rust version here...
+              rustToolchain = final.pkgsBuildHost.rust-bin.stable."1.72.1".default.override {
                 targets =
                   final.lib.optionals final.stdenv.isDarwin [
                     "x86_64-apple-darwin"
