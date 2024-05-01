@@ -20,6 +20,7 @@ use tokio::task::JoinHandle;
 use aho_corasick::AhoCorasick;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
+use fs_err::tokio as fs;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
@@ -641,7 +642,7 @@ impl Ghci {
     /// Read and parse eval commands from the given `path`.
     #[instrument(level = "trace")]
     async fn parse_eval_commands(path: &Utf8Path) -> miette::Result<Vec<EvalCommand>> {
-        let contents = tokio::fs::read_to_string(path)
+        let contents = fs::read_to_string(path)
             .await
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {path}"))?;

@@ -12,6 +12,7 @@ use ghciwatch::run_ghci;
 use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
 use ghciwatch::GhciOpts;
+use ghciwatch::ReadLogsFrom;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
@@ -41,6 +42,18 @@ async fn main() -> miette::Result<()> {
         manager
             .spawn("run_tui", |handle| {
                 run_tui(handle, ghci_reader, tracing_reader)
+            })
+            .await;
+    }
+
+    for path in opts.read_logs_from {
+        manager
+            .spawn("read-logs", |handle| {
+                ReadLogsFrom {
+                    shutdown: handle,
+                    path,
+                }
+                .run()
             })
             .await;
     }
