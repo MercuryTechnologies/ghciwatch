@@ -1,5 +1,9 @@
+use std::time::Duration;
+use std::time::Instant;
+
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
@@ -56,8 +60,6 @@ impl GhciStderr {
 
     pub async fn run_inner(&mut self) -> miette::Result<()> {
         loop {
-            // TODO: Could this cause problems where we get an event and a final stderr line is only
-            // processed after we write the error log?
             tokio::select! {
                 Ok(Some(line)) = self.reader.next_line() => {
                     self.ingest_line(line).await?;
@@ -84,7 +86,7 @@ impl GhciStderr {
                 self.clear_buffer().await;
             }
             StderrEvent::GetBuffer { sender } => {
-                self.get_buffer(sender).await;
+                self.get_buffer(sender).await?;
             }
         }
 
@@ -109,8 +111,33 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn get_buffer(&mut self, sender: oneshot::Sender<String>) {
+    async fn get_buffer(&mut self, sender: oneshot::Sender<String>) -> miette::Result<()> {
+        // Read lines from the stderr stream until we can't read a line within 0.05 seconds.
+        //
+        // This helps make sure we've read all the available data.
+        //
+        // In testing, this takes ~52ms.
+        let start_instant = Instant::now();
+        while let Ok(maybe_line) =
+            tokio::time::timeout(Duration::from_millis(50), self.reader.next_line()).await
+        {
+            match maybe_line
+                .into_diagnostic()
+                .wrap_err("Failed to read stderr line")?
+            {
+                Some(line) => {
+                    self.ingest_line(line).await?;
+                }
+                None => {
+                    tracing::debug!("No more lines available from stderr");
+                }
+            }
+        }
+        tracing::debug!("Drained stderr buffer in {:.2?}", start_instant.elapsed());
+
         // TODO: Does it make more sense to clear the buffer here?
         let _ = sender.send(self.buffer.clone());
+
+        Ok(())
     }
 }

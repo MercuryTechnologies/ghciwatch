@@ -73,6 +73,11 @@ async fn can_write_error_log_compilation_errors() {
         .await
         .expect("ghciwatch writes ghcid.txt");
 
+    session
+        .wait_for_log(BaseMatcher::reload_completes())
+        .await
+        .expect("ghciwatch finishes reloading");
+
     let error_contents = session
         .fs()
         .read(&error_path)
