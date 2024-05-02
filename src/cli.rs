@@ -60,6 +60,21 @@ pub struct Opts {
     #[arg(long)]
     pub no_interrupt_reloads: bool,
 
+    /// Extra paths to read logs from.
+    ///
+    /// `ghciwatch` needs to parse `ghci`'s output to determine when reloads have finished and to
+    /// parse compiler errors, so libraries like Yesod that asynchronously print to stdout or
+    /// stderr are not supported.
+    ///
+    /// Instead, you should have your program write its logs to a file and use its path as an
+    /// argument to this option. `ghciwatch` will read from the file and output logs inline with
+    /// the rest of its output.
+    ///
+    /// See: https://github.com/ndmitchell/ghcid/issues/137
+    #[allow(rustdoc::bare_urls)]
+    #[arg(long)]
+    pub read_logs_from: Vec<Utf8PathBuf>,
+
     /// Enable TUI mode (experimental).
     #[arg(long, hide = true)]
     pub tui: bool,

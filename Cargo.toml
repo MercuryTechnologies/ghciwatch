@@ -44,6 +44,7 @@ clearscreen = "2.0.1"
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 enum-iterator = "1.4.1"
+fs-err = { version = "2.11.0", features = ["tokio"] }
 humantime = "2.1.0"
 ignore = "0.4.20"
 indoc = "1.0.6"

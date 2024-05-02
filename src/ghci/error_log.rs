@@ -1,6 +1,6 @@
 use camino::Utf8PathBuf;
+use fs_err::tokio::File;
 use miette::IntoDiagnostic;
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
 use tracing::instrument;
