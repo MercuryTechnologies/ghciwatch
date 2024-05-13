@@ -151,7 +151,7 @@ impl GhciOpts {
         Ok((
             Self {
                 command,
-                error_path: opts.errors.clone(),
+                error_path: opts.error_file.clone(),
                 enable_eval: opts.enable_eval,
                 hooks: opts.hooks.clone(),
                 restart_globs: opts.watch.restart_globs()?,

@@ -28,8 +28,8 @@ pub struct Opts {
     pub command: Option<ClonableCommand>,
 
     /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
-    #[arg(long, alias = "outputfile")]
-    pub errors: Option<Utf8PathBuf>,
+    #[arg(long, alias = "outputfile", alias = "errors")]
+    pub error_file: Option<Utf8PathBuf>,
 
     /// Enable evaluating commands.
     ///
@@ -42,6 +42,16 @@ pub struct Opts {
     #[arg(long)]
     pub clear: bool,
 
+    /// Don't interrupt reloads when files change.
+    ///
+    /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
+    #[arg(long)]
+    pub no_interrupt_reloads: bool,
+
+    /// Enable TUI mode (experimental).
+    #[arg(long, hide = true)]
+    pub tui: bool,
+
     /// Lifecycle hooks and commands to run at various points.
     #[command(flatten)]
     pub hooks: crate::hooks::HookOpts,
@@ -53,16 +63,6 @@ pub struct Opts {
     /// Options to modify logging and error-handling behavior.
     #[command(flatten)]
     pub logging: LoggingOpts,
-
-    /// Don't interrupt reloads when files change.
-    ///
-    /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
-    #[arg(long)]
-    pub no_interrupt_reloads: bool,
-
-    /// Enable TUI mode (experimental).
-    #[arg(long, hide = true)]
-    pub tui: bool,
 }
 
 /// Options for watching files.
