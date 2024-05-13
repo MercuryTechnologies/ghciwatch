@@ -1,5 +1,13 @@
 # ghciwatch
 
+<a href="https://repology.org/project/ghciwatch/versions">
+<img src="https://repology.org/badge/vertical-allrepos/ghciwatch.svg?header=" alt="Packaging status">
+</a>
+<br>
+<a href="https://repology.org/project/rust:ghciwatch/versions">
+<img src="https://repology.org/badge/vertical-allrepos/rust:ghciwatch.svg?header=" alt="Packaging status">
+</a>
+
 The next generation of [`ghcid`][ghcid], a [`ghci`][ghci]-based file watcher
 and recompiler. `ghciwatch` watches your modules for changes and reloads them in
 a `ghci` session, displaying any errors.
