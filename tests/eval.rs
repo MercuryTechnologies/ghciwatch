@@ -195,3 +195,58 @@ async fn can_eval_commands_in_non_interpreted_modules() {
         .await
         .expect("ghciwatch evals commands");
 }
+
+/// Test that `ghciwatch` can eval commands in a module loaded at startup, and then test that it
+/// can eval commands in that module a second time.
+///
+/// See: <https://github.com/MercuryTechnologies/ghciwatch/issues/234>
+#[test]
+async fn can_eval_commands_twice() {
+    let module_path = "src/MyModule.hs";
+    let cmd = "-- $> example ++ example";
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_arg("--enable-eval")
+        .before_start(move |path| async move {
+            Fs::new()
+                .append(path.join(module_path), format!("\n{cmd}\n"))
+                .await
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let module_path = session.path(module_path);
+
+    // Adds the module succesfully.
+    let ok_reload = BaseMatcher::message("All good!")
+        // Evals the command.
+        .and(BaseMatcher::message(
+            r"MyModule.hs:\d+:\d+: example \+\+ example",
+        ))
+        // Reads eval output.
+        .and(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
+        // Finishes the reload.
+        .and(BaseMatcher::reload_completes())
+        .but_not(
+            BaseMatcher::message("Read stderr line")
+                .with_field("line", "defined in multiple files"),
+        );
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch didn't start in time");
+
+    session.checkpoint();
+    session.fs().touch(&module_path).await.unwrap();
+    session
+        .assert_logged_or_wait(ok_reload.clone())
+        .await
+        .expect("ghciwatch evals commands");
+
+    session.checkpoint();
+    session.fs().touch(&module_path).await.unwrap();
+    session
+        .assert_logged_or_wait(ok_reload)
+        .await
+        .expect("ghciwatch evals commands");
+}
