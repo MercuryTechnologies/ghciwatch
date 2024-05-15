@@ -52,7 +52,13 @@ impl ModuleSet {
     ///
     /// Returns whether the value was newly inserted.
     pub fn insert_source_path(&mut self, path: NormalPath, kind: TargetKind) -> bool {
-        self.modules.insert(path, kind).is_some()
+        match self.modules.insert(path, kind) {
+            Some(old_kind) => {
+                assert!(kind == old_kind, "`ghciwatch` failed to track how modules were imported in `ghci`; please report this as a bug");
+                true
+            }
+            None => false,
+        }
     }
 
     /// Get the name used to refer to the given module path when importing it.
@@ -68,18 +74,27 @@ impl ModuleSet {
         &self,
         show_paths: &ShowPaths,
         path: &NormalPath,
-    ) -> miette::Result<(String, TargetKind)> {
+    ) -> miette::Result<ImportInfo> {
         match self.modules.get(path) {
-            Some(kind) => match kind {
-                TargetKind::Path => Ok((path.relative().to_string(), *kind)),
-                TargetKind::Module => {
-                    let module = show_paths.path_to_module(path)?;
-                    Ok((module, *kind))
-                }
+            Some(&kind) => match kind {
+                TargetKind::Path => Ok(ImportInfo {
+                    name: path.relative().to_string(),
+                    kind,
+                    loaded: true,
+                }),
+                TargetKind::Module => Ok(ImportInfo {
+                    name: show_paths.path_to_module(path)?,
+                    kind,
+                    loaded: true,
+                }),
             },
             None => {
                 let path = show_paths.make_relative(path)?;
-                Ok((path.into_relative().into_string(), TargetKind::Path))
+                Ok(ImportInfo {
+                    name: path.into_relative().into_string(),
+                    kind: TargetKind::Path,
+                    loaded: false,
+                })
             }
         }
     }
@@ -88,4 +103,17 @@ impl ModuleSet {
     pub fn iter(&self) -> Keys<'_, NormalPath, TargetKind> {
         self.modules.keys()
     }
+}
+
+/// Information about a module to be imported into a `ghci` session.
+pub struct ImportInfo {
+    /// The name to refer to the module by.
+    ///
+    /// This may either be a dotted module name like `My.Cool.Module` or a path like
+    /// `src/My/Cool/Module.hs`.
+    pub name: String,
+    /// Whether the `name` is a name or path.
+    pub kind: TargetKind,
+    /// Whether the module is already loaded in the `ghci` session.
+    pub loaded: bool,
 }
