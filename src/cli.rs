@@ -19,6 +19,12 @@ use crate::normal_path::NormalPath;
 #[command(version, author, about)]
 #[command(max_term_width = 100)]
 pub struct Opts {
+    /// A Haskell source file to load into a `ghci` REPL.
+    ///
+    /// Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
+    #[arg(value_name = "FILE", conflicts_with = "command")]
+    pub file: Option<NormalPath>,
+
     /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
     /// This is used to launch the underlying `ghci` session that `ghciwatch` controls.
