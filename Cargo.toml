@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "clap-markdown",
     "test-harness",
     "test-harness-macro",
 ]
@@ -22,7 +23,7 @@ edition = "2021"
 authors = [
     "Rebecca Turner <rebeccat@mercury.com>"
 ]
-description = "ghci-based file watcher and recompiler for Haskell projects"
+description = "Ghciwatch loads a GHCi session for a Haskell project and reloads it when source files change."
 readme = "README.md"
 homepage = "https://github.com/MercuryTechnologies/ghciwatch"
 repository = "https://github.com/MercuryTechnologies/ghciwatch"
@@ -40,6 +41,7 @@ backoff = { version = "0.4.0", default-features = false }
 camino = "1.1.4"
 # Clap 4.4 is the last version supporting Rust 1.72.
 clap = { version = "~4.4", features = ["derive", "wrap_help", "env", "string"] }
+clap-markdown = { path = "clap-markdown", optional = true }
 clearscreen = "2.0.1"
 command-group = { version = "2.1.0", features = ["tokio", "with-tokio"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
@@ -50,7 +52,7 @@ indoc = "1.0.6"
 itertools = "0.11.0"
 line-span = "0.1.5"
 miette = { version = "5.9.0", features = ["fancy"] }
-nix = { version = "0.26.2", default_features = false, features = ["process", "signal"] }
+nix = { version = "0.26.2", default-features = false, features = ["process", "signal"] }
 notify-debouncer-full = "0.3.1"
 once_cell = "1.18.0"
 owo-colors = { version = "3.5.0", features = ["supports-colors"] }

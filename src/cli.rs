@@ -1,6 +1,4 @@
 //! Command-line argument parser and argument access.
-#![allow(rustdoc::bare_urls)]
-
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
@@ -14,10 +12,46 @@ use crate::clonable_command::ClonableCommand;
 use crate::ignore::GlobMatcher;
 use crate::normal_path::NormalPath;
 
-/// A `ghci`-based file watcher and Haskell recompiler.
+/// Ghciwatch loads a GHCi session for a Haskell project and reloads it
+/// when source files change.
+///
+/// ## Examples
+///
+/// Load `cabal v2-repl` and watch for changes in `src`:
+///
+///     ghciwatch
+///
+/// Load a custom GHCi session and watch for changes in multiple locations:
+///
+///     ghciwatch --command "cabal v2-repl lib:test-dev" \
+///               --watch src --watch test
+///
+/// Run tests after reloads:
+///
+///     ghciwatch --test-ghci TestMain.testMain \
+///               --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+///
+/// Use `hpack` to regenerate `.cabal` files:
+///
+///     ghciwatch --before-startup-shell hpack \
+///               --restart-glob '**/package.yaml'
+///
+/// Also reload the session when `.persistentmodels` change:
+///
+///     ghciwatch --watch config/modelsFiles \
+///               --reload-glob '**/*.persistentmodels'
+///
+/// Don't reload for `README.md` files:
+///
+///     ghciwatch --reload-glob '!src/**/README.md'
 #[derive(Debug, Clone, Parser)]
-#[command(version, author, about)]
-#[command(max_term_width = 100)]
+#[command(
+    version,
+    author,
+    verbatim_doc_comment,
+    max_term_width = 100,
+    override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
+)]
 pub struct Opts {
     /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
@@ -27,11 +61,13 @@ pub struct Opts {
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
 
-    /// A file to write compilation errors to. This is analogous to `ghcid.txt`.
+    /// A file to write compilation errors to.
+    ///
+    /// The output format is compatible with `ghcid`'s `--outputfile` option.
     #[arg(long, alias = "outputfile", alias = "errors")]
     pub error_file: Option<Utf8PathBuf>,
 
-    /// Enable evaluating commands.
+    /// Evaluate Haskell code in comments.
     ///
     /// This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>`
     /// and `<$ -}` and evaluates them after reloads.
@@ -52,6 +88,11 @@ pub struct Opts {
     #[arg(long, hide = true)]
     pub tui: bool,
 
+    /// Generate Markdown CLI documentation.
+    #[cfg(feature = "clap-markdown")]
+    #[arg(long, hide = true)]
+    pub generate_markdown_help: bool,
+
     /// Lifecycle hooks and commands to run at various points.
     #[command(flatten)]
     pub hooks: crate::hooks::HookOpts,
@@ -69,8 +110,10 @@ pub struct Opts {
 #[derive(Debug, Clone, clap::Args)]
 #[clap(next_help_heading = "File watching options")]
 pub struct WatchOpts {
-    /// Use polling with the given interval rather than notification-based file watching. Polling
-    /// tends to be more reliable and less performant.
+    /// Use polling with the given interval rather than notification-based file watching.
+    ///
+    /// Polling tends to be more reliable and less performant. In particular, notification-based
+    /// watching often misses updates on macOS.
     #[arg(long, value_name = "DURATION", value_parser = crate::clap::DurationValueParser::default())]
     pub poll: Option<Duration>,
 
@@ -88,12 +131,13 @@ pub struct WatchOpts {
     )]
     pub debounce: Duration,
 
-    /// A path to watch for changes. Directories are watched recursively. Can be given multiple times.
-    #[arg(long = "watch")]
+    /// A path to watch for changes.
+    ///
+    /// Directories are watched recursively. Can be given multiple times.
+    #[arg(long = "watch", value_name = "PATH")]
     pub paths: Vec<NormalPath>,
 
-    /// Reload the `ghci` session when paths matching this glob change. Can be given multiple
-    /// times. The last matching glob will determine if a reload is triggered.
+    /// Reload the `ghci` session when paths matching this glob change.
     ///
     /// By default, only changes to Haskell source files trigger reloads. If you'd like to exclude
     /// some files from that, you can add an ignore glob here, like `!src/my-special-dir/**/*.hs`.
@@ -101,20 +145,26 @@ pub struct WatchOpts {
     /// Globs provided here have precisely the same semantics as a single line in a `gitignore`
     /// file (`man gitignore`), where the meaning of `!` is inverted: namely, `!` at the beginning
     /// of a glob will ignore a file.
+    ///
+    /// The last matching glob will determine if a reload is triggered.
+    ///
+    /// Can be given multiple times.
     #[arg(long = "reload-glob")]
     pub reload_globs: Vec<String>,
 
-    /// Restart the `ghci` session when paths matching this glob change. Can be given multiple
-    /// times.
+    /// Restart the `ghci` session when paths matching this glob change.
     ///
     /// By default, only changes to `.cabal` or `.ghci` files or Haskell source files being
     /// moved/removed will trigger restarts.
     ///
-    /// Due to a `ghci` bug, the `ghci` session must be restarted when Haskell modules are removed
-    /// or renamed: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+    /// Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules are removed
+    /// or renamed.
     ///
     /// See `--reload-globs` for more details.
-    #[allow(rustdoc::bare_urls)]
+    ///
+    /// Can be given multiple times.
+    ///
+    /// [1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
     #[arg(long = "restart-glob")]
     pub restart_globs: Vec<String>,
 }
@@ -147,9 +197,11 @@ pub struct LoggingOpts {
     /// The grammar is: `target[span{field=value}]=level`, where `target` is a module path, `span`
     /// is a span name, and `level` is one of the levels listed above.
     ///
-    /// See: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
+    /// See [documentation in `tracing-subscriber`][1].
     ///
-    /// A nice value is "ghciwatch=debug".
+    /// A nice value is `ghciwatch=debug`.
+    ///
+    /// [1]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
     #[arg(long, default_value = "ghciwatch=info")]
     pub log_filter: String,
 
@@ -169,6 +221,8 @@ pub struct LoggingOpts {
     pub trace_spans: Vec<FmtSpan>,
 
     /// Path to write JSON logs to.
+    ///
+    /// JSON logs are not yet stable and the format may change on any release.
     #[arg(long, value_name = "PATH")]
     pub log_json: Option<Utf8PathBuf>,
 }

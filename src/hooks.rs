@@ -79,8 +79,10 @@ impl LifecycleEvent {
             ),
             LifecycleEvent::Restart(_) => indoc!(
                 "
-                `ghci` is restarted when modules are removed or renamed.
-                See: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
+                are removed or renamed.
+
+                [1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
                 "
             ),
         }.trim_end_matches('\n')
@@ -275,8 +277,12 @@ impl Hook<CommandKind> {
         long.push_str("\n\n");
         long.push_str(event.get_message());
 
+        if let CommandKind::Shell = command {
+            long.push_str("\n\nCommands starting with `async:` will be run in the background.");
+        }
+
         if let Some(extra_help) = self.extra_help() {
-            long.push('\n');
+            long.push_str("\n\n");
             long.push_str(extra_help);
         }
 
