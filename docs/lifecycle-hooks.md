@@ -142,11 +142,7 @@ are deleted or moved, or when any files specified by
 Hooks: [`--after-restart-shell`](cli.md#--after-restart-shell),
 [`--after-restart-ghci`](cli.md#--after-restart-ghci).
 
-When: After the GHCi session has been restarted, the [after
-startup](#after-startup) hooks have run, and after [eval
+When: After the GHCi session has been restarted, the [error
+log](cli.md#--error-file) has been written, and the [after
+startup](#after-startup) hooks have run, but before [eval
 commands](comment-evaluation.md) and [test suites](#test) are executed.
-
-In the future, these hooks may run before eval commands and test suites are
-executed (see [#242][242]).
-
-[242]: https://github.com/MercuryTechnologies/ghciwatch/issues/242

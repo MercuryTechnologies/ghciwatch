@@ -343,7 +343,11 @@ impl Ghci {
     ///
     /// Diagnostics will be added to the given `log`, and the error log will be written.
     #[instrument(level = "debug", skip_all)]
-    pub async fn initialize(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
+    pub async fn initialize<const N: usize>(
+        &mut self,
+        log: &mut CompilationLog,
+        events: [LifecycleEvent; N],
+    ) -> miette::Result<()> {
         let start_instant = Instant::now();
 
         // Wait for the stdout job to start up.
@@ -357,12 +361,7 @@ impl Ghci {
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
 
-        self.finish_compilation(
-            start_instant,
-            log,
-            LifecycleEvent::Startup(hooks::When::After),
-        )
-        .await?;
+        self.finish_compilation(start_instant, log, events).await?;
 
         Ok(())
     }
@@ -509,7 +508,7 @@ impl Ghci {
             self.finish_compilation(
                 start_instant,
                 &mut log,
-                LifecycleEvent::Reload(hooks::When::After),
+                [LifecycleEvent::Reload(hooks::When::After)],
             )
             .await?;
         }
@@ -529,12 +528,14 @@ impl Ghci {
         self.stop().await?;
         let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
         let _ = std::mem::replace(self, new);
-        self.initialize(&mut log).await?;
-
-        // Allow hooks to consume the error log by updating it before running the hooks.
-        self.write_error_log(&log).await?;
-        self.run_hooks(LifecycleEvent::Restart(hooks::When::After), &mut log)
-            .await?;
+        self.initialize(
+            &mut log,
+            [
+                LifecycleEvent::Startup(hooks::When::After),
+                LifecycleEvent::Restart(hooks::When::After),
+            ],
+        )
+        .await?;
 
         Ok(())
     }
@@ -767,16 +768,20 @@ impl Ghci {
     /// This outputs how long the compilation took (since `compilation_start`), runs eval and test
     /// commands (if compilation succeeded), and writes the error log.
     #[instrument(skip_all, level = "trace")]
-    async fn finish_compilation(
+    async fn finish_compilation<const N: usize>(
         &mut self,
         compilation_start: Instant,
         log: &mut CompilationLog,
-        event: LifecycleEvent,
+        events: [LifecycleEvent; N],
     ) -> miette::Result<()> {
         // Allow hooks to consume the error log by updating it before running the hooks.
         self.write_error_log(log).await?;
 
-        self.run_hooks(event, log).await?;
+        for event in events {
+            self.run_hooks(event, log).await?;
+        }
+
+        let event = events[N - 1];
 
         if let Some(CompilationResult::Err) = log.result() {
             tracing::error!(
