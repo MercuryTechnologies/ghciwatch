@@ -54,12 +54,6 @@ use crate::normal_path::NormalPath;
     override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
 )]
 pub struct Opts {
-    /// A Haskell source file to load into a `ghci` REPL.
-    ///
-    /// Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
-    #[arg(value_name = "FILE", conflicts_with = "command")]
-    pub file: Option<NormalPath>,
-
     /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
     /// This is used to launch the underlying `ghci` session that `ghciwatch` controls.
@@ -67,6 +61,12 @@ pub struct Opts {
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
+
+    /// A Haskell source file to load into a `ghci` REPL.
+    ///
+    /// Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
+    #[arg(value_name = "FILE", conflicts_with = "command")]
+    pub file: Option<NormalPath>,
 
     /// A file to write compilation errors to.
     ///
