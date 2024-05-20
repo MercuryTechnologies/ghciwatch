@@ -26,7 +26,7 @@ async fn can_write_error_log() {
         .await
         .expect("ghciwatch writes ghcid.txt");
     expect![[r#"
-        All good (4 modules)
+        All good (3 modules)
     "#]]
     .assert_eq(&error_contents);
 }
@@ -134,7 +134,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch writes ghcid.txt");
 
     expect![[r#"
-        All good (5 modules)
+        All good (4 modules)
     "#]]
     .assert_eq(&error_contents);
 }
