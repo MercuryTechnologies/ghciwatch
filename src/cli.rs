@@ -238,7 +238,9 @@ impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
     pub fn init(&mut self) -> miette::Result<()> {
-        if self.watch.paths.is_empty() {
+        if let Some(file) = &self.file {
+            self.watch.paths.push(file.clone());
+        } else if self.watch.paths.is_empty() {
             self.watch.paths.push(NormalPath::from_cwd("src")?);
         }
 

@@ -38,16 +38,8 @@ impl WatcherOpts {
     /// This extracts the bits of an [`Opts`] struct relevant to the [`run_watcher`] session
     /// without cloning or taking ownership of the entire thing.
     pub fn from_cli(opts: &Opts) -> Self {
-        let watch = if let Some(file) = &opts.file {
-            let mut paths = opts.watch.paths.clone();
-            paths.push(file.clone());
-            paths
-        } else {
-            opts.watch.paths.clone()
-        };
-
         Self {
-            watch,
+            watch: opts.watch.paths.clone(),
             debounce: opts.watch.debounce,
             poll: opts.watch.poll,
         }
