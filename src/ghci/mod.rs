@@ -690,15 +690,15 @@ impl Ghci {
         path: &NormalPath,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
-        let (import_name, _target_kind) =
-            self.targets.module_import_name(&self.search_paths, path)?;
+        let module = self.targets.module_import_name(&self.search_paths, path)?;
 
         self.stdin
-            .interpret_module(&mut self.stdout, &import_name, log)
+            .interpret_module(&mut self.stdout, &module.name, log)
             .await?;
 
-        self.targets
-            .insert_source_path(path.clone(), TargetKind::Path);
+        if !module.loaded {
+            self.targets.insert_source_path(path.clone(), module.kind);
+        }
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
             .await?;
