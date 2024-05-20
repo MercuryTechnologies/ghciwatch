@@ -141,7 +141,8 @@ fn eval_commands(input: &mut Located<&str>) -> PResult<VecDeque<ByteSpanCommand>
 fn line_eval_command(input: &mut Located<&str>) -> PResult<ByteSpanCommand> {
     let _ = space0.parse_next(input)?;
     // TODO: Perhaps these eval markers should be customizable?
-    let _ = "-- $> ".parse_next(input)?;
+    let _ = "-- $>".parse_next(input)?;
+    let _ = space0.parse_next(input)?;
     let (command, span) = until_newline.with_span().parse_next(input)?;
     let command: GhciCommand = command.to_owned().into();
 
@@ -200,6 +201,15 @@ mod tests {
                 command: "foo".to_owned().into(),
                 display_command: "foo".into(),
                 span: 6..10,
+            }
+        );
+
+        assert_eq!(
+            line_eval_command.parse(Located::new("-- $>foo\n")).unwrap(),
+            ByteSpanCommand {
+                command: "foo".to_owned().into(),
+                display_command: "foo".into(),
+                span: 5..9,
             }
         );
 

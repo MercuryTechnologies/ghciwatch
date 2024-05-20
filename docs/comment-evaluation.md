@@ -53,7 +53,8 @@ Single-line eval comments have the following grammar:
 
 ```
 [ \t]*     # Leading whitespace
-"-- $> "   # Eval comment marker
+"-- $>"    # Eval comment marker
+[ \t]*     # Optional whitespace
 [^\n]+ \n  # Rest of line
 ```
 
