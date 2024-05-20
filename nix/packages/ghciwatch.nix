@@ -14,6 +14,8 @@
   rust-analyzer,
   mdbook,
   installShellFiles,
+  treefmt,
+  alejandra,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -258,6 +260,8 @@
     packages = [
       rust-analyzer
       mdbook
+      treefmt
+      alejandra
     ];
   };
 in
