@@ -31,7 +31,7 @@
   GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
 
   src = lib.cleanSourceWith {
-    src = craneLib.path ../../.;
+    src = craneLib.path (inputs.self.outPath);
     filter = let
       # Keep test project data, needed for the build.
       testDataFilter = path: _type: lib.hasInfix "tests/data" path;
@@ -40,45 +40,49 @@
         (testDataFilter path type) || (craneLib.filterCargoSources path type);
   };
 
-  commonArgs' = {
-    inherit src;
+  commonArgs' =
+    (craneLib.crateNameFromCargoToml {
+      cargoToml = "${inputs.self}/Cargo.toml";
+    })
+    // {
+      inherit src;
 
-    nativeBuildInputs = lib.optionals stdenv.isDarwin [
-      # Additional darwin specific inputs can be set here
-      (libiconv.override {
-        enableStatic = true;
-        enableShared = false;
-      })
-      darwin.apple_sdk.frameworks.CoreServices
-    ];
+      nativeBuildInputs = lib.optionals stdenv.isDarwin [
+        # Additional darwin specific inputs can be set here
+        (libiconv.override {
+          enableStatic = true;
+          enableShared = false;
+        })
+        darwin.apple_sdk.frameworks.CoreServices
+      ];
 
-    cargoBuildCommand = "cargoWithProfile build --all";
-    cargoCheckExtraArgs = "--all";
-    cargoTestExtraArgs = "--all";
+      cargoBuildCommand = "cargoWithProfile build --all";
+      cargoCheckExtraArgs = "--all";
+      cargoTestExtraArgs = "--all";
 
-    # Ensure that binaries are statically linked.
-    postPhases = "ensureStaticPhase";
-    doEnsureStatic = true;
-    ensureStaticPhase = let
-      ldd =
-        if stdenv.isDarwin
-        then "otool -L"
-        else "ldd";
-    in ''
-      if [[ "$doEnsureStatic" = 1 && -d "$out/bin" ]]; then
-        for installedBinary in $(find $out/bin/ -type f); do
-          echo "Checking that $installedBinary is statically linked"
-          # The first line of output is the binary itself, stored in
-          # `/nix/store`, so we skip that with `tail`.
-          if ${ldd} "$installedBinary" | tail -n +2 | grep --quiet /nix/store; then
-            ${ldd} "$installedBinary"
-            echo "Output binary $installedBinary isn't statically linked!"
-            exit 1
-          fi
-        done
-      fi
-    '';
-  };
+      # Ensure that binaries are statically linked.
+      postPhases = "ensureStaticPhase";
+      doEnsureStatic = true;
+      ensureStaticPhase = let
+        ldd =
+          if stdenv.isDarwin
+          then "otool -L"
+          else "ldd";
+      in ''
+        if [[ "$doEnsureStatic" = 1 && -d "$out/bin" ]]; then
+          for installedBinary in $(find $out/bin/ -type f); do
+            echo "Checking that $installedBinary is statically linked"
+            # The first line of output is the binary itself, stored in
+            # `/nix/store`, so we skip that with `tail`.
+            if ${ldd} "$installedBinary" | tail -n +2 | grep --quiet /nix/store; then
+              ${ldd} "$installedBinary"
+              echo "Output binary $installedBinary isn't statically linked!"
+              exit 1
+            fi
+          done
+        fi
+      '';
+    };
 
   # Build *just* the cargo dependencies, so we can reuse
   # all of that work (e.g. via cachix) when running in CI
@@ -89,6 +93,70 @@
     // {
       inherit cargoArtifacts;
     };
+
+  cli-markdown = let
+    ghciwatch-with-clap-markdown = craneLib.buildPackage (commonArgs
+      // {
+        doCheck = false;
+        cargoExtraArgs = "--features clap-markdown";
+
+        # Only build `ghciwatch`, not the test macros.
+        cargoBuildCommand = "cargoWithProfile build";
+      });
+  in
+    stdenv.mkDerivation {
+      pname = "ghciwatch-cli-markdown";
+      inherit (commonArgs) version;
+
+      phases = ["buildPhase"];
+
+      nativeBuildInputs = [ghciwatch-with-clap-markdown];
+
+      buildPhase = ''
+        mkdir -p "$out/share/ghciwatch/"
+        ghciwatch --generate-markdown-help > "$out/share/ghciwatch/cli.md"
+      '';
+    };
+
+  user-manual = stdenv.mkDerivation {
+    pname = "ghciwatch-user-manual";
+    inherit (commonArgs) version;
+
+    phases = ["unpackPhase" "buildPhase" "installPhase"];
+
+    src = inputs.self;
+    sourceRoot = "source/docs";
+
+    nativeBuildInputs = [mdbook];
+
+    buildPhase = ''
+      cp ${cli-markdown}/share/ghciwatch/cli.md .
+      mdbook build
+    '';
+
+    installPhase = ''
+      mkdir -p "$out/share/ghciwatch"
+      cp -r book "$out/share/ghciwatch/html-manual"
+    '';
+  };
+
+  user-manual-tar-xz = stdenv.mkDerivation {
+    name = "ghciwatch-user-manual-${commonArgs.version}.tar.xz";
+
+    src = user-manual;
+
+    phases = ["unpackPhase" "installPhase"];
+
+    installPhase = ''
+      mv share/ghciwatch/html-manual ghciwatch-user-manual
+
+      tar --create \
+        --verbose \
+        --auto-compress \
+        --file "$out" \
+        ghciwatch-user-manual
+    '';
+  };
 
   checks = {
     ghciwatch-tests = craneLib.cargoNextest (commonArgs
@@ -170,7 +238,7 @@ in
       cargoBuildCommand = "cargoWithProfile build";
 
       passthru = {
-        inherit GHC_VERSIONS checks devShell;
+        inherit GHC_VERSIONS checks devShell user-manual user-manual-tar-xz;
       };
     }
     // (lib.optionalAttrs (stdenv.isLinux && stdenv.isx86_64) {

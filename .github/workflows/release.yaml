@@ -122,6 +122,12 @@ jobs:
           RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch-aarch64-linux)
           cp "$RESULT/bin/ghciwatch" target/ghciwatch-aarch64-linux
 
+      - name: Build user manual
+        if: runner.os == 'Linux'
+        run: |
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch.user-manual-tar-xz)
+          cp "$(readlink "$RESULT")" target/ghciwatch-user-manual.tar.xz
+
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
         if: runner.os == 'macOS'
@@ -189,6 +195,7 @@ jobs:
             macos/ghciwatch-macos
             linux/ghciwatch-x86_64-linux
             linux/ghciwatch-aarch64-linux
+            linux/ghciwatch-user-manual.tar.xz
 
       - name: Comment on PR with link to the release
         uses: peter-evans/create-or-update-comment@v2
