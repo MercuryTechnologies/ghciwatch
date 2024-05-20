@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use clap::CommandFactory;
 use clap::Parser;
 use ghciwatch::cli;
 use ghciwatch::run_ghci;
@@ -27,6 +28,12 @@ async fn main() -> miette::Result<()> {
     #[cfg(feature = "clap-markdown")]
     if opts.generate_markdown_help {
         println!("{}", ghciwatch::clap_markdown::help_markdown::<cli::Opts>());
+        return Ok(());
+    }
+
+    if let Some(shell) = opts.completions {
+        let mut command = cli::Opts::command();
+        clap_complete::generate(shell, &mut command, "ghciwatch", &mut std::io::stdout());
         return Ok(());
     }
 
