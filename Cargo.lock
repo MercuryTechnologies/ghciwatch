@@ -645,6 +645,7 @@ dependencies = [
  "backoff",
  "camino",
  "clap",
+ "clap-markdown",
  "clearscreen",
  "command-group",
  "crossterm",
