@@ -82,7 +82,16 @@
           done
         fi
       '';
-    };
+    }
+    // (lib.optionalAttrs (stdenv.targetPlatform.isLinux && stdenv.targetPlatform.isx86_64) {
+      # Make sure we don't link with GNU libc so we can produce a static executable.
+      CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+    })
+    // (lib.optionalAttrs (stdenv.targetPlatform.isLinux && stdenv.targetPlatform.isAarch64) {
+      # Make sure we don't link with GNU libc so we can produce a static executable.
+      CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${stdenv.cc.targetPrefix}cc";
+    });
 
   # Build *just* the cargo dependencies, so we can reuse
   # all of that work (e.g. via cachix) when running in CI
@@ -94,29 +103,40 @@
       inherit cargoArtifacts;
     };
 
-  cli-markdown = let
-    ghciwatch-with-clap-markdown = craneLib.buildPackage (commonArgs
-      // {
-        doCheck = false;
-        cargoExtraArgs = "--features clap-markdown";
+  releaseArgs =
+    commonArgs
+    // {
+      # Don't run tests; we'll do that in a separate derivation.
+      # This will allow people to install and depend on `ghciwatch`
+      # without downloading a half dozen different versions of GHC.
+      doCheck = false;
 
-        # Only build `ghciwatch`, not the test macros.
-        cargoBuildCommand = "cargoWithProfile build";
-      });
-  in
-    stdenv.mkDerivation {
-      pname = "ghciwatch-cli-markdown";
-      inherit (commonArgs) version;
+      # Only build `ghciwatch`, not the test macros.
+      cargoBuildCommand = "cargoWithProfile build";
 
-      phases = ["buildPhase"];
-
-      nativeBuildInputs = [ghciwatch-with-clap-markdown];
-
-      buildPhase = ''
-        mkdir -p "$out/share/ghciwatch/"
-        ghciwatch --generate-markdown-help > "$out/share/ghciwatch/cli.md"
-      '';
+      passthru = {
+        inherit GHC_VERSIONS checks devShell user-manual user-manual-tar-xz;
+      };
     };
+
+  ghciwatch-with-clap-markdown = craneLib.buildPackage (releaseArgs
+    // {
+      cargoExtraArgs = "--locked --features clap-markdown";
+    });
+
+  cli-markdown = stdenv.mkDerivation {
+    pname = "ghciwatch-cli-markdown";
+    inherit (commonArgs) version;
+
+    phases = ["buildPhase"];
+
+    nativeBuildInputs = [ghciwatch-with-clap-markdown];
+
+    buildPhase = ''
+      mkdir -p "$out/share/ghciwatch/"
+      ghciwatch --generate-markdown-help > "$out/share/ghciwatch/cli.md"
+    '';
+  };
 
   user-manual = stdenv.mkDerivation {
     pname = "ghciwatch-user-manual";
@@ -225,27 +245,4 @@
     ];
   };
 in
-  # Build the actual crate itself, reusing the dependency
-  # artifacts from above.
-  craneLib.buildPackage (commonArgs
-    // {
-      # Don't run tests; we'll do that in a separate derivation.
-      # This will allow people to install and depend on `ghciwatch`
-      # without downloading a half dozen different versions of GHC.
-      doCheck = false;
-
-      # Only build `ghciwatch`, not the test macros.
-      cargoBuildCommand = "cargoWithProfile build";
-
-      passthru = {
-        inherit GHC_VERSIONS checks devShell user-manual user-manual-tar-xz;
-      };
-    }
-    // (lib.optionalAttrs (stdenv.isLinux && stdenv.isx86_64) {
-      # Make sure we don't link with GNU libc so we can produce a static executable.
-      CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-    })
-    // (lib.optionalAttrs (stdenv.isLinux && stdenv.isAarch64) {
-      # Make sure we don't link with GNU libc so we can produce a static executable.
-      CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
-    }))
+  craneLib.buildPackage releaseArgs

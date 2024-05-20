@@ -54,11 +54,11 @@
               # TODO: Bump the Rust version here...
               rustToolchain = final.pkgsBuildHost.rust-bin.stable."1.72.1".default.override {
                 targets =
-                  final.lib.optionals final.stdenv.isDarwin [
+                  final.lib.optionals final.stdenv.targetPlatform.isDarwin [
                     "x86_64-apple-darwin"
                     "aarch64-apple-darwin"
                   ]
-                  ++ final.lib.optionals final.stdenv.isLinux [
+                  ++ final.lib.optionals final.stdenv.targetPlatform.isLinux [
                     "x86_64-unknown-linux-musl"
                     "aarch64-unknown-linux-musl"
                   ];
@@ -94,6 +94,8 @@
           inherit ghciwatch;
           default = ghciwatch;
           ghciwatch-tests = ghciwatch.checks.ghciwatch-tests;
+          ghciwatch-user-manual = ghciwatch.user-manual;
+          ghciwatch-user-manual-tar-xz = ghciwatch.user-manual-tar-xz;
 
           # This lets us use `nix run .#cargo` to run Cargo commands without
           # loading the entire `nix develop` shell (which includes
@@ -113,10 +115,7 @@
             };
             packages = crossPkgs.callPackage ./nix/makePackages.nix {inherit inputs;};
           in
-            (packages.ghciwatch.override {inherit ghcVersions;}).overrideAttrs (old: {
-              CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
-              CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${crossPkgs.stdenv.cc.targetPrefix}cc";
-            });
+            packages.ghciwatch.override {inherit ghcVersions;};
         })
     );
 
