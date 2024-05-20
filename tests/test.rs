@@ -39,7 +39,7 @@ async fn can_run_test_suite_on_reload() {
         .await
         .expect("ghciwatch writes ghcid.txt");
     expect![[r#"
-        All good (4 modules)
+        All good (3 modules)
     "#]]
     .assert_eq(&error_contents);
 }
