@@ -62,6 +62,12 @@ pub struct Opts {
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
 
+    /// A Haskell source file to load into a `ghci` REPL.
+    ///
+    /// Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
+    #[arg(value_name = "FILE", conflicts_with = "command")]
+    pub file: Option<NormalPath>,
+
     /// A file to write compilation errors to.
     ///
     /// The output format is compatible with `ghcid`'s `--outputfile` option.
@@ -232,7 +238,9 @@ impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
     pub fn init(&mut self) -> miette::Result<()> {
-        if self.watch.paths.is_empty() {
+        if let Some(file) = &self.file {
+            self.watch.paths.push(file.clone());
+        } else if self.watch.paths.is_empty() {
             self.watch.paths.push(NormalPath::from_cwd("src")?);
         }
 

@@ -127,13 +127,15 @@ impl GhciOpts {
     pub fn from_cli(opts: &Opts) -> miette::Result<(Self, Option<DuplexStream>)> {
         // TODO: implement fancier default command
         // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
-        let command = opts
-            .command
-            .clone()
-            .unwrap_or_else(|| ClonableCommand::new("cabal").arg("repl"));
+        let command = match (&opts.file, &opts.command) {
+            (Some(file), None) => ClonableCommand::new("ghci").arg(file.relative()),
+            (None, Some(command)) => command.clone(),
+            (None, None) => ClonableCommand::new("cabal").arg("repl"),
+            (Some(_), Some(_)) => unreachable!(),
+        };
 
-        let stdout_writer: GhciWriter;
-        let stderr_writer: GhciWriter;
+        let stdout_writer;
+        let stderr_writer;
         let tui_reader;
 
         if opts.tui {
