@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "clap-markdown",
     "test-harness",
     "test-harness-macro",
 ]
