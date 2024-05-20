@@ -11,6 +11,7 @@
   inputs,
   rustPlatform,
   rust-analyzer,
+  mdbook,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -152,6 +153,7 @@
     # Extra development tools (cargo and rustc are included by default).
     packages = [
       rust-analyzer
+      mdbook
     ];
   };
 in
