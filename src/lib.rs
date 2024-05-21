@@ -15,6 +15,7 @@
 mod aho_corasick;
 mod buffers;
 mod clap;
+pub mod clap_markdown;
 pub mod cli;
 mod clonable_command;
 mod command_ext;

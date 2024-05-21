@@ -26,7 +26,7 @@ async fn main() -> miette::Result<()> {
 
     #[cfg(feature = "clap-markdown")]
     if opts.generate_markdown_help {
-        println!("{}", clap_markdown::help_markdown::<cli::Opts>());
+        println!("{}", ghciwatch::clap_markdown::help_markdown::<cli::Opts>());
         return Ok(());
     }
 
