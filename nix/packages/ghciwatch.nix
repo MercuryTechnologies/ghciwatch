@@ -128,11 +128,11 @@
     pname = "ghciwatch-cli-markdown";
     inherit (commonArgs) version;
 
-    phases = ["buildPhase"];
+    phases = ["installPhase"];
 
     nativeBuildInputs = [ghciwatch-with-clap-markdown];
 
-    buildPhase = ''
+    installPhase = ''
       mkdir -p "$out/share/ghciwatch/"
       ghciwatch --generate-markdown-help > "$out/share/ghciwatch/cli.md"
     '';
