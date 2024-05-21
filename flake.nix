@@ -81,16 +81,23 @@
       "ghc98"
     ];
   in {
+    _pkgs = eachSystem (localSystem: makePkgs {inherit localSystem;});
+
+    localPkgs = eachSystem (
+      localSystem:
+        self._pkgs.${localSystem}.callPackage ./nix/makePackages.nix {inherit inputs;}
+    );
+
     packages = eachSystem (
       localSystem: let
-        pkgs = makePkgs {inherit localSystem;};
-        inherit (pkgs) lib;
-        localPackages = pkgs.callPackage ./nix/makePackages.nix {inherit inputs;};
-        ghciwatch = localPackages.ghciwatch.override {
+        inherit (nixpkgs) lib;
+        localPkgs = self.localPkgs.${localSystem};
+        pkgs = self._pkgs.${localSystem};
+        ghciwatch = localPkgs.ghciwatch.override {
           inherit ghcVersions;
         };
       in
-        (lib.filterAttrs (name: value: lib.isDerivation value) localPackages)
+        (lib.filterAttrs (name: value: lib.isDerivation value) localPkgs)
         // {
           inherit ghciwatch;
           default = ghciwatch;
@@ -120,7 +127,13 @@
         })
     );
 
-    checks = eachSystem (system: self.packages.${system}.default.checks);
+    checks = eachSystem (
+      system:
+        builtins.removeAttrs
+        self.localPkgs.${system}.allChecks
+        # CI and `nix flake check` complain that these are not derivations.
+        ["override" "overrideDerivation"]
+    );
 
     devShells = eachSystem (system: {
       default = self.packages.${system}.default.devShell;

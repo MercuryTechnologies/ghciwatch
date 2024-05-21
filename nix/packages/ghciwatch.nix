@@ -28,7 +28,7 @@
     then [ghc]
     else builtins.map (ghcVersion: haskell.compiler.${ghcVersion}) ghcVersions;
 
-  ghcBuildInputs =
+  haskellInputs =
     [
       haskellPackages.cabal-install
       hpack
@@ -136,7 +136,7 @@
         '';
 
       passthru = {
-        inherit GHC_VERSIONS checks devShell user-manual user-manual-tar-xz;
+        inherit GHC_VERSIONS haskellInputs checks devShell user-manual user-manual-tar-xz;
       };
     };
 
@@ -225,7 +225,7 @@
   testArgs =
     commonArgs
     // {
-      nativeBuildInputs = (commonArgs.nativeBuildInputs or []) ++ ghcBuildInputs;
+      nativeBuildInputs = (commonArgs.nativeBuildInputs or []) ++ haskellInputs;
       NEXTEST_PROFILE = "ci";
       NEXTEST_HIDE_PROGRESS_BAR = "true";
 
@@ -263,30 +263,6 @@
               cargo-nextest
             ];
         });
-
-    # Check that the Haskell project used for integration tests is OK.
-    haskell-project-for-integration-tests = stdenv.mkDerivation {
-      name = "haskell-project-for-integration-tests";
-      src = ../../tests/data/simple;
-      phases = ["unpackPhase" "buildPhase" "installPhase"];
-      nativeBuildInputs = ghcBuildInputs;
-      inherit GHC_VERSIONS;
-
-      buildPhase = ''
-        # Need an empty `.cabal/config` or `cabal` errors trying to use the network.
-        mkdir .cabal
-        touch .cabal/config
-        export HOME=$(pwd)
-
-        for VERSION in $GHC_VERSIONS; do
-          make test GHC="ghc-$VERSION"
-        done
-      '';
-
-      installPhase = ''
-        touch $out
-      '';
-    };
   };
 
   devShell = craneLib.devShell {
