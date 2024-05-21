@@ -1,0 +1,323 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Lifecycle hooks - ghciwatch</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html" class="active"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">ghciwatch</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./lifecycle-hooks.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="lifecycle-hooks"><a class="header" href="#lifecycle-hooks">Lifecycle hooks</a></h1>
+<p>Ghciwatch supports a number of <a href="cli.html#lifecycle-hooks">lifecycle hook options</a>
+like <a href="cli.html#--test-ghci"><code>--test-ghci</code></a>,
+<a href="cli.html#--before-startup-shell"><code>--before-startup-shell</code></a>, and
+<a href="cli.html#--after-restart-ghci"><code>--after-restart-ghci</code></a>.</p>
+<p>Lifecycle hooks can be defined multiple times and run in sequence. For example:</p>
+<pre><code>ghciwatch --test-ghci TestMain.testMain \
+          --test-ghci 'if myGreeting /= "Hello, world!" then error else ()'
+</code></pre>
+<p>This command will first run <code>TestMain.testMain</code> and then the check for
+<code>myGreeting</code>.</p>
+<h2 id="types-of-hooks"><a class="header" href="#types-of-hooks">Types of hooks</a></h2>
+<p>Lifecycle hooks come in two main variants: shell commands and GHCi commands.</p>
+<h3 id="ghci-commands"><a class="header" href="#ghci-commands">GHCi commands</a></h3>
+<p>GHCi lifecycle hook options (like <a href="cli.html#--test-ghci"><code>--test-ghci</code></a> and
+<a href="cli.html#--after-startup-ghci"><code>--after-startup-ghci</code></a>) end in <code>-ghci</code> and
+define a command to be executed in the GHCi session.</p>
+<p>When running a test suite, you can use a hook like <code>--after-startup-ghci ':set args "--match=/MyModule/"'</code> to <a href="https://hspec.github.io/match.html">filter HSpec items</a> or otherwise
+set command-line arguments for the test suite.</p>
+<p>Note that any GHCi command is allowed, so there’s nothing to stop you from
+setting a hook like <code>:set prompt λ&gt;</code> that breaks ghciwatch’s ability to detect
+when reloads are complete.</p>
+<p>Output printed by GHCi, including by GHCi lifecycle hooks, is printed to
+ghciwatch’s stdout.</p>
+<h3 id="shell-commands"><a class="header" href="#shell-commands">Shell commands</a></h3>
+<p>Shell lifecycle hook options (like <a href="cli.html#--test-shell"><code>--test-shell</code></a>) end
+in <code>-shell</code> and define a shell command to be executed.</p>
+<p>Arguments can be quoted with standard <code>sh</code> syntax as defined in <a href="https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html">POSIX.1-2008
+§2.2</a> (however, note that no variable expansion is performed).</p>
+<p>If a shell lifecycle hook begins with <code>async:</code>, as in <code>--after-reload-shell 'async:tags'</code>, the command will be run asynchronously and ghciwatch will
+continue to execute as normal.</p>
+<p>If a shell lifecycle hook fails (exits with a non-zero status code), a message
+indicating the command that failed and the contents of its standard output and
+standard error streams will be printed.</p>
+<h2 id="detecting-if-code-is-running-in-ghciwatch"><a class="header" href="#detecting-if-code-is-running-in-ghciwatch">Detecting if code is running in ghciwatch</a></h2>
+<p>Before launching the GHCi session, ghciwatch sets the <code>IN_GHCIWATCH</code>
+environment variable. GHCi and shell command lifecycle hooks can read this
+environment variable to determine if they’re being run inside a ghciwatch session.</p>
+<p>This is particularly useful for code which may be compiled, run in a plain
+<code>ghci</code> session, or run in a ghciwatch-managed GHCi session.</p>
+<h2 id="list-of-lifecycle-hooks"><a class="header" href="#list-of-lifecycle-hooks">List of lifecycle hooks</a></h2>
+<h3 id="before-startup"><a class="header" href="#before-startup">Before startup</a></h3>
+<p>Hook: <a href="cli.html#--before-startup-shell"><code>--before-startup-shell</code></a>.</p>
+<p>When: Before the <a href="cli.html#--command"><code>--command</code></a> is executed to spawn a GHCi
+session.</p>
+<p>No GHCi session exists when this hook is run, so only a shell hook is
+available.</p>
+<p>Good for running tools like <a href="https://github.com/sol/hpack"><code>hpack</code></a> to generate <code>.cabal</code> files.</p>
+<h3 id="after-startup"><a class="header" href="#after-startup">After startup</a></h3>
+<p>Hooks: <a href="cli.html#--after-startup-shell"><code>--after-startup-shell</code></a>,
+<a href="cli.html#--after-startup-ghci"><code>--after-startup-ghci</code></a>.</p>
+<p>When: After the <a href="cli.html#--command"><code>--command</code></a> executed to spawn a GHCi
+session has finished loading and the <a href="cli.html#--error-file">error log</a> has been
+written, but before <a href="comment-evaluation.html">eval commands</a> and <a href="#test">test
+suites</a> are executed.</p>
+<h3 id="test"><a class="header" href="#test">Test</a></h3>
+<p>Hooks: <a href="cli.html#--test-shell"><code>--test-shell</code></a>,
+<a href="cli.html#--test-ghci"><code>--test-ghci</code></a>.</p>
+<p>When: After the GHCi session <a href="#after-startup">starts up</a> or a
+<a href="#after-reload">reload</a> or <a href="#after-restart">restart</a> completes.</p>
+<p>Note that if compilation fails, test suites and <a href="comment-evaluation.html">eval
+commands</a> will not run.</p>
+<h3 id="before-reload"><a class="header" href="#before-reload">Before reload</a></h3>
+<p>Hooks: <a href="cli.html#--before-reload-shell"><code>--before-reload-shell</code></a>,
+<a href="cli.html#--before-reload-ghci"><code>--before-reload-ghci</code></a>.</p>
+<p>When: After file changes are detected but before a <code>:reload</code> or <code>:add</code> command
+is sent to the GHCi session.</p>
+<p>Note that the before-reload hooks are not executed <a href="#before-restart">before a
+restart</a>.</p>
+<h3 id="after-reload"><a class="header" href="#after-reload">After reload</a></h3>
+<p>Hooks: <a href="cli.html#--after-reload-shell"><code>--after-reload-shell</code></a>,
+<a href="cli.html#--after-reload-ghci"><code>--after-reload-ghci</code></a>.</p>
+<p>When: After a reload has completed, after the <a href="cli.html#--error-file">error log</a>
+has been written, but before <a href="comment-evaluation.html">eval commands</a> and <a href="#test">test
+suites</a> are executed.</p>
+<h3 id="before-restart"><a class="header" href="#before-restart">Before restart</a></h3>
+<p>Hooks: <a href="cli.html#--before-restart-shell"><code>--before-restart-shell</code></a>,
+<a href="cli.html#--before-restart-ghci"><code>--before-restart-ghci</code></a>.</p>
+<p>When: After file changes that require a restart are detected but before the
+GHCi session is <code>SIGKILL</code>ed.</p>
+<p>The GHCi session is restarted when <code>.cabal</code> files change, when Haskell modules
+are deleted or moved, or when any files specified by
+<a href="cli.html#--restart-globs"><code>--restart-globs</code></a> are changed.</p>
+<h3 id="after-restart"><a class="header" href="#after-restart">After restart</a></h3>
+<p>Hooks: <a href="cli.html#--after-restart-shell"><code>--after-restart-shell</code></a>,
+<a href="cli.html#--after-restart-ghci"><code>--after-restart-ghci</code></a>.</p>
+<p>When: After the GHCi session has been restarted, the <a href="cli.html#--error-file">error
+log</a> has been written, and the <a href="#after-startup">after
+startup</a> hooks have run, but before <a href="comment-evaluation.html">eval
+commands</a> and <a href="#test">test suites</a> are executed.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="comment-evaluation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="comment-evaluation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

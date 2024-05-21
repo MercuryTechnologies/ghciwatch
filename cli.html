@@ -1,0 +1,452 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Command-line arguments - ghciwatch</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html" class="active"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">ghciwatch</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./cli.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="command-line-arguments-for-ghciwatch"><a class="header" href="#command-line-arguments-for-ghciwatch">Command-line arguments for <code>ghciwatch</code></a></h1>
+<p>Ghciwatch loads a GHCi session for a Haskell project and reloads it
+when source files change.</p>
+<p><strong>Usage:</strong> <code>ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]</code></p>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<p>Load <code>cabal v2-repl</code> and watch for changes in <code>src</code>:</p>
+<pre><code>ghciwatch
+</code></pre>
+<p>Load a custom GHCi session and watch for changes in multiple locations:</p>
+<pre><code>ghciwatch --command "cabal v2-repl lib:test-dev" \
+          --watch src --watch test
+</code></pre>
+<p>Run tests after reloads:</p>
+<pre><code>ghciwatch --test-ghci TestMain.testMain \
+          --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+</code></pre>
+<p>Use <code>hpack</code> to regenerate <code>.cabal</code> files:</p>
+<pre><code>ghciwatch --before-startup-shell hpack \
+          --restart-glob '**/package.yaml'
+</code></pre>
+<p>Also reload the session when <code>.persistentmodels</code> change:</p>
+<pre><code>ghciwatch --watch config/modelsFiles \
+          --reload-glob '**/*.persistentmodels'
+</code></pre>
+<p>Don’t reload for <code>README.md</code> files:</p>
+<pre><code>ghciwatch --reload-glob '!src/**/README.md'
+</code></pre>
+<h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
+<dl>
+<dt><a id="FILE", href="#FILE"><code> &lt;FILE&gt;</code></a></dt><dd>
+<p>A Haskell source file to load into a <code>ghci</code> REPL.</p>
+<p>Shortcut for <code>--command 'ghci PATH'</code>. Conflicts with <code>--command</code>.</p>
+</dd>
+</dl>
+<h2 id="options"><a class="header" href="#options">Options</a></h2>
+<dl>
+<dt><a id="--command" href="#--command"><code>--command &lt;SHELL_COMMAND&gt;</code></a></dt><dd>
+<p>A shell command which starts a <code>ghci</code> REPL, e.g. <code>ghci</code> or <code>cabal v2-repl</code> or similar.</p>
+<p>This is used to launch the underlying <code>ghci</code> session that <code>ghciwatch</code> controls.</p>
+<p>May contain quoted arguments which will be parsed in a <code>sh</code>-like manner.</p>
+</dd>
+<dt><a id="--error-file" href="#--error-file"><code>--error-file &lt;ERROR_FILE&gt;</code></a></dt><dd>
+<p>A file to write compilation errors to.</p>
+<p>The output format is compatible with <code>ghcid</code>’s <code>--outputfile</code> option.</p>
+</dd>
+<dt><a id="--enable-eval" href="#--enable-eval"><code>--enable-eval</code></a></dt><dd>
+<p>Evaluate Haskell code in comments.</p>
+<p>This parses line commands starting with <code>-- $&gt;</code> or multiline commands delimited by <code>{- $&gt;</code> and <code>&lt;$ -}</code> and evaluates them after reloads.</p>
+</dd>
+<dt><a id="--clear" href="#--clear"><code>--clear</code></a></dt><dd>
+<p>Clear the screen before reloads and restarts</p>
+</dd>
+<dt><a id="--no-interrupt-reloads" href="#--no-interrupt-reloads"><code>--no-interrupt-reloads</code></a></dt><dd>
+<p>Don’t interrupt reloads when files change.</p>
+<p>Depending on your workflow, <code>ghciwatch</code> may feel more responsive with this set.</p>
+</dd>
+</dl>
+<h2 id="lifecycle-hooks"><a class="header" href="#lifecycle-hooks">Lifecycle hooks</a></h2>
+<dl>
+<dt><a id="--test-ghci" href="#--test-ghci"><code>--test-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run tests</p>
+<p>Tests are run after startup and after reloads.</p>
+<p>Example: <code>TestMain.testMain</code>.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--test-shell" href="#--test-shell"><code>--test-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run tests</p>
+<p>Tests are run after startup and after reloads.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-startup-shell" href="#--before-startup-shell"><code>--before-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>This can be used to regenerate <code>.cabal</code> files with <code>hpack</code>.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-startup-ghci" href="#--after-startup-ghci"><code>--after-startup-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Use <code>:set args ...</code> to set command-line arguments for test hooks.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-startup-shell" href="#--after-startup-shell"><code>--after-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-reload-ghci" href="#--before-reload-ghci"><code>--before-reload-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run before reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-reload-shell" href="#--before-reload-shell"><code>--before-reload-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-reload-ghci" href="#--after-reload-ghci"><code>--after-reload-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-reload-shell" href="#--after-reload-shell"><code>--after-reload-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-restart-ghci" href="#--before-restart-ghci"><code>--before-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run before restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-restart-shell" href="#--before-restart-shell"><code>--before-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-restart-ghci" href="#--after-restart-ghci"><code>--after-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-restart-shell" href="#--after-restart-shell"><code>--after-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+</dl>
+<h2 id="file-watching-options"><a class="header" href="#file-watching-options">File watching options</a></h2>
+<dl>
+<dt><a id="--poll" href="#--poll"><code>--poll &lt;DURATION&gt;</code></a></dt><dd>
+<p>Use polling with the given interval rather than notification-based file watching.</p>
+<p>Polling tends to be more reliable and less performant. In particular, notification-based watching often misses updates on macOS.</p>
+</dd>
+<dt><a id="--debounce" href="#--debounce"><code>--debounce &lt;DURATION&gt;</code></a></dt><dd>
+<p>Debounce file events; wait this duration after receiving an event before attempting to reload.</p>
+<p>Defaults to 0.5 seconds.</p>
+<p>Default value: <code>500ms</code></p>
+</dd>
+<dt><a id="--watch" href="#--watch"><code>--watch &lt;PATH&gt;</code></a></dt><dd>
+<p>A path to watch for changes.</p>
+<p>Directories are watched recursively. Can be given multiple times.</p>
+</dd>
+<dt><a id="--reload-glob" href="#--reload-glob"><code>--reload-glob &lt;RELOAD_GLOBS&gt;</code></a></dt><dd>
+<p>Reload the <code>ghci</code> session when paths matching this glob change.</p>
+<p>By default, only changes to Haskell source files trigger reloads. If you’d like to exclude some files from that, you can add an ignore glob here, like <code>!src/my-special-dir/**/*.hs</code>.</p>
+<p>Globs provided here have precisely the same semantics as a single line in a <code>gitignore</code> file (<code>man gitignore</code>), where the meaning of <code>!</code> is inverted: namely, <code>!</code> at the beginning of a glob will ignore a file.</p>
+<p>The last matching glob will determine if a reload is triggered.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--restart-glob" href="#--restart-glob"><code>--restart-glob &lt;RESTART_GLOBS&gt;</code></a></dt><dd>
+<p>Restart the <code>ghci</code> session when paths matching this glob change.</p>
+<p>By default, only changes to <code>.cabal</code> or <code>.ghci</code> files or Haskell source files being moved/removed will trigger restarts.</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules are removed or renamed.</p>
+<p>See <code>--reload-globs</code> for more details.</p>
+<p>Can be given multiple times.</p>
+</dd>
+</dl>
+<h2 id="logging-options"><a class="header" href="#logging-options">Logging options</a></h2>
+<dl>
+<dt><a id="--log-filter" href="#--log-filter"><code>--log-filter &lt;LOG_FILTER&gt;</code></a></dt><dd>
+<p>Log message filter.</p>
+<p>Can be any of “error”, “warn”, “info”, “debug”, or “trace”. Supports more granular filtering, as well.</p>
+<p>The grammar is: <code>target[span{field=value}]=level</code>, where <code>target</code> is a module path, <code>span</code> is a span name, and <code>level</code> is one of the levels listed above.</p>
+<p>See <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">documentation in <code>tracing-subscriber</code></a>.</p>
+<p>A nice value is <code>ghciwatch=debug</code>.</p>
+<p>Default value: <code>ghciwatch=info</code></p>
+</dd>
+<dt><a id="--backtrace" href="#--backtrace"><code>--backtrace &lt;BACKTRACE&gt;</code></a></dt><dd>
+<p>How to display backtraces in error messages</p>
+<p>Default value: <code>0</code></p>
+<p>Possible values:</p>
+<ul>
+<li><code>0</code>:
+Hide backtraces in errors</li>
+<li><code>1</code>:
+Display backtraces in errors</li>
+<li><code>full</code>:
+Display backtraces with all stack frames in errors</li>
+</ul>
+</dd>
+<dt><a id="--trace-spans" href="#--trace-spans"><code>--trace-spans &lt;TRACE_SPANS&gt;</code></a></dt><dd>
+<p>When to log span events, which loosely correspond to tasks being run in the async runtime.</p>
+<p>Allows multiple values, comma-separated.</p>
+<p>Default value: <code>new,close</code></p>
+<p>Possible values:</p>
+<ul>
+<li><code>new</code>:
+Log when spans are created</li>
+<li><code>enter</code>:
+Log when spans are entered</li>
+<li><code>exit</code>:
+Log when spans are exited</li>
+<li><code>close</code>:
+Log when spans are dropped</li>
+<li><code>none</code>:
+Do not log span events</li>
+<li><code>active</code>:
+Log when spans are entered/exited</li>
+<li><code>full</code>:
+Log all span events</li>
+</ul>
+</dd>
+<dt><a id="--log-json" href="#--log-json"><code>--log-json &lt;PATH&gt;</code></a></dt><dd>
+<p>Path to write JSON logs to.</p>
+<p>JSON logs are not yet stable and the format may change on any release.</p>
+</dd>
+</dl>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="getting-started.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="lifecycle-hooks.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="getting-started.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="lifecycle-hooks.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

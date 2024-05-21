@@ -1,0 +1,704 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>ghciwatch</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">ghciwatch</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="ghciwatch"><a class="header" href="#ghciwatch">ghciwatch</a></h1>
+<p>Ghciwatch loads a <a href="https://downloads.haskell.org/ghc/latest/docs/users_guide/ghci.html">GHCi</a> session for a Haskell project and reloads it
+when source files change.</p>
+<h2 id="features"><a class="header" href="#features">Features</a></h2>
+<ul>
+<li>Ghciwatch can <a href="cli.html#--clear">clear the screen between reloads</a>.</li>
+<li>Compilation errors can be written to a file with <a href="cli.html#--error-file"><code>--error-file</code></a>, for
+compatibility with <a href="https://github.com/ndmitchell/ghcid">ghcid’s</a> <code>--outputfile</code> option.</li>
+<li>Comments starting with <code>-- $&gt;</code> <a href="comment-evaluation.html">can be evaluated</a> in
+GHCi.
+<ul>
+<li>Eval comments have access to the top-level bindings of the module they’re
+defined in, including unexported bindings.</li>
+<li>Multi-line eval comments are supported with <code>{- $&gt; ... &lt;$ -}</code>.</li>
+</ul>
+</li>
+<li>A variety of <a href="lilifecycle-hooks.html">lifecycle hooks</a> let you run Haskell code
+or shell commands on a variety of events.
+<ul>
+<li>Run a test suite with <a href="cli.html#--test-ghci"><code>--test-ghci TestMain.testMain</code></a>.</li>
+<li>Refresh your <code>.cabal</code> files with <a href="https://github.com/sol/hpack"><code>hpack</code></a> before GHCi starts using
+<a href="cli.html#--before-startup-shell"><code>--before-startup-shell hpack</code></a>.</li>
+<li>Format your code asynchronously using <a href="cli.html#--before-reload-shell"><code>--before-reload-shell async:fourmolu</code></a>.</li>
+</ul>
+</li>
+<li><a href="cli.html#--reload-glob">Custom globs</a> can be supplied to reload or restart the
+GHCi session when non-Haskell files (like templates or database schema
+definitions) change.</li>
+<li>Ghciwatch can handle new modules, removed modules, or moved modules without a
+hitch, so you don’t need to manually restart it.</li>
+</ul>
+<h2 id="demo"><a class="header" href="#demo">Demo</a></h2>
+<p>Check out an <a href="https://asciinema.org/a/659712">asciinema demo</a> to see how ghciwatch feels in practice:</p>
+<script src="https://asciinema.org/a/659712.js" id="asciicast-659712" async="true"></script>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="installation"><a class="header" href="#installation">Installation</a></h1>
+<a href="https://repology.org/project/ghciwatch/versions">
+<img src="https://repology.org/badge/vertical-allrepos/ghciwatch.svg" alt="Packaging status">
+</a>
+<h2 id="nixpkgs"><a class="header" href="#nixpkgs">Nixpkgs</a></h2>
+<p>Ghciwatch is <a href="https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/gh/ghciwatch/package.nix">available in <code>nixpkgs</code> as <code>ghciwatch</code></a>:</p>
+<pre><code class="language-shell">nix-env -iA ghciwatch
+nix profile install nixpkgs#ghciwatch
+# Or add to your `/etc/nixos/configuration.nix`.
+</code></pre>
+<h2 id="statically-linked-binaries"><a class="header" href="#statically-linked-binaries">Statically-linked binaries</a></h2>
+<p>Statically-linked binaries for aarch64/x86_64 macOS/Linux can be downloaded
+from the <a href="https://github.com/MercuryTechnologies/ghciwatch/releases/latest">GitHub releases</a>.</p>
+<h2 id="cratesio"><a class="header" href="#cratesio">Crates.io</a></h2>
+<p>The Rust crate can be downloaded from <a href="https://crates.io/crates/ghciwatch">crates.io</a>:</p>
+<pre><code class="language-shell">cargo install ghciwatch
+</code></pre>
+<h2 id="hackage"><a class="header" href="#hackage">Hackage</a></h2>
+<p>Ghciwatch is not yet available on <a href="https://hackage.haskell.org/">Hackage</a>; see <a href="https://github.com/MercuryTechnologies/ghciwatch/issues/23">issue #23</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="getting-started"><a class="header" href="#getting-started">Getting started</a></h2>
+<p>To start a ghciwatch session, you’ll need a command to start a GHCi session
+(like <code>cabal repl</code>) and a set of paths and directories to watch for changes.
+For example:</p>
+<pre><code>ghciwatch --command "cabal repl lib:test-dev" \
+          --watch src --watch test
+</code></pre>
+<p>Check out the <a href="cli.html#examples">examples</a> and <a href="cli.html#options">command-line
+arguments</a> for more information.</p>
+<p>Ghciwatch can <a href="cli.html#--test-ghci">run test suites</a> after reloads, <a href="cli.html#--enable-eval">evaluate
+code in comments</a>, <a href="cli.html#--error-file">log compiler errors to a
+file</a>, run <a href="cli.html#--before-startup-shell">startup hooks</a>
+like <a href="https://github.com/sol/hpack"><code>hpack</code></a> to generate <code>.cabal</code> files, and more!</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="command-line-arguments-for-ghciwatch"><a class="header" href="#command-line-arguments-for-ghciwatch">Command-line arguments for <code>ghciwatch</code></a></h1>
+<p>Ghciwatch loads a GHCi session for a Haskell project and reloads it
+when source files change.</p>
+<p><strong>Usage:</strong> <code>ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]</code></p>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<p>Load <code>cabal v2-repl</code> and watch for changes in <code>src</code>:</p>
+<pre><code>ghciwatch
+</code></pre>
+<p>Load a custom GHCi session and watch for changes in multiple locations:</p>
+<pre><code>ghciwatch --command "cabal v2-repl lib:test-dev" \
+          --watch src --watch test
+</code></pre>
+<p>Run tests after reloads:</p>
+<pre><code>ghciwatch --test-ghci TestMain.testMain \
+          --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+</code></pre>
+<p>Use <code>hpack</code> to regenerate <code>.cabal</code> files:</p>
+<pre><code>ghciwatch --before-startup-shell hpack \
+          --restart-glob '**/package.yaml'
+</code></pre>
+<p>Also reload the session when <code>.persistentmodels</code> change:</p>
+<pre><code>ghciwatch --watch config/modelsFiles \
+          --reload-glob '**/*.persistentmodels'
+</code></pre>
+<p>Don’t reload for <code>README.md</code> files:</p>
+<pre><code>ghciwatch --reload-glob '!src/**/README.md'
+</code></pre>
+<h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
+<dl>
+<dt><a id="FILE", href="cli.html#FILE"><code> &lt;FILE&gt;</code></a></dt><dd>
+<p>A Haskell source file to load into a <code>ghci</code> REPL.</p>
+<p>Shortcut for <code>--command 'ghci PATH'</code>. Conflicts with <code>--command</code>.</p>
+</dd>
+</dl>
+<h2 id="options"><a class="header" href="#options">Options</a></h2>
+<dl>
+<dt><a id="--command" href="cli.html#--command"><code>--command &lt;SHELL_COMMAND&gt;</code></a></dt><dd>
+<p>A shell command which starts a <code>ghci</code> REPL, e.g. <code>ghci</code> or <code>cabal v2-repl</code> or similar.</p>
+<p>This is used to launch the underlying <code>ghci</code> session that <code>ghciwatch</code> controls.</p>
+<p>May contain quoted arguments which will be parsed in a <code>sh</code>-like manner.</p>
+</dd>
+<dt><a id="--error-file" href="cli.html#--error-file"><code>--error-file &lt;ERROR_FILE&gt;</code></a></dt><dd>
+<p>A file to write compilation errors to.</p>
+<p>The output format is compatible with <code>ghcid</code>’s <code>--outputfile</code> option.</p>
+</dd>
+<dt><a id="--enable-eval" href="cli.html#--enable-eval"><code>--enable-eval</code></a></dt><dd>
+<p>Evaluate Haskell code in comments.</p>
+<p>This parses line commands starting with <code>-- $&gt;</code> or multiline commands delimited by <code>{- $&gt;</code> and <code>&lt;$ -}</code> and evaluates them after reloads.</p>
+</dd>
+<dt><a id="--clear" href="cli.html#--clear"><code>--clear</code></a></dt><dd>
+<p>Clear the screen before reloads and restarts</p>
+</dd>
+<dt><a id="--no-interrupt-reloads" href="cli.html#--no-interrupt-reloads"><code>--no-interrupt-reloads</code></a></dt><dd>
+<p>Don’t interrupt reloads when files change.</p>
+<p>Depending on your workflow, <code>ghciwatch</code> may feel more responsive with this set.</p>
+</dd>
+</dl>
+<h2 id="lifecycle-hooks"><a class="header" href="#lifecycle-hooks">Lifecycle hooks</a></h2>
+<dl>
+<dt><a id="--test-ghci" href="cli.html#--test-ghci"><code>--test-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run tests</p>
+<p>Tests are run after startup and after reloads.</p>
+<p>Example: <code>TestMain.testMain</code>.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--test-shell" href="cli.html#--test-shell"><code>--test-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run tests</p>
+<p>Tests are run after startup and after reloads.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-startup-shell" href="cli.html#--before-startup-shell"><code>--before-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>This can be used to regenerate <code>.cabal</code> files with <code>hpack</code>.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-startup-ghci" href="cli.html#--after-startup-ghci"><code>--after-startup-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Use <code>:set args ...</code> to set command-line arguments for test hooks.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-startup-shell" href="cli.html#--after-startup-shell"><code>--after-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after startup</p>
+<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-reload-ghci" href="cli.html#--before-reload-ghci"><code>--before-reload-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run before reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-reload-shell" href="cli.html#--before-reload-shell"><code>--before-reload-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-reload-ghci" href="cli.html#--after-reload-ghci"><code>--after-reload-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-reload-shell" href="cli.html#--after-reload-shell"><code>--after-reload-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after reload</p>
+<p>Reload hooks are run when modules are changed on disk.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-restart-ghci" href="cli.html#--before-restart-ghci"><code>--before-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run before restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--before-restart-shell" href="cli.html#--before-restart-shell"><code>--before-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run before restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-restart-ghci" href="cli.html#--after-restart-ghci"><code>--after-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
+<p><code>ghci</code> commands to run after restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--after-restart-shell" href="cli.html#--after-restart-shell"><code>--after-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
+<p>Shell commands to run after restart</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
+are removed or renamed.</p>
+<p>Commands starting with <code>async:</code> will be run in the background.</p>
+<p>Can be given multiple times.</p>
+</dd>
+</dl>
+<h2 id="file-watching-options"><a class="header" href="#file-watching-options">File watching options</a></h2>
+<dl>
+<dt><a id="--poll" href="cli.html#--poll"><code>--poll &lt;DURATION&gt;</code></a></dt><dd>
+<p>Use polling with the given interval rather than notification-based file watching.</p>
+<p>Polling tends to be more reliable and less performant. In particular, notification-based watching often misses updates on macOS.</p>
+</dd>
+<dt><a id="--debounce" href="cli.html#--debounce"><code>--debounce &lt;DURATION&gt;</code></a></dt><dd>
+<p>Debounce file events; wait this duration after receiving an event before attempting to reload.</p>
+<p>Defaults to 0.5 seconds.</p>
+<p>Default value: <code>500ms</code></p>
+</dd>
+<dt><a id="--watch" href="cli.html#--watch"><code>--watch &lt;PATH&gt;</code></a></dt><dd>
+<p>A path to watch for changes.</p>
+<p>Directories are watched recursively. Can be given multiple times.</p>
+</dd>
+<dt><a id="--reload-glob" href="cli.html#--reload-glob"><code>--reload-glob &lt;RELOAD_GLOBS&gt;</code></a></dt><dd>
+<p>Reload the <code>ghci</code> session when paths matching this glob change.</p>
+<p>By default, only changes to Haskell source files trigger reloads. If you’d like to exclude some files from that, you can add an ignore glob here, like <code>!src/my-special-dir/**/*.hs</code>.</p>
+<p>Globs provided here have precisely the same semantics as a single line in a <code>gitignore</code> file (<code>man gitignore</code>), where the meaning of <code>!</code> is inverted: namely, <code>!</code> at the beginning of a glob will ignore a file.</p>
+<p>The last matching glob will determine if a reload is triggered.</p>
+<p>Can be given multiple times.</p>
+</dd>
+<dt><a id="--restart-glob" href="cli.html#--restart-glob"><code>--restart-glob &lt;RESTART_GLOBS&gt;</code></a></dt><dd>
+<p>Restart the <code>ghci</code> session when paths matching this glob change.</p>
+<p>By default, only changes to <code>.cabal</code> or <code>.ghci</code> files or Haskell source files being moved/removed will trigger restarts.</p>
+<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules are removed or renamed.</p>
+<p>See <code>--reload-globs</code> for more details.</p>
+<p>Can be given multiple times.</p>
+</dd>
+</dl>
+<h2 id="logging-options"><a class="header" href="#logging-options">Logging options</a></h2>
+<dl>
+<dt><a id="--log-filter" href="cli.html#--log-filter"><code>--log-filter &lt;LOG_FILTER&gt;</code></a></dt><dd>
+<p>Log message filter.</p>
+<p>Can be any of “error”, “warn”, “info”, “debug”, or “trace”. Supports more granular filtering, as well.</p>
+<p>The grammar is: <code>target[span{field=value}]=level</code>, where <code>target</code> is a module path, <code>span</code> is a span name, and <code>level</code> is one of the levels listed above.</p>
+<p>See <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">documentation in <code>tracing-subscriber</code></a>.</p>
+<p>A nice value is <code>ghciwatch=debug</code>.</p>
+<p>Default value: <code>ghciwatch=info</code></p>
+</dd>
+<dt><a id="--backtrace" href="cli.html#--backtrace"><code>--backtrace &lt;BACKTRACE&gt;</code></a></dt><dd>
+<p>How to display backtraces in error messages</p>
+<p>Default value: <code>0</code></p>
+<p>Possible values:</p>
+<ul>
+<li><code>0</code>:
+Hide backtraces in errors</li>
+<li><code>1</code>:
+Display backtraces in errors</li>
+<li><code>full</code>:
+Display backtraces with all stack frames in errors</li>
+</ul>
+</dd>
+<dt><a id="--trace-spans" href="cli.html#--trace-spans"><code>--trace-spans &lt;TRACE_SPANS&gt;</code></a></dt><dd>
+<p>When to log span events, which loosely correspond to tasks being run in the async runtime.</p>
+<p>Allows multiple values, comma-separated.</p>
+<p>Default value: <code>new,close</code></p>
+<p>Possible values:</p>
+<ul>
+<li><code>new</code>:
+Log when spans are created</li>
+<li><code>enter</code>:
+Log when spans are entered</li>
+<li><code>exit</code>:
+Log when spans are exited</li>
+<li><code>close</code>:
+Log when spans are dropped</li>
+<li><code>none</code>:
+Do not log span events</li>
+<li><code>active</code>:
+Log when spans are entered/exited</li>
+<li><code>full</code>:
+Log all span events</li>
+</ul>
+</dd>
+<dt><a id="--log-json" href="cli.html#--log-json"><code>--log-json &lt;PATH&gt;</code></a></dt><dd>
+<p>Path to write JSON logs to.</p>
+<p>JSON logs are not yet stable and the format may change on any release.</p>
+</dd>
+</dl>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="lifecycle-hooks-1"><a class="header" href="#lifecycle-hooks-1">Lifecycle hooks</a></h1>
+<p>Ghciwatch supports a number of <a href="cli.html#lifecycle-hooks">lifecycle hook options</a>
+like <a href="cli.html#--test-ghci"><code>--test-ghci</code></a>,
+<a href="cli.html#--before-startup-shell"><code>--before-startup-shell</code></a>, and
+<a href="cli.html#--after-restart-ghci"><code>--after-restart-ghci</code></a>.</p>
+<p>Lifecycle hooks can be defined multiple times and run in sequence. For example:</p>
+<pre><code>ghciwatch --test-ghci TestMain.testMain \
+          --test-ghci 'if myGreeting /= "Hello, world!" then error else ()'
+</code></pre>
+<p>This command will first run <code>TestMain.testMain</code> and then the check for
+<code>myGreeting</code>.</p>
+<h2 id="types-of-hooks"><a class="header" href="#types-of-hooks">Types of hooks</a></h2>
+<p>Lifecycle hooks come in two main variants: shell commands and GHCi commands.</p>
+<h3 id="ghci-commands"><a class="header" href="#ghci-commands">GHCi commands</a></h3>
+<p>GHCi lifecycle hook options (like <a href="cli.html#--test-ghci"><code>--test-ghci</code></a> and
+<a href="cli.html#--after-startup-ghci"><code>--after-startup-ghci</code></a>) end in <code>-ghci</code> and
+define a command to be executed in the GHCi session.</p>
+<p>When running a test suite, you can use a hook like <code>--after-startup-ghci ':set args "--match=/MyModule/"'</code> to <a href="https://hspec.github.io/match.html">filter HSpec items</a> or otherwise
+set command-line arguments for the test suite.</p>
+<p>Note that any GHCi command is allowed, so there’s nothing to stop you from
+setting a hook like <code>:set prompt λ&gt;</code> that breaks ghciwatch’s ability to detect
+when reloads are complete.</p>
+<p>Output printed by GHCi, including by GHCi lifecycle hooks, is printed to
+ghciwatch’s stdout.</p>
+<h3 id="shell-commands"><a class="header" href="#shell-commands">Shell commands</a></h3>
+<p>Shell lifecycle hook options (like <a href="cli.html#--test-shell"><code>--test-shell</code></a>) end
+in <code>-shell</code> and define a shell command to be executed.</p>
+<p>Arguments can be quoted with standard <code>sh</code> syntax as defined in <a href="https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html">POSIX.1-2008
+§2.2</a> (however, note that no variable expansion is performed).</p>
+<p>If a shell lifecycle hook begins with <code>async:</code>, as in <code>--after-reload-shell 'async:tags'</code>, the command will be run asynchronously and ghciwatch will
+continue to execute as normal.</p>
+<p>If a shell lifecycle hook fails (exits with a non-zero status code), a message
+indicating the command that failed and the contents of its standard output and
+standard error streams will be printed.</p>
+<h2 id="detecting-if-code-is-running-in-ghciwatch"><a class="header" href="#detecting-if-code-is-running-in-ghciwatch">Detecting if code is running in ghciwatch</a></h2>
+<p>Before launching the GHCi session, ghciwatch sets the <code>IN_GHCIWATCH</code>
+environment variable. GHCi and shell command lifecycle hooks can read this
+environment variable to determine if they’re being run inside a ghciwatch session.</p>
+<p>This is particularly useful for code which may be compiled, run in a plain
+<code>ghci</code> session, or run in a ghciwatch-managed GHCi session.</p>
+<h2 id="list-of-lifecycle-hooks"><a class="header" href="#list-of-lifecycle-hooks">List of lifecycle hooks</a></h2>
+<h3 id="before-startup"><a class="header" href="#before-startup">Before startup</a></h3>
+<p>Hook: <a href="cli.html#--before-startup-shell"><code>--before-startup-shell</code></a>.</p>
+<p>When: Before the <a href="cli.html#--command"><code>--command</code></a> is executed to spawn a GHCi
+session.</p>
+<p>No GHCi session exists when this hook is run, so only a shell hook is
+available.</p>
+<p>Good for running tools like <a href="https://github.com/sol/hpack"><code>hpack</code></a> to generate <code>.cabal</code> files.</p>
+<h3 id="after-startup"><a class="header" href="#after-startup">After startup</a></h3>
+<p>Hooks: <a href="cli.html#--after-startup-shell"><code>--after-startup-shell</code></a>,
+<a href="cli.html#--after-startup-ghci"><code>--after-startup-ghci</code></a>.</p>
+<p>When: After the <a href="cli.html#--command"><code>--command</code></a> executed to spawn a GHCi
+session has finished loading and the <a href="cli.html#--error-file">error log</a> has been
+written, but before <a href="comment-evaluation.html">eval commands</a> and <a href="lifecycle-hooks.html#test">test
+suites</a> are executed.</p>
+<h3 id="test"><a class="header" href="#test">Test</a></h3>
+<p>Hooks: <a href="cli.html#--test-shell"><code>--test-shell</code></a>,
+<a href="cli.html#--test-ghci"><code>--test-ghci</code></a>.</p>
+<p>When: After the GHCi session <a href="lifecycle-hooks.html#after-startup">starts up</a> or a
+<a href="lifecycle-hooks.html#after-reload">reload</a> or <a href="lifecycle-hooks.html#after-restart">restart</a> completes.</p>
+<p>Note that if compilation fails, test suites and <a href="comment-evaluation.html">eval
+commands</a> will not run.</p>
+<h3 id="before-reload"><a class="header" href="#before-reload">Before reload</a></h3>
+<p>Hooks: <a href="cli.html#--before-reload-shell"><code>--before-reload-shell</code></a>,
+<a href="cli.html#--before-reload-ghci"><code>--before-reload-ghci</code></a>.</p>
+<p>When: After file changes are detected but before a <code>:reload</code> or <code>:add</code> command
+is sent to the GHCi session.</p>
+<p>Note that the before-reload hooks are not executed <a href="lifecycle-hooks.html#before-restart">before a
+restart</a>.</p>
+<h3 id="after-reload"><a class="header" href="#after-reload">After reload</a></h3>
+<p>Hooks: <a href="cli.html#--after-reload-shell"><code>--after-reload-shell</code></a>,
+<a href="cli.html#--after-reload-ghci"><code>--after-reload-ghci</code></a>.</p>
+<p>When: After a reload has completed, after the <a href="cli.html#--error-file">error log</a>
+has been written, but before <a href="comment-evaluation.html">eval commands</a> and <a href="lifecycle-hooks.html#test">test
+suites</a> are executed.</p>
+<h3 id="before-restart"><a class="header" href="#before-restart">Before restart</a></h3>
+<p>Hooks: <a href="cli.html#--before-restart-shell"><code>--before-restart-shell</code></a>,
+<a href="cli.html#--before-restart-ghci"><code>--before-restart-ghci</code></a>.</p>
+<p>When: After file changes that require a restart are detected but before the
+GHCi session is <code>SIGKILL</code>ed.</p>
+<p>The GHCi session is restarted when <code>.cabal</code> files change, when Haskell modules
+are deleted or moved, or when any files specified by
+<a href="cli.html#--restart-globs"><code>--restart-globs</code></a> are changed.</p>
+<h3 id="after-restart"><a class="header" href="#after-restart">After restart</a></h3>
+<p>Hooks: <a href="cli.html#--after-restart-shell"><code>--after-restart-shell</code></a>,
+<a href="cli.html#--after-restart-ghci"><code>--after-restart-ghci</code></a>.</p>
+<p>When: After the GHCi session has been restarted, the <a href="cli.html#--error-file">error
+log</a> has been written, and the <a href="lifecycle-hooks.html#after-startup">after
+startup</a> hooks have run, but before <a href="comment-evaluation.html">eval
+commands</a> and <a href="lifecycle-hooks.html#test">test suites</a> are executed.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="comment-evaluation"><a class="header" href="#comment-evaluation">Comment evaluation</a></h1>
+<p>With the <a href="cli.html#--enable-eval"><code>--enable-eval</code></a> flag set, ghciwatch will
+execute Haskell code in comments which start with <code>$&gt;</code> in GHCi.</p>
+<pre><code class="language-haskell">myGreeting :: String
+myGreeting = "Hello"
+
+-- $&gt; putStrLn (myGreeting &lt;&gt; " " &lt;&gt; myGreeting)
+</code></pre>
+<p>Prints:</p>
+<pre><code>• src/MyLib.hs:9:7: putStrLn (myGreeting &lt;&gt; " " &lt;&gt; myGreeting)
+Hello Hello
+</code></pre>
+<h2 id="running-tests-with-eval-comments"><a class="header" href="#running-tests-with-eval-comments">Running tests with eval comments</a></h2>
+<p>Eval comments can be used to run tests in a single file on reload. For large
+test suites (thousands of tests), this can be much faster than using <a href="https://hspec.github.io/match.html">Hspec’s
+<code>--match</code> option</a>, because <code>--match</code> has to load the entire test
+suite and perform string matches on <code>[Char]</code> to determine which tests should be
+run. (Combine this with Cabal’s <a href="no-load.html"><code>--repl-no-load</code></a> option to only
+load the modules your test depends on for even faster reloads.)</p>
+<pre><code class="language-haskell">module MyLibSpec (spec) where
+
+import Test.Hspec
+import MyLib (myGreeting)
+
+-- $&gt; import Test.Hspec  -- May be necessary for some setups.
+-- $&gt; hspec spec
+
+spec :: Spec
+spec = do
+  describe "myGreeting" $ do
+    it "is hello" $ do
+      myGreeting `shouldBe` "Hello"
+</code></pre>
+<h2 id="grammar"><a class="header" href="#grammar">Grammar</a></h2>
+<p>Single-line eval comments have the following grammar:</p>
+<pre><code>[ \t]*     # Leading whitespace
+"-- $&gt;"    # Eval comment marker
+[ \t]*     # Optional whitespace
+[^\n]+ \n  # Rest of line
+</code></pre>
+<p>Multi-line eval comments have the following grammar:</p>
+<pre><code>[ \t]*        # Leading whitespace
+"{- $&gt;"       # Eval comment marker
+([ \t]* \n)?  # Optional newline
+([^\n]* \n)*  # Lines of Haskell code
+[ \t]*        # Optional whitespace
+"&lt;$ -}"       # Eval comment end marker
+</code></pre>
+<h2 id="performance-implications"><a class="header" href="#performance-implications">Performance implications</a></h2>
+<p>Note that because each loaded module must be read (and re-read when it changes)
+to parse eval comments, enabling this feature has some performance overhead.
+(It’s probably not too bad, because all those files are in your disk cache
+anyways from being compiled by GHCi.)</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="only-load-modules-you-need"><a class="header" href="#only-load-modules-you-need">Only load modules you need</a></h1>
+<p><strong>TL;DR:</strong> Use <a href="https://cabal.readthedocs.io/en/stable/cabal-commands.html#cmdoption-repl-no-load"><code>cabal repl --repl-no-load</code></a> to start a GHCi
+session with no modules loaded. Then, when you edit a module, ghciwatch will
+<code>:add</code> it to the GHCi session, causing only the modules you need (and their
+dependencies) to be loaded. In large projects, this can significantly cut down
+on reload times.</p>
+<h2 id="--repl-no-load-in-ghciwatch"><a class="header" href="#--repl-no-load-in-ghciwatch"><code>--repl-no-load</code> in ghciwatch</a></h2>
+<p>Ghciwatch supports <code>--repl-no-load</code> natively. Add <code>--repl-no-load</code> to the
+<a href="cli.html#--command"><code>ghciwatch --command</code></a> option and ghciwatch will start a
+GHCi session with no modules loaded. Then, edit a file and ghciwatch will load
+it (and its dependencies) into the REPL. (Note that because no modules are
+loaded initially, no compilation errors will show up until you start writing
+files.)</p>
+<h2 id="--repl-no-load-explained"><a class="header" href="#--repl-no-load-explained"><code>--repl-no-load</code> explained</a></h2>
+<p>When you load a GHCi session with <a href="https://cabal.readthedocs.io/en/stable/cabal-commands.html#cabal-repl"><code>cabal repl</code></a>, Cabal will
+interpret and load all the modules in the specified target before presenting a
+prompt:</p>
+<pre><code>$ cabal repl test-dev
+Build profile: -w ghc-9.0.2 -O1
+In order, the following will be built (use -v for more details):
+ - my-simple-package-0.1.0.0 (lib:test-dev) (first run)
+Configuring library 'test-dev' for my-simple-package-0.1.0.0..
+Preprocessing library 'test-dev' for my-simple-package-0.1.0.0..
+GHCi, version 9.0.2: https://www.haskell.org/ghc/  :? for help
+[1 of 3] Compiling MyLib            ( src/MyLib.hs, interpreted )
+[2 of 3] Compiling MyModule         ( src/MyModule.hs, interpreted )
+[3 of 3] Compiling TestMain         ( test/TestMain.hs, interpreted )
+Ok, three modules loaded.
+ghci&gt;
+</code></pre>
+<p>For this toy project with three modules, that’s not an issue, but it can start
+to add up with larger projects:</p>
+<pre><code>$ echo :quit | time cabal repl
+...
+Ok, 9194 modules loaded.
+ghci&gt; Leaving GHCi.
+________________________________________________________
+Executed in  161.07 secs
+</code></pre>
+<p>Fortunately, <code>cabal repl</code> includes a <a href="https://cabal.readthedocs.io/en/stable/cabal-commands.html#cmdoption-repl-no-load"><code>--repl-no-load</code></a> option
+which instructs Cabal to skip interpreting or loading <em>any</em> modules until it’s
+instructed to do so:</p>
+<pre><code>$ echo ":quit" | time cabal repl --repl-no-load
+...
+ghci&gt; Leaving GHCi.
+________________________________________________________
+Executed in   11.41 secs
+</code></pre>
+<p>Then, you can load modules into the empty GHCi session by <code>:add</code>ing them, and
+only the specified modules and their dependencies will be interpreted. If you
+only need to edit a small portion of a library’s total modules, this can
+provide a significantly faster workflow than loading every module up-front.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+    </div>
+    </body>
+</html>
