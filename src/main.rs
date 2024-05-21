@@ -24,6 +24,12 @@ async fn main() -> miette::Result<()> {
     opts.init()?;
     let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
 
+    #[cfg(feature = "clap-markdown")]
+    if opts.generate_markdown_help {
+        println!("{}", clap_markdown::help_markdown::<cli::Opts>());
+        return Ok(());
+    }
+
     std::env::set_var("IN_GHCIWATCH", "1");
 
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
