@@ -143,6 +143,7 @@ jobs:
           path: |
             target/ghciwatch-x86_64-linux
             target/ghciwatch-aarch64-linux
+            target/ghciwatch-user-manual.tar.xz
 
       - name: Publish to crates.io
         if: runner.os == 'Linux'
