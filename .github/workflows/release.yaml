@@ -213,6 +213,9 @@ jobs:
     needs:
       - build
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Download artifacts
         # This downloads the uploaded artifacts to the current directory; the
         # path format for downloaded artifacts is `{name}/{basename}`, where
