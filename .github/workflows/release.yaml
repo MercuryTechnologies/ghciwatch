@@ -126,7 +126,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch.user-manual-tar-xz)
-          cp "$(readlink "$RESULT")" target/ghciwatch-user-manual.tar.xz
+          cp "$RESULT" target/ghciwatch-user-manual.tar.xz
 
       - name: Upload macOS executable
         uses: actions/upload-artifact@v3
