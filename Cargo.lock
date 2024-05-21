@@ -261,15 +261,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-markdown"
-version = "0.1.3-ghciwatch"
-dependencies = [
- "clap",
- "expect-test",
- "textwrap 0.16.1",
-]
-
-[[package]]
 name = "clap_builder"
 version = "4.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -645,7 +636,6 @@ dependencies = [
  "backoff",
  "camino",
  "clap",
- "clap-markdown",
  "clearscreen",
  "command-group",
  "crossterm",
