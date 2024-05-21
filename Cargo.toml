@@ -32,6 +32,9 @@ categories = ["command-line-utilities", "development-tools"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+clap-markdown = []
+
 [dependencies]
 aho-corasick = "1.0.2"
 ansi-to-tui = "4.0.1"
