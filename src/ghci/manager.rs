@@ -13,6 +13,8 @@ use tracing::instrument;
 
 use crate::event_filter::FileEvent;
 use crate::ghci::CompilationLog;
+use crate::hooks;
+use crate::hooks::LifecycleEvent;
 use crate::shutdown::ShutdownHandle;
 
 use super::Ghci;
@@ -67,7 +69,7 @@ pub async fn run_ghci(
         _ = handle.on_shutdown_requested() => {
             ghci.stop().await.wrap_err("Failed to quit ghci")?;
         }
-        startup_result = ghci.initialize(&mut log) => {
+        startup_result = ghci.initialize(&mut log, [LifecycleEvent::Startup(hooks::When::After)]) => {
             startup_result?;
         }
     }
