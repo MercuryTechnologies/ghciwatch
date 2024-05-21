@@ -18,7 +18,7 @@ publish = false # Don't do `cargo publish`.
 # Define the root package: https://doc.rust-lang.org/cargo/reference/workspaces.html#root-package
 [package]
 name = "ghciwatch"
-version = "0.5.13"
+version = "0.5.12"
 edition = "2021"
 authors = [
     "Rebecca Turner <rebeccat@mercury.com>"
