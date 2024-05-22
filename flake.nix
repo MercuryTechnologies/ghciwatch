@@ -62,6 +62,7 @@
                     "x86_64-unknown-linux-musl"
                     "aarch64-unknown-linux-musl"
                   ];
+                  extensions = [ "llvm-tools-preview" ];
               };
 
               craneLib = (crane.mkLib final).overrideToolchain final.rustToolchain;

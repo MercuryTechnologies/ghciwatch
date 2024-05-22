@@ -82,6 +82,7 @@ test-harness = { path = "test-harness" }
 expect-test = "1.4.0"
 pretty_assertions = "1.2.1"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
+cargo-llvm-cov = "0.6.9"
 
 [lib]
 path = "src/lib.rs"
