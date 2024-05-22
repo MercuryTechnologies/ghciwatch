@@ -62,7 +62,7 @@
                     "x86_64-unknown-linux-musl"
                     "aarch64-unknown-linux-musl"
                   ];
-                  extensions = [ "llvm-tools-preview" ];
+                extensions = ["llvm-tools-preview"];
               };
 
               craneLib = (crane.mkLib final).overrideToolchain final.rustToolchain;
@@ -106,6 +106,8 @@
           cargo = pkgs.rustToolchain.overrideAttrs {
             pname = "cargo";
           };
+          inherit pkgs;
+          inherit localPackages;
         }
         // (pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # ghciwatch cross-compiled to aarch64-linux.
