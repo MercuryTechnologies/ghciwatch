@@ -13,6 +13,8 @@
   rustPlatform,
   rust-analyzer,
   mdbook,
+  cargo-nextest,
+  cargo-llvm-cov,
   installShellFiles,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
@@ -194,16 +196,19 @@
     '';
   };
 
-  checks = {
-    ghciwatch-tests = craneLib.cargoNextest (commonArgs
-      // {
-        buildInputs = (commonArgs.buildInputs or []) ++ ghcBuildInputs;
-        NEXTEST_PROFILE = "ci";
-        NEXTEST_HIDE_PROGRESS_BAR = "true";
+  testArgs =
+    commonArgs
+    // {
+      nativeBuildInputs = (commonArgs.nativeBuildInputs or []) ++ ghcBuildInputs;
+      NEXTEST_PROFILE = "ci";
+      NEXTEST_HIDE_PROGRESS_BAR = "true";
 
-        # Provide GHC versions to use to the integration test suite.
-        inherit GHC_VERSIONS;
-      });
+      # Provide GHC versions to use to the integration test suite.
+      inherit GHC_VERSIONS;
+    };
+
+  checks = {
+    ghciwatch-tests = craneLib.cargoNextest testArgs;
     ghciwatch-clippy = craneLib.cargoClippy (commonArgs
       // {
         cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -219,6 +224,19 @@
       // {
         inherit (inputs) advisory-db;
       });
+    ghciwatch-coverage =
+      (craneLib.cargoLlvmCov.override {
+        inherit cargo-llvm-cov;
+      })
+      (testArgs
+        // {
+          cargoLlvmCovCommand = "nextest";
+          nativeBuildInputs =
+            (testArgs.nativeBuildInputs or [])
+            ++ [
+              cargo-nextest
+            ];
+        });
 
     # Check that the Haskell project used for integration tests is OK.
     haskell-project-for-integration-tests = stdenv.mkDerivation {

@@ -23,7 +23,7 @@ To run tests, you'll need [Nix/Lix][lix] installed. Run `nix
 develop` to enter a [development shell][dev-env] with all the dependencies
 available and then use `cargo nextest run` to run the tests (including the
 integration tests) with [`cargo-nextest`][nextest]. (`cargo test` will work,
-too, but slower.)
+too, but slower.) You can run the tests with coverage output with `cargo llvm-cov nextest`. 
 
 [rustup]: https://rustup.rs/
 [lix]: https://lix.systems/
