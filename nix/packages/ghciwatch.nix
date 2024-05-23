@@ -18,6 +18,7 @@
   installShellFiles,
   treefmt,
   alejandra,
+  just,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -303,6 +304,7 @@
       mdbook
       treefmt
       alejandra
+      just
     ];
   };
 in
