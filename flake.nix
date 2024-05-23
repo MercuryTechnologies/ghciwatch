@@ -106,8 +106,6 @@
           cargo = pkgs.rustToolchain.overrideAttrs {
             pname = "cargo";
           };
-          inherit pkgs;
-          inherit localPackages;
         }
         // (pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # ghciwatch cross-compiled to aarch64-linux.
