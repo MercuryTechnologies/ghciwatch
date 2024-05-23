@@ -4,6 +4,7 @@ use std::time::Duration;
 use camino::Utf8PathBuf;
 use clap::builder::ValueParserFactory;
 use clap::Parser;
+use clap_complete::Shell;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::clap::FmtSpanParserFactory;
@@ -99,6 +100,10 @@ pub struct Opts {
     #[cfg(feature = "clap-markdown")]
     #[arg(long, hide = true)]
     pub generate_markdown_help: bool,
+
+    /// Generate shell completions for the given shell.
+    #[arg(long)]
+    pub completions: Option<Shell>,
 
     /// Lifecycle hooks and commands to run at various points.
     #[command(flatten)]

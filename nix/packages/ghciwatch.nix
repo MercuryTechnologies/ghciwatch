@@ -3,6 +3,7 @@
   stdenv,
   libiconv,
   darwin,
+  buildPackages,
   haskell,
   haskellPackages,
   ghc,
@@ -14,6 +15,7 @@
   mdbook,
   cargo-nextest,
   cargo-llvm-cov,
+  installShellFiles,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -105,6 +107,9 @@
       inherit cargoArtifacts;
     };
 
+  can-run-ghciwatch = stdenv.hostPlatform.emulatorAvailable buildPackages;
+  run-ghciwatch = "${stdenv.hostPlatform.emulator buildPackages} $out/bin/ghciwatch";
+
   releaseArgs =
     commonArgs
     // {
@@ -115,6 +120,17 @@
 
       # Only build `ghciwatch`, not the test macros.
       cargoBuildCommand = "cargoWithProfile build";
+
+      nativeBuildInputs = (commonArgs.nativeBuildInputs or []) ++ [installShellFiles];
+
+      postInstall =
+        (commonArgs.postInstall or "")
+        + lib.optionalString can-run-ghciwatch ''
+          installShellCompletion --cmd ghciwatch \
+            --bash <(${run-ghciwatch} --completions bash) \
+            --fish <(${run-ghciwatch} --completions fish) \
+            --zsh <(${run-ghciwatch} --completions zsh)
+        '';
 
       passthru = {
         inherit GHC_VERSIONS checks devShell user-manual user-manual-tar-xz;
