@@ -101,6 +101,11 @@ pub struct Opts {
     #[arg(long, hide = true)]
     pub generate_markdown_help: bool,
 
+    /// Generate `man` pages in the given directory.
+    #[cfg(feature = "clap_mangen")]
+    #[arg(long, hide = true)]
+    pub generate_man_pages: Option<Utf8PathBuf>,
+
     /// Generate shell completions for the given shell.
     #[arg(long)]
     pub completions: Option<Shell>,

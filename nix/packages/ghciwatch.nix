@@ -137,8 +137,31 @@
       };
     };
 
+  ghciwatch-man = craneLib.buildPackage (releaseArgs
+    // {
+      pnameSuffix = "-man";
+
+      cargoExtraArgs = "--locked --features clap_mangen";
+
+      nativeBuildInputs = (releaseArgs.nativeBuildInputs or []) ++ [installShellFiles];
+
+      postInstall =
+        (releaseArgs.postInstall or "")
+        + lib.optionalString can-run-ghciwatch ''
+          manpages=$(mktemp -d)
+          ${run-ghciwatch} --generate-man-pages "$manpages"
+          for manpage in "$manpages"/*; do
+            installManPage "$manpage"
+          done
+
+          rm -rf "$out/bin"
+        '';
+    });
+
   ghciwatch-with-clap-markdown = craneLib.buildPackage (releaseArgs
     // {
+      pnameSuffix = "-cli-markdown";
+
       cargoExtraArgs = "--locked --features clap-markdown";
     });
 
@@ -279,4 +302,16 @@
     ];
   };
 in
-  craneLib.buildPackage releaseArgs
+  craneLib.buildPackage (releaseArgs
+    // {
+      postInstall =
+        (releaseArgs.postInstall or "")
+        + ''
+          cp -r ${ghciwatch-man}/share $out/share
+
+          # For some reason this is needed to strip references:
+          #     stripping references to cargoVendorDir from share/man/man1/ghciwatch.1.gz
+          #     sed: couldn't open temporary file share/man/man1/sedwVs75O: Permission denied
+          chmod -R +w $out/share
+        '';
+    })

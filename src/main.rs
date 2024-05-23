@@ -31,6 +31,18 @@ async fn main() -> miette::Result<()> {
         return Ok(());
     }
 
+    #[cfg(feature = "clap_mangen")]
+    if let Some(out_dir) = opts.generate_man_pages {
+        use miette::IntoDiagnostic;
+        use miette::WrapErr;
+
+        let command = cli::Opts::command();
+        clap_mangen::generate_to(command, out_dir)
+            .into_diagnostic()
+            .wrap_err("Failed to generate man pages")?;
+        return Ok(());
+    }
+
     if let Some(shell) = opts.completions {
         let mut command = cli::Opts::command();
         clap_complete::generate(shell, &mut command, "ghciwatch", &mut std::io::stdout());
