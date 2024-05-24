@@ -37,6 +37,20 @@ Don't reload for `README.md` files:
 
     ghciwatch --reload-glob '!src/**/README.md'
 
+## Arguments
+<dl>
+
+<dt><a id="FILE", href="#FILE"><code> &lt;FILE&gt;</code></a></dt><dd>
+
+A Haskell source file to load into a `ghci` REPL.
+
+Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
+
+</dd>
+
+</dl>
+
+
 ## Options
 <dl>
 
@@ -73,6 +87,14 @@ Clear the screen before reloads and restarts
 Don't interrupt reloads when files change.
 
 Depending on your workflow, `ghciwatch` may feel more responsive with this set.
+
+</dd>
+<dt><a id="--completions" href="#--completions"><code>--completions &lt;COMPLETIONS&gt;</code></a></dt><dd>
+
+Generate shell completions for the given shell
+
+  Possible values: `bash`, `elvish`, `fish`, `powershell`, `zsh`
+
 
 </dd>
 

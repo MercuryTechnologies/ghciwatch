@@ -15,7 +15,7 @@ when source files change.
   - Eval comments have access to the top-level bindings of the module they're
     defined in, including unexported bindings.
   - Multi-line eval comments are supported with `{- $> ... <$ -}`.
-- A variety of [lifecycle hooks](lilifecycle-hooks.md) let you run Haskell code
+- A variety of [lifecycle hooks](lifecycle-hooks.md) let you run Haskell code
   or shell commands on a variety of events.
   - Run a test suite with [`--test-ghci
     TestMain.testMain`](cli.md#--test-ghci).

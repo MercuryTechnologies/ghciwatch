@@ -7,3 +7,4 @@
 - [Lifecycle hooks](./lifecycle-hooks.md)
 - [Comment evaluation](./comment-evaluation.md)
 - [Only load modules you need](./no-load.md)
+- [FAQ](./faq.md)
