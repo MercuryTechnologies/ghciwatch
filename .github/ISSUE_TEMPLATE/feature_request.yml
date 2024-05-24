@@ -1,0 +1,21 @@
+name: Feature request
+description: File a feature request.
+labels: ["feature", "triage"]
+body:
+  - type: textarea
+    id: feature
+    attributes:
+      label: Describe the feature you’d like to be implemented
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: List alternatives to the feature and their pros and cons
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: >-
+        Why do you want this feature implemented?
+        Why don't existing features cover your use-case?

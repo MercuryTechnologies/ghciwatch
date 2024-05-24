@@ -1,0 +1,27 @@
+name: Bug Report
+description: File a bug report.
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce the issue
+      description: >-
+        Please be as specific as possible. A sample project is helpful here as
+        bugs are often sensitive to GHC options.
+
+  - type: input
+    id: version
+    attributes:
+      label: The version of ghciwatch with the bug
+      description: Output of `ghciwatch --version`
