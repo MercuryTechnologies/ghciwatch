@@ -39,3 +39,20 @@ possible. You'll need a Haskell installation including GHC, `cabal`, and
 executables named `ghc-9.6.5` and `ghc-9.8.2` on your `$PATH`.
 
 [hpack]: https://github.com/sol/hpack
+
+## Why Rust?
+
+Rust makes it easy to ship static binaries. Rust also shares many features with
+Haskell: a [Hindley-Milner type system][hm] with inference, pattern matching,
+and immutability by default. Rust can also [interoperate with
+Haskell][hs-bindgen], so in the future we'll be able to ship `ghciwatch` as a
+Hackage package natively. Also, Rust's commitment to stability makes coping
+with multiple GHC versions and GHC upgrades easy. Finally, Rust is home to the
+excellent cross-platform and battle-tested [`notify`][notify] library, used to
+implement the [`watchexec`][watchexec] binary and `cargo-watch`, which solves a
+lot of the thorny problems of watching files for us.
+
+[hm]: https://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system
+[hs-bindgen]: https://engineering.iog.io/2023-01-26-hs-bindgen-introduction/
+[watchexec]: https://github.com/watchexec/watchexec
+[notify]: https://docs.rs/notify/latest/notify/
