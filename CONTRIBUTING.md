@@ -23,12 +23,16 @@ To run tests, you'll need [Nix/Lix][lix] installed. Run `nix
 develop` to enter a [development shell][dev-env] with all the dependencies
 available and then use `cargo nextest run` to run the tests (including the
 integration tests) with [`cargo-nextest`][nextest]. (`cargo test` will work,
-too, but slower.) You can run the tests with coverage output with `cargo llvm-cov nextest`. 
+too, but slower.) 
+
+You can run the tests with coverage output with `cargo llvm-cov nextest`.
+it is [possible to display coverage][coverage-vscode] information in VSCode, with `cargo llvm-cov --lcov --output-path lcov.info`.
 
 [rustup]: https://rustup.rs/
 [lix]: https://lix.systems/
 [dev-env]: https://zero-to-nix.com/concepts/dev-env
 [nextest]: https://nexte.st/
+[coverage-vscode]: https://github.com/taiki-e/cargo-llvm-cov?tab=readme-ov-file#display-coverage-in-vs-code
 
 ## Running the test suite without Nix
 

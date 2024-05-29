@@ -39,5 +39,6 @@ mod tests {
         assert_eq!("puppy dog".first_char_to_ascii_uppercase(), "Puppy dog");
         assert_eq!("puppy-dog".first_char_to_ascii_uppercase(), "Puppy-dog");
         assert_eq!("Puppy-dog".first_char_to_ascii_uppercase(), "Puppy-dog");
+        assert_eq!("".first_char_to_ascii_uppercase(), "");
     }
 }
