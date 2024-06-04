@@ -7,14 +7,8 @@ when source files change.
 
 ## Features
 
-- Ghciwatch can [clear the screen between reloads](cli.md#--clear).
-- Compilation errors can be written to a file with [`--error-file`](cli.md#--error-file), for
-  compatibility with [ghcid's][ghcid] `--outputfile` option.
-- Comments starting with `-- $>` [can be evaluated](comment-evaluation.md) in
-  GHCi.
-  - Eval comments have access to the top-level bindings of the module they're
-    defined in, including unexported bindings.
-  - Multi-line eval comments are supported with `{- $> ... <$ -}`.
+- GHCi output is displayed to the user as soon as it's printed.
+- Ghciwatch can handle new modules, removed modules, or moved modules without a
 - A variety of [lifecycle hooks](lifecycle-hooks.md) let you run Haskell code
   or shell commands on a variety of events.
   - Run a test suite with [`--test-ghci
@@ -26,8 +20,15 @@ when source files change.
 - [Custom globs](cli.md#--reload-glob) can be supplied to reload or restart the
   GHCi session when non-Haskell files (like templates or database schema
   definitions) change.
-- Ghciwatch can handle new modules, removed modules, or moved modules without a
   hitch, so you don't need to manually restart it.
+- Ghciwatch can [clear the screen between reloads](cli.md#--clear).
+- Compilation errors can be written to a file with [`--error-file`](cli.md#--error-file), for
+  compatibility with [ghcid's][ghcid] `--outputfile` option.
+- Comments starting with `-- $>` [can be evaluated](comment-evaluation.md) in
+  GHCi.
+  - Eval comments have access to the top-level bindings of the module they're
+    defined in, including unexported bindings.
+  - Multi-line eval comments are supported with `{- $> ... <$ -}`.
 
 [ghcid]: https://github.com/ndmitchell/ghcid
 [hpack]: https://github.com/sol/hpack
