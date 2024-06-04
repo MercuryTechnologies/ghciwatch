@@ -19,16 +19,9 @@ when source files change.
 
 ## Features
 
-- Ghciwatch can [clear the screen between reloads](https://mercurytechnologies.github.io/ghciwatch/cli.html#--clear).
-- Compilation errors can be written to a file with
-  [`--error-file`](https://mercurytechnologies.github.io/ghciwatch/cli.html#--error-file),
-  for compatibility with [ghcid's][ghcid] `--outputfile` option.
-- Comments starting with `-- $>` [can be
-  evaluated](https://mercurytechnologies.github.io/ghciwatch/comment-evaluation.html)
-  in GHCi.
-  - Eval comments have access to the top-level bindings of the module they're
-    defined in, including unexported bindings.
-  - Multi-line eval comments are supported with `{- $> ... <$ -}`.
+- GHCi output is displayed to the user as soon as it's printed.
+- Ghciwatch can handle new modules, removed modules, or moved modules without a
+  hitch, so you don't need to manually restart it.
 - A variety of [lifecycle
   hooks](https://mercurytechnologies.github.io/ghciwatch/lifecycle-hooks.html)
   let you run Haskell code or shell commands on a variety of events.
@@ -43,8 +36,16 @@ when source files change.
   globs](https://mercurytechnologies.github.io/ghciwatch/cli.html#--reload-glob)
   can be supplied to reload or restart the GHCi session when non-Haskell files
   (like templates or database schema definitions) change.
-- Ghciwatch can handle new modules, removed modules, or moved modules without a
-  hitch, so you don't need to manually restart it.
+- Ghciwatch can [clear the screen between reloads](https://mercurytechnologies.github.io/ghciwatch/cli.html#--clear).
+- Compilation errors can be written to a file with
+  [`--error-file`](https://mercurytechnologies.github.io/ghciwatch/cli.html#--error-file),
+  for compatibility with [ghcid's][ghcid] `--outputfile` option.
+- Comments starting with `-- $>` [can be
+  evaluated](https://mercurytechnologies.github.io/ghciwatch/comment-evaluation.html)
+  in GHCi.
+  - Eval comments have access to the top-level bindings of the module they're
+    defined in, including unexported bindings.
+  - Multi-line eval comments are supported with `{- $> ... <$ -}`.
 
 [ghcid]: https://github.com/ndmitchell/ghcid
 [hpack]: https://github.com/sol/hpack
@@ -54,3 +55,8 @@ when source files change.
 Check out a quick demo to see how ghciwatch feels in practice:
 
 <a href="https://asciinema.org/a/659712" target="_blank"><img src="https://asciinema.org/a/659712.svg" /></a>
+
+## Developing ghciwatch
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for information on hacking
+ghciwatch.
