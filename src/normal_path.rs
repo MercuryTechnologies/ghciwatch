@@ -191,7 +191,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_into_relative() {
+    fn test_into_absolute() {
         let dir = env::temp_dir();
         let path_buf = Utf8PathBuf::from_path_buf(dir.clone()).unwrap();
         let test_path = NormalPath {
@@ -201,5 +201,4 @@ mod tests {
 
         assert_eq!(test_path.into_absolute().as_os_str(), dir.as_os_str());
     }
-
 }
