@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::cmp::Eq;
 use std::collections::hash_map::Keys;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::path::Path;
 
@@ -61,6 +62,17 @@ impl ModuleSet {
         }
     }
 
+    /// Remove a source path from this module set.
+    ///
+    /// Returns the target's kind, if it was present in the set.
+    pub fn remove_source_path<P>(&mut self, path: &P) -> Option<TargetKind>
+    where
+        NormalPath: Borrow<P>,
+        P: Hash + Eq + ?Sized,
+    {
+        self.modules.remove(path)
+    }
+
     /// Get the name used to refer to the given module path when importing it.
     ///
     /// If the module isn't imported, a path will be returned.
@@ -99,6 +111,24 @@ impl ModuleSet {
         }
     }
 
+    /// Format modules for adding or removing from a GHCi session.
+    ///
+    /// See [`ModuleSet::module_import_name`].
+    pub fn format_modules(
+        &self,
+        show_paths: &ShowPaths,
+        modules: &[NormalPath],
+    ) -> miette::Result<String> {
+        modules
+            .iter()
+            .map(|path| {
+                self.module_import_name(show_paths, path)
+                    .map(|module| module.name)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|modules| modules.join(" "))
+    }
+
     /// Iterate over the source paths in this module set.
     pub fn iter(&self) -> Keys<'_, NormalPath, TargetKind> {
         self.modules.keys()
@@ -106,6 +136,7 @@ impl ModuleSet {
 }
 
 /// Information about a module to be imported into a `ghci` session.
+#[derive(Debug, Clone)]
 pub struct ImportInfo {
     /// The name to refer to the module by.
     ///
@@ -116,4 +147,10 @@ pub struct ImportInfo {
     pub kind: TargetKind,
     /// Whether the module is already loaded in the `ghci` session.
     pub loaded: bool,
+}
+
+impl Display for ImportInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
 }

@@ -21,7 +21,7 @@ when source files change.
 
 - GHCi output is displayed to the user as soon as it's printed.
 - Ghciwatch can handle new modules, removed modules, or moved modules without a
-  hitch, so you don't need to manually restart it.
+  hitch
 - A variety of [lifecycle
   hooks](https://mercurytechnologies.github.io/ghciwatch/lifecycle-hooks.html)
   let you run Haskell code or shell commands on a variety of events.

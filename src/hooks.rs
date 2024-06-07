@@ -69,7 +69,7 @@ impl LifecycleEvent {
             ),
             LifecycleEvent::Startup(_) => indoc!(
                 "
-                Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
+                Startup hooks run when GHCi is started (at `ghciwatch` startup and after GHCi restarts).
                 "
             ),
             LifecycleEvent::Reload(_) => indoc!(
@@ -79,10 +79,7 @@ impl LifecycleEvent {
             ),
             LifecycleEvent::Restart(_) => indoc!(
                 "
-                Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
-                are removed or renamed.
-
-                [1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+                The GHCi session must be restarted when `.cabal` or `.ghci` files are modified.
                 "
             ),
         }.trim_end_matches('\n')

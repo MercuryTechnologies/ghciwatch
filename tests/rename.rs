@@ -1,6 +1,7 @@
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
+use test_harness::Matcher;
 
 /// Test that `ghciwatch` can restart correctly when modules are removed and added (i.e., renamed)
 /// at the same time.
@@ -23,12 +24,14 @@ async fn can_compile_renamed_module() {
         .unwrap();
 
     session
-        .wait_until_restart()
+        .wait_for_log(BaseMatcher::ghci_add().and(BaseMatcher::ghci_remove()))
         .await
-        .expect("ghciwatch restarts on module move");
+        .expect("ghciwatch adds and removes modules on module move");
 
+    // Weirdly GHCi is fine with modules that don't match the file name as long as you specify the
+    // module by path and not by name.
     session
-        .wait_for_log(BaseMatcher::compilation_failed())
+        .wait_for_log(BaseMatcher::compilation_succeeded())
         .await
         .unwrap();
 

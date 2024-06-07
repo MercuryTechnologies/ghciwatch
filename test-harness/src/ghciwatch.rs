@@ -303,6 +303,12 @@ impl GhciWatch {
             .args([
                 "--command",
                 &repl_command,
+                "--watch",
+                "src",
+                "--watch",
+                "package.yaml",
+                "--restart-glob",
+                "**/package.yaml",
                 "--before-startup-shell",
                 "hpack --force .",
                 "--log-filter",
