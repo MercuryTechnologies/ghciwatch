@@ -22,7 +22,7 @@ pub use ghc_message::CompilationSummary;
 pub use ghc_message::GhcDiagnostic;
 pub use ghc_message::GhcMessage;
 pub use ghc_message::Severity;
-pub use module_and_files::Module;
+pub use module_and_files::CompilingModule;
 pub use module_set::ModuleSet;
 pub use show_paths::parse_show_paths;
 pub use show_paths::ShowPaths;

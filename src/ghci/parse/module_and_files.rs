@@ -32,14 +32,14 @@ use super::module_name;
 /// Compiling A.Puppy.Doggy ( src/A/Puppy/Doggy.hs, dist-newstyle/A/Puppy/Doggy.o, interpreted ) [Doggy.Lint package changed]
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Module {
+pub struct CompilingModule {
     /// The module's fully-qualified name.
     pub name: String,
     /// The path to the module's source file, typically a `.hs` file.
     pub path: Utf8PathBuf,
 }
 
-impl FromStr for Module {
+impl FromStr for CompilingModule {
     type Err = miette::Report;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -52,7 +52,7 @@ impl FromStr for Module {
 /// ```text
 /// My.Cool.Module ( src/My/Cool/Module.hs, dist-newstyle/My/Cool/Module.o, interpreted )
 /// ```
-pub fn module_and_files(input: &mut &str) -> PResult<Module> {
+pub fn module_and_files(input: &mut &str) -> PResult<CompilingModule> {
     let module_name = module_name(input)?;
     let _ = space1.parse_next(input)?;
 
@@ -75,7 +75,7 @@ pub fn module_and_files(input: &mut &str) -> PResult<Module> {
             input,
             StrContext::Expected(StrContextValue::Description("a Haskell source file path")),
         ))),
-        Some(path) => Ok(Module {
+        Some(path) => Ok(CompilingModule {
             name: module_name.to_owned(),
             path,
         }),
@@ -92,8 +92,8 @@ mod tests {
     #[test]
     fn test_parse_module() {
         assert_eq!(
-            "A.MercuryPrelude ( src/A/MercuryPrelude.hs, /Users/wiggles/mwb4/dist-newstyle/build/aarch64-osx/ghc-9.6.1/mwb-0/l/test-dev/noopt/build/test-dev/A/MercuryPrelude.dyn_o )".parse::<Module>().unwrap(),
-            Module {
+            "A.MercuryPrelude ( src/A/MercuryPrelude.hs, /Users/wiggles/mwb4/dist-newstyle/build/aarch64-osx/ghc-9.6.1/mwb-0/l/test-dev/noopt/build/test-dev/A/MercuryPrelude.dyn_o )".parse::<CompilingModule>().unwrap(),
+            CompilingModule {
                 name: "A.MercuryPrelude".into(),
                 path: "src/A/MercuryPrelude.hs".into(),
             }
@@ -106,7 +106,7 @@ mod tests {
             module_and_files
                 .parse("Foo ( Foo.hs, Foo.o, interpreted )")
                 .unwrap(),
-            Module {
+            CompilingModule {
                 name: "Foo".into(),
                 path: "Foo.hs".into()
             }
@@ -119,7 +119,7 @@ mod tests {
                       /Users/wiggles/doggy-web-backend6/dist-newstyle/build/aarch64-osx/ghc-9.6.2/doggy-web-backend-0/l/test-dev/noopt/build/test-dev/A/DoggyPrelude/Puppy.dyn_o \
                       )")
                 .unwrap(),
-            Module{
+            CompilingModule{
                 name: "A.DoggyPrelude.Puppy".into(),
                 path: "src/A/DoggyPrelude/Puppy.hs".into()
             }
@@ -129,7 +129,7 @@ mod tests {
             module_and_files
                 .parse("MyLib            ( src/MyLib.hs )")
                 .unwrap(),
-            Module {
+            CompilingModule {
                 name: "MyLib".into(),
                 path: "src/MyLib.hs".into()
             }
