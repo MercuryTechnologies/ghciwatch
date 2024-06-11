@@ -163,14 +163,14 @@ async fn can_ignore_restart_paths() {
         .expect("ghciwatch doesn't restart when ignored globs are changed");
 }
 
-/// Test that `ghciwatch` restarts when a Haskell module is removed, even if a `--restart-glob`
-/// explicitly ignores the path.
-///
-/// This is needed to work around a `ghci` bug: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
+/// Ghciwatch can ignore when a file is removed.
 #[test]
-async fn can_restart_on_module_change_even_if_ignored() {
+async fn can_ignore_removal() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .with_args(["--restart-glob", "!**/*.hs"])
+        .before_start(|project_root| async move {
+            Fs::new().touch(project_root.join("my-model.db")).await
+        })
+        .with_args(["--reload-glob", "!**/*.db", "--watch", "."])
         .start()
         .await
         .expect("ghciwatch starts");
@@ -182,12 +182,41 @@ async fn can_restart_on_module_change_even_if_ignored() {
 
     session
         .fs()
-        .remove(session.path("src/MyModule.hs"))
+        .remove(session.path("my-model.db"))
         .await
         .unwrap();
 
     session
-        .wait_until_restart()
+        .wait_for_log(BaseMatcher::reload_completes().but_not(BaseMatcher::ghci_remove()))
         .await
-        .expect("ghciwatch restarts when Haskell files are removed");
+        .expect("Ghciwatch ignores removed files");
+}
+
+/// Ghciwatch can whitelist reloads for removed files.
+#[test]
+async fn can_whitelist_removal() {
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .before_start(|project_root| async move {
+            Fs::new().touch(project_root.join("my-model.db")).await
+        })
+        .with_args(["--reload-glob", "**/*.db", "--watch", "."])
+        .start()
+        .await
+        .expect("ghciwatch starts");
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch loads ghci");
+
+    session
+        .fs()
+        .remove(session.path("my-model.db"))
+        .await
+        .unwrap();
+
+    session
+        .wait_for_log(BaseMatcher::reload_completes().but_not(BaseMatcher::ghci_remove()))
+        .await
+        .expect("Ghciwatch ignores removed files");
 }

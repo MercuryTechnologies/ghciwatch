@@ -1,4 +1,3 @@
-use camino::Utf8Path;
 use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
@@ -104,10 +103,10 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn add_module(
+    pub async fn add_modules(
         &mut self,
         stdout: &mut GhciStdout,
-        path: &Utf8Path,
+        modules: &str,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
         // We use `:add` because `:load` unloads all previously loaded modules:
@@ -117,7 +116,18 @@ impl GhciStdin {
         // > to unload all the currently loaded modules and bindings.
         //
         // https://downloads.haskell.org/ghc/latest/docs/users_guide/ghci.html#ghci-cmd-:load
-        self.write_line(stdout, &format!(":add {path}\n"), log)
+        self.write_line(stdout, &format!(":add {modules}\n"), log)
+            .await
+    }
+
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn remove_modules(
+        &mut self,
+        stdout: &mut GhciStdout,
+        modules: &str,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.write_line(stdout, &format!(":unadd {modules}\n"), log)
             .await
     }
 

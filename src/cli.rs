@@ -55,15 +55,15 @@ use crate::normal_path::NormalPath;
     override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
 )]
 pub struct Opts {
-    /// A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
+    /// A shell command which starts a GHCi REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
-    /// This is used to launch the underlying `ghci` session that `ghciwatch` controls.
+    /// This is used to launch the underlying GHCi session that `ghciwatch` controls.
     ///
     /// May contain quoted arguments which will be parsed in a `sh`-like manner.
     #[arg(long, value_name = "SHELL_COMMAND")]
     pub command: Option<ClonableCommand>,
 
-    /// A Haskell source file to load into a `ghci` REPL.
+    /// A Haskell source file to load into a GHCi REPL.
     ///
     /// Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
     #[arg(value_name = "FILE", conflicts_with = "command")]
@@ -154,7 +154,7 @@ pub struct WatchOpts {
     #[arg(long = "watch", value_name = "PATH")]
     pub paths: Vec<NormalPath>,
 
-    /// Reload the `ghci` session when paths matching this glob change.
+    /// Reload the GHCi session when paths matching this glob change.
     ///
     /// By default, only changes to Haskell source files trigger reloads. If you'd like to exclude
     /// some files from that, you can add an ignore glob here, like `!src/my-special-dir/**/*.hs`.
@@ -169,13 +169,9 @@ pub struct WatchOpts {
     #[arg(long = "reload-glob")]
     pub reload_globs: Vec<String>,
 
-    /// Restart the `ghci` session when paths matching this glob change.
+    /// Restart the GHCi session when paths matching this glob change.
     ///
-    /// By default, only changes to `.cabal` or `.ghci` files or Haskell source files being
-    /// moved/removed will trigger restarts.
-    ///
-    /// Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules are removed
-    /// or renamed.
+    /// By default, only changes to `.cabal` or `.ghci` files will trigger restarts.
     ///
     /// See `--reload-globs` for more details.
     ///

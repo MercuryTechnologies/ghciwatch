@@ -43,19 +43,12 @@ async fn clears_on_reload_and_restart() {
         .await
         .unwrap();
 
-    {
-        // Rename the module and fix the module name to match the new path.
-        let module_path = session.path("src/MyModule.hs");
-        let new_path = session.path("src/MyCoolModule.hs");
-        session.fs_mut().disable_load_bearing_sleep();
-        session.fs().rename(&module_path, &new_path).await.unwrap();
-        session
-            .fs()
-            .replace(&new_path, "module MyModule", "module MyCoolModule")
-            .await
-            .unwrap();
-        session.fs_mut().reset_load_bearing_sleep();
-    }
+    // Modify the `package.yaml` to trigger a restart.
+    session
+        .fs()
+        .append(session.path("package.yaml"), "\n")
+        .await
+        .unwrap();
 
     session.wait_for_log("Clearing the screen").await.unwrap();
     session

@@ -174,6 +174,11 @@ impl BaseMatcher {
     pub fn ghci_add() -> Self {
         Self::message("^Adding modules to ghci:\n")
     }
+
+    /// Match when `ghci` removes modules.
+    pub fn ghci_remove() -> Self {
+        Self::message("^Removing modules from ghci:\n")
+    }
 }
 
 impl Display for BaseMatcher {

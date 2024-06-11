@@ -379,6 +379,7 @@ impl Ghci {
         let mut needs_restart = Vec::new();
         let mut needs_reload = Vec::new();
         let mut needs_add = Vec::new();
+        let mut needs_remove = Vec::new();
         for event in events {
             let path = event.as_path();
             let path = self.relative_path(path)?;
@@ -395,7 +396,7 @@ impl Ghci {
             );
 
             // Don't restart if we've explicitly ignored this path in a glob.
-            if (!restart_match.is_ignore()
+            if !restart_match.is_ignore()
                 // Restart on `.cabal` and `.ghci` files.
                 && (path
                     .extension()
@@ -406,31 +407,21 @@ impl Ghci {
                     .map(|name| name == ".ghci")
                     .unwrap_or(false)
                 // Restart on explicit restart globs.
-                || restart_match.is_whitelist()))
-                // Even if we've explicitly ignored this path in a glob, `ghci` can't cope with
-                // removed modules, so we need to restart when modules are removed or renamed.
-                //
-                // See: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
-                //
-                // TODO: I should investigate if `:unadd` works for some classes of removed
-                // modules.
-                || (matches!(event, FileEvent::Remove(_))
-                    && path_is_haskell_source_file
-                    && self.targets.contains_source_path(&path))
+                || restart_match.is_whitelist())
             {
                 // Restart for this path.
                 tracing::debug!(%path, "Needs restart");
                 needs_restart.push(path);
-            } else if reload_match.is_whitelist() {
-                // Extra extensions are always reloaded, never added.
-                tracing::debug!(%path, "Needs reload");
-                needs_reload.push(path);
-            } else if !reload_match.is_ignore()
-                // Don't reload if we've explicitly ignored this path in a glob.
-                // Otherwise, reload when Haskell files are modified.
-                && matches!(event, FileEvent::Modify(_))
+            } else if reload_match.is_ignore() {
+                // Ignoring this path, continue.
+            } else if matches!(event, FileEvent::Remove(_))
                 && path_is_haskell_source_file
+                && self.targets.contains_source_path(&path)
             {
+                tracing::debug!(%path, "Needs remove");
+                needs_remove.push(path);
+            } else if matches!(event, FileEvent::Modify(_)) && path_is_haskell_source_file {
+                // Otherwise, reload when Haskell files are modified.
                 if self.targets.contains_source_path(&path) {
                     // We can `:reload` paths in the target set.
                     tracing::debug!(%path, "Needs reload");
@@ -440,6 +431,10 @@ impl Ghci {
                     tracing::debug!(%path, "Needs add");
                     needs_add.push(path);
                 }
+            } else if reload_match.is_whitelist() {
+                // Extra extensions are always reloaded, never added.
+                tracing::debug!(%path, "Needs reload");
+                needs_reload.push(path);
             }
         }
 
@@ -447,6 +442,7 @@ impl Ghci {
             needs_restart,
             needs_reload,
             needs_add,
+            needs_remove,
         })
     }
 
@@ -480,10 +476,18 @@ impl Ghci {
 
         let mut log = CompilationLog::default();
 
-        if actions.needs_add_or_reload() {
+        if actions.needs_modify() {
             self.opts.clear();
             self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
                 .await?;
+        }
+
+        if !actions.needs_remove.is_empty() {
+            tracing::info!(
+                "Removing modules from ghci:\n{}",
+                format_bulleted_list(&actions.needs_remove)
+            );
+            self.remove_modules(&actions.needs_remove, &mut log).await?;
         }
 
         if !actions.needs_add.is_empty() {
@@ -491,9 +495,7 @@ impl Ghci {
                 "Adding modules to ghci:\n{}",
                 format_bulleted_list(&actions.needs_add)
             );
-            for path in &actions.needs_add {
-                self.add_module(path, &mut log).await?;
-            }
+            self.add_modules(&actions.needs_add, &mut log).await?;
         }
 
         if !actions.needs_reload.is_empty() {
@@ -506,7 +508,7 @@ impl Ghci {
                 .await?;
         }
 
-        if actions.needs_add_or_reload() {
+        if actions.needs_modify() {
             self.finish_compilation(
                 start_instant,
                 &mut log,
@@ -641,6 +643,21 @@ impl Ghci {
         Ok(())
     }
 
+    /// Remove all `eval_commands` for the given paths.
+    #[instrument(skip_all, level = "debug")]
+    async fn clear_eval_commands_for_paths(
+        &mut self,
+        paths: impl IntoIterator<Item = impl Borrow<NormalPath>>,
+    ) {
+        if !self.opts.enable_eval {
+            return;
+        }
+
+        for path in paths {
+            self.eval_commands.remove(path.borrow());
+        }
+    }
+
     /// Read and parse eval commands from the given `path`.
     #[instrument(level = "trace")]
     async fn parse_eval_commands(path: &Utf8Path) -> miette::Result<Vec<EvalCommand>> {
@@ -653,29 +670,25 @@ impl Ghci {
         Ok(commands)
     }
 
-    /// `:add` a module to the `ghci` session by path.
-    ///
-    /// Optionally returns a compilation result.
+    /// `:add` a module or modules to the `ghci` session by path.
     #[instrument(skip(self), level = "debug")]
-    async fn add_module(
+    async fn add_modules(
         &mut self,
-        path: &NormalPath,
+        paths: &[NormalPath],
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
-        if self.targets.contains_source_path(path.absolute()) {
-            tracing::debug!(%path, "Skipping `:add`ing already-loaded path");
-            return Ok(());
-        }
+        let modules = self.targets.format_modules(&self.search_paths, paths)?;
 
         self.stdin
-            .add_module(&mut self.stdout, path.relative(), log)
+            .add_modules(&mut self.stdout, &modules, log)
             .await?;
 
-        self.targets
-            .insert_source_path(path.clone(), TargetKind::Path);
+        for path in paths {
+            self.targets
+                .insert_source_path(path.clone(), TargetKind::Path);
+        }
 
-        self.refresh_eval_commands_for_paths(std::iter::once(path))
-            .await?;
+        self.refresh_eval_commands_for_paths(paths).await?;
 
         Ok(())
     }
@@ -683,8 +696,6 @@ impl Ghci {
     /// `:add *` a module to the `ghci` session by path.
     ///
     /// This forces it to be interpreted.
-    ///
-    /// Optionally returns a compilation result.
     #[instrument(skip(self), level = "debug")]
     async fn interpret_module(
         &mut self,
@@ -703,6 +714,31 @@ impl Ghci {
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
             .await?;
+
+        Ok(())
+    }
+
+    /// `:unadd` a module or modules from the `ghci` session by path.
+    #[instrument(skip(self), level = "debug")]
+    async fn remove_modules(
+        &mut self,
+        paths: &[NormalPath],
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        // Each `:unadd` implicitly reloads as well, so we have to `:unadd` all the modules in a
+        // single command so that GHCi doesn't try to load a bunch of removed modules after each
+        // one.
+        let modules = self.targets.format_modules(&self.search_paths, paths)?;
+
+        self.stdin
+            .remove_modules(&mut self.stdout, &modules, log)
+            .await?;
+
+        for path in paths {
+            self.targets.remove_source_path(path);
+            self.clear_eval_commands_for_paths(std::iter::once(path))
+                .await;
+        }
 
         Ok(())
     }
@@ -851,12 +887,14 @@ struct ReloadActions {
     needs_reload: Vec<NormalPath>,
     /// Paths to modules which need an `:add`.
     needs_add: Vec<NormalPath>,
+    /// Paths to modules which need an `:unadd`.
+    needs_remove: Vec<NormalPath>,
 }
 
 impl ReloadActions {
-    /// Do any modules need to be added or reloaded?
-    fn needs_add_or_reload(&self) -> bool {
-        !self.needs_add.is_empty() || !self.needs_reload.is_empty()
+    /// Do any modules need to be added, removed, or reloaded?
+    fn needs_modify(&self) -> bool {
+        !self.needs_add.is_empty() || !self.needs_reload.is_empty() || !self.needs_remove.is_empty()
     }
 
     /// Is a session restart needed?
@@ -868,7 +906,7 @@ impl ReloadActions {
     fn kind(&self) -> GhciReloadKind {
         if self.needs_restart() {
             GhciReloadKind::Restart
-        } else if self.needs_add_or_reload() {
+        } else if self.needs_modify() {
             GhciReloadKind::Reload
         } else {
             GhciReloadKind::None
@@ -881,7 +919,7 @@ impl ReloadActions {
 pub enum GhciReloadKind {
     /// Noop. No actions needed.
     None,
-    /// Reload and/or add modules. Can be interrupted.
+    /// Reload, add, and/or remove modules. Can be interrupted.
     Reload,
     /// Restart the whole session. Cannot be interrupted.
     Restart,

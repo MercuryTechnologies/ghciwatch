@@ -96,9 +96,10 @@ async fn can_run_hooks() {
     ghci_hook(&mut session, "after-reload", "1").await;
     ghci_hook(&mut session, "after-reload", "2").await;
 
+    // Modify the `package.yaml` to trigger a restart.
     session
         .fs()
-        .remove(session.path("src/MyModule.hs"))
+        .append(session.path("package.yaml"), "\n")
         .await
         .unwrap();
 
@@ -219,9 +220,23 @@ async fn hooks_can_observe_error_log() {
         .await
         .unwrap();
 
-    // Rename the module.
-    let new_path = session.path("src/MyCoolModule.hs");
-    session.fs().rename(module_path, new_path).await.unwrap();
+    {
+        session.fs_mut().disable_load_bearing_sleep();
+        // Rename the module.
+        // This generates an error message we can observe in the error log, but it doesn't restart
+        // the GHCi session so we need to touch the `.cabal` file for that...
+        let new_path = session.path("src/MyCoolModule.hs");
+        session.fs().rename(module_path, new_path).await.unwrap();
+
+        // Modify the `package.yaml` to trigger a restart.
+        session
+            .fs()
+            .append(session.path("package.yaml"), "\n")
+            .await
+            .unwrap();
+
+        session.fs_mut().reset_load_bearing_sleep();
+    }
 
     session
         .wait_for_log(
