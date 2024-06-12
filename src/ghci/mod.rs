@@ -6,6 +6,7 @@ use nix::sys::signal::Signal;
 use owo_colors::OwoColorize;
 use owo_colors::Stream::Stdout;
 use std::borrow::Borrow;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -50,7 +51,6 @@ pub mod parse;
 use parse::parse_eval_commands;
 use parse::CompilationResult;
 use parse::EvalCommand;
-use parse::ModuleSet;
 use parse::ShowPaths;
 
 mod ghci_command;
@@ -62,6 +62,12 @@ pub use compilation_log::CompilationLog;
 mod writer;
 use crate::buffers::GHCI_BUFFER_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
+
+mod module_set;
+pub use module_set::ModuleSet;
+
+mod loaded_module;
+use loaded_module::LoadedModule;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
@@ -79,8 +85,6 @@ use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 use crate::CommandExt;
 use crate::StringCase;
-
-use self::parse::TargetKind;
 
 /// The `ghci` prompt we use. Should be unique enough, but maybe we can make it better with Unicode
 /// private-use-area codepoints or something in the future.
@@ -613,10 +617,10 @@ impl Ghci {
 
         let mut eval_commands = BTreeMap::new();
 
-        for path in self.targets.iter() {
-            let commands = Self::parse_eval_commands(path).await?;
+        for target in self.targets.iter() {
+            let commands = Self::parse_eval_commands(target.path()).await?;
             if !commands.is_empty() {
-                eval_commands.insert(path.clone(), commands);
+                eval_commands.insert(target.path().clone(), commands);
             }
         }
 
@@ -670,23 +674,79 @@ impl Ghci {
         Ok(commands)
     }
 
-    /// `:add` a module or modules to the `ghci` session by path.
+    /// `:add` a module or modules to the GHCi session.
     #[instrument(skip(self), level = "debug")]
     async fn add_modules(
         &mut self,
         paths: &[NormalPath],
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
-        let modules = self.targets.format_modules(&self.search_paths, paths)?;
+        let mut modules = Vec::with_capacity(paths.len());
+        for path in paths {
+            if self.targets.contains_source_path(path) {
+                return Err(miette!(
+                    "Attempting to add already-loaded module: {path}\n\
+                    This is a ghciwatch bug; please report it upstream"
+                ));
+            } else {
+                modules.push(LoadedModule::new(path.clone()));
+            }
+        }
 
         self.stdin
             .add_modules(&mut self.stdout, &modules, log)
             .await?;
 
-        for path in paths {
-            self.targets
-                .insert_source_path(path.clone(), TargetKind::Path);
-        }
+        // TODO: This could lead to the module set getting out of sync with the underlying GHCi
+        // session.
+        //
+        // If there's a TOATOU bug here (e.g. we're attempting to add a module but the file no
+        // longer exists), then we can get into a situation like this:
+        //
+        //     ghci> :add src/DoesntExist.hs src/MyLib.hs
+        //     File src/DoesntExist.hs not found
+        //     [4 of 4] Compiling MyLib        ( src/MyLib.hs, interpreted )
+        //     Ok, four modules loaded.
+        //
+        //     ghci> :show targets
+        //     src/MyLib.hs
+        //     ...
+        //
+        // We've requested to load two modules, only one has been loaded, but GHCi has reported
+        // that compilation was successful and hasn't added the failing module to the target set.
+        // Note that if the file is found but compilation fails, the file _is_ added to the target
+        // set:
+        //
+        //     ghci> :add src/MyCoolLib.hs
+        //     [4 of 4] Compiling MyCoolLib        ( src/MyCoolLib.hs, interpreted )
+        //
+        //     src/MyCoolLib.hs:4:12: error:
+        //         • Couldn't match expected type ‘IO ()’ with actual type ‘()’
+        //         • In the expression: ()
+        //           In an equation for ‘someFunc’: someFunc = ()
+        //       |
+        //     4 | someFunc = ()
+        //       |            ^^
+        //     Failed, three modules loaded.
+        //
+        //     ghci> :show targets
+        //     src/MyCoolLib.hs
+        //     ...
+        //
+        // I think this is OK, because the only reason we need to know which modules are loaded is
+        // to avoid the "module defined in multiple files" bug [1], so the potential outcomes of
+        // making this mistake are:
+        //
+        // 1. The next time the file is modified, we attempt to `:add` it instead of `:reload`ing
+        //    it. This is harmless, though it changes the order that `:show modules` prints output
+        //    in (maybe local binding order as well or something).
+        // 2. The next time the file is modified, we attempt to `:add` it by path instead of by
+        //    module name, but this function is only used when the modules aren't already in the
+        //    target set, so we know the module doesn't need to be referred to by its module name.
+        //
+        // [1]: https://gitlab.haskell.org/ghc/ghc/-/issues/13254#note_525037
+
+        self.targets.extend(modules);
 
         self.refresh_eval_commands_for_paths(paths).await?;
 
@@ -702,14 +762,15 @@ impl Ghci {
         path: &NormalPath,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
-        let module = self.targets.module_import_name(&self.search_paths, path)?;
+        let module = self.targets.get_import_name(path);
 
         self.stdin
-            .interpret_module(&mut self.stdout, &module.name, log)
+            .interpret_module(&mut self.stdout, &module, log)
             .await?;
 
-        if !module.loaded {
-            self.targets.insert_source_path(path.clone(), module.kind);
+        // Note: A borrowed path is only returned if the path is already present in the module set.
+        if let Cow::Owned(module) = module {
+            self.targets.insert_module(module);
         }
 
         self.refresh_eval_commands_for_paths(std::iter::once(path))
@@ -725,20 +786,23 @@ impl Ghci {
         paths: &[NormalPath],
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
+        let modules = paths
+            .iter()
+            .map(|path| self.targets.get_import_name(path).into_owned())
+            .collect::<Vec<_>>();
+
         // Each `:unadd` implicitly reloads as well, so we have to `:unadd` all the modules in a
         // single command so that GHCi doesn't try to load a bunch of removed modules after each
         // one.
-        let modules = self.targets.format_modules(&self.search_paths, paths)?;
-
         self.stdin
-            .remove_modules(&mut self.stdout, &modules, log)
+            .remove_modules(&mut self.stdout, modules.iter().map(Borrow::borrow), log)
             .await?;
 
         for path in paths {
             self.targets.remove_source_path(path);
-            self.clear_eval_commands_for_paths(std::iter::once(path))
-                .await;
         }
+
+        self.clear_eval_commands_for_paths(paths).await;
 
         Ok(())
     }

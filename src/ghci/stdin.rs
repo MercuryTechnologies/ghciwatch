@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
@@ -7,11 +8,12 @@ use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
 
-use super::parse::ModuleSet;
+use super::loaded_module::LoadedModule;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::CompilationLog;
 use super::GhciCommand;
+use super::ModuleSet;
 use super::PROMPT;
 use crate::ghci::GhciStdout;
 
@@ -102,13 +104,14 @@ impl GhciStdin {
         self.write_line(stdout, ":reload\n", log).await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip_all, level = "debug")]
     pub async fn add_modules(
         &mut self,
         stdout: &mut GhciStdout,
-        modules: &str,
+        modules: impl IntoIterator<Item = &LoadedModule>,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
+        let modules = modules.into_iter().format(" ");
         // We use `:add` because `:load` unloads all previously loaded modules:
         //
         // > All previously loaded modules, except package modules, are forgotten. The new set of
@@ -120,13 +123,14 @@ impl GhciStdin {
             .await
     }
 
-    #[instrument(skip(self, stdout), level = "debug")]
+    #[instrument(skip_all, level = "debug")]
     pub async fn remove_modules(
         &mut self,
         stdout: &mut GhciStdout,
-        modules: &str,
+        modules: impl IntoIterator<Item = &LoadedModule>,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
+        let modules = modules.into_iter().format(" ");
         self.write_line(stdout, &format!(":unadd {modules}\n"), log)
             .await
     }
@@ -135,7 +139,7 @@ impl GhciStdin {
     pub async fn interpret_module(
         &mut self,
         stdout: &mut GhciStdout,
-        module: &str,
+        module: &LoadedModule,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
         // `:add *` forces the module to be interpreted, even if it was already loaded from

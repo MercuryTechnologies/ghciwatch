@@ -15,11 +15,11 @@ use crate::incremental_reader::WriteBehavior;
 use super::parse::parse_ghc_messages;
 use super::parse::parse_show_paths;
 use super::parse::parse_show_targets;
-use super::parse::ModuleSet;
 use super::parse::ShowPaths;
 use super::stderr::StderrEvent;
 use super::writer::GhciWriter;
 use super::CompilationLog;
+use super::ModuleSet;
 
 pub struct GhciStdout {
     /// Reader for parsing and forwarding the underlying stdout stream.
@@ -123,9 +123,7 @@ impl GhciStdout {
                 buffer: &mut self.buffer,
             })
             .await?;
-        let paths = parse_show_targets(search_paths, &lines)
-            .wrap_err("Failed to parse `:show targets` output")?;
-        ModuleSet::from_paths(paths, &search_paths.cwd)
+        parse_show_targets(search_paths, &lines).wrap_err("Failed to parse `:show targets` output")
     }
 
     #[instrument(skip_all, level = "debug")]
