@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Getting started - ghciwatch</title>
+        <title>FAQ - ghciwatch</title>
 
 
         <!-- Custom HTML head -->
@@ -88,7 +88,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html" class="active"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">8.</strong> FAQ</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html" class="active"><strong aria-hidden="true">8.</strong> FAQ</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -150,7 +150,7 @@
                         <a href="https://github.com/MercuryTechnologies/ghciwatch" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./getting-started.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./faq.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -179,31 +179,37 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h2 id="getting-started"><a class="header" href="#getting-started">Getting started</a></h2>
-<p>To start a ghciwatch session, you’ll need a command to start a GHCi session
-(like <code>cabal repl</code>) and a set of paths and directories to watch for changes.
-For example:</p>
-<pre><code>ghciwatch --command "cabal repl lib:test-dev" \
-          --watch src --watch test
-</code></pre>
-<p>Check out the <a href="cli.html#examples">examples</a> and <a href="cli.html#options">command-line
-arguments</a> for more information.</p>
-<p>Ghciwatch can <a href="cli.html#--test-ghci">run test suites</a> after reloads, <a href="cli.html#--enable-eval">evaluate
-code in comments</a>, <a href="cli.html#--error-file">log compiler errors to a
-file</a>, run <a href="cli.html#--before-startup-shell">startup hooks</a>
-like <a href="https://github.com/sol/hpack"><code>hpack</code></a> to generate <code>.cabal</code> files, and more!</p>
+                        <h1 id="faq"><a class="header" href="#faq">FAQ</a></h1>
+<h2 id="why-a-reimplementation"><a class="header" href="#why-a-reimplementation">Why a reimplementation?</a></h2>
+<p>Ghciwatch started out as a reimplementation and reimagination of
+<a href="https://github.com/ndmitchell/ghcid"><code>ghcid</code></a>, a similar tool with smaller scope. When we started working on
+ghciwatch, <code>ghcid</code> suffered from some significant limitations. In particular,
+<code>ghcid</code> couldn’t deal with moved or deleted modules, and wouldn’t detect new
+directories because it <a href="https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Wait.hs#L81-L83">can’t easily update the set of files being watched at
+runtime.</a> We’ve also seen memory leaks requiring multiple restarts
+per day. Due to the <code>ghcid</code> codebase’s relatively small size, a
+reimplementation seemed like a more efficient path forward than making
+wide-spanning changes to an unfamiliar codebase.</p>
+<h2 id="why-not-just-use-watchexec-or-similar"><a class="header" href="#why-not-just-use-watchexec-or-similar">Why not just use <code>watchexec</code> or similar?</a></h2>
+<p>TL;DR: Managing a GHCi session is often faster than recompiling a project with
+<code>cabal</code> or similar.</p>
+<p>Recompiling a project when files change is a fairly common development task, so
+there’s a bunch of tools with this same rough goal. In particular,
+[<code>watchexec</code>][watchexec] is a nice off-the-shelf solution. Why not just run
+<code>watchexec -e hs cabal build</code>? In truth, ghciwatch doesn’t just recompile the
+project when it detects changes. It instead manages an interactive GHCi
+session, instructing it to reload modules when relevant. This involves a fairly
+complex dance of communicating to GHCi over stdin and parsing its stdout, so
+a bespoke tool is useful here.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="install.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="no-load.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -211,13 +217,10 @@ like <a href="https://github.com/sol/hpack"><code>hpack</code></a> to generate <
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="install.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="no-load.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
             </nav>
 
         </div>

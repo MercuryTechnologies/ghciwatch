@@ -89,7 +89,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">8.</strong> FAQ</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -182,18 +182,10 @@
 when source files change.</p>
 <h2 id="features"><a class="header" href="#features">Features</a></h2>
 <ul>
-<li>Ghciwatch can <a href="cli.html#--clear">clear the screen between reloads</a>.</li>
-<li>Compilation errors can be written to a file with <a href="cli.html#--error-file"><code>--error-file</code></a>, for
-compatibility with <a href="https://github.com/ndmitchell/ghcid">ghcid’s</a> <code>--outputfile</code> option.</li>
-<li>Comments starting with <code>-- $&gt;</code> <a href="comment-evaluation.html">can be evaluated</a> in
-GHCi.
-<ul>
-<li>Eval comments have access to the top-level bindings of the module they’re
-defined in, including unexported bindings.</li>
-<li>Multi-line eval comments are supported with <code>{- $&gt; ... &lt;$ -}</code>.</li>
-</ul>
-</li>
-<li>A variety of <a href="lilifecycle-hooks.html">lifecycle hooks</a> let you run Haskell code
+<li>GHCi output is displayed to the user as soon as it’s printed.</li>
+<li>Ghciwatch can handle new modules, removed modules, or moved modules without a
+hitch</li>
+<li>A variety of <a href="lifecycle-hooks.html">lifecycle hooks</a> let you run Haskell code
 or shell commands on a variety of events.
 <ul>
 <li>Run a test suite with <a href="cli.html#--test-ghci"><code>--test-ghci TestMain.testMain</code></a>.</li>
@@ -205,8 +197,17 @@ or shell commands on a variety of events.
 <li><a href="cli.html#--reload-glob">Custom globs</a> can be supplied to reload or restart the
 GHCi session when non-Haskell files (like templates or database schema
 definitions) change.</li>
-<li>Ghciwatch can handle new modules, removed modules, or moved modules without a
-hitch, so you don’t need to manually restart it.</li>
+<li>Ghciwatch can <a href="cli.html#--clear">clear the screen between reloads</a>.</li>
+<li>Compilation errors can be written to a file with <a href="cli.html#--error-file"><code>--error-file</code></a>, for
+compatibility with <a href="https://github.com/ndmitchell/ghcid">ghcid’s</a> <code>--outputfile</code> option.</li>
+<li>Comments starting with <code>-- $&gt;</code> <a href="comment-evaluation.html">can be evaluated</a> in
+GHCi.
+<ul>
+<li>Eval comments have access to the top-level bindings of the module they’re
+defined in, including unexported bindings.</li>
+<li>Multi-line eval comments are supported with <code>{- $&gt; ... &lt;$ -}</code>.</li>
+</ul>
+</li>
 </ul>
 <h2 id="demo"><a class="header" href="#demo">Demo</a></h2>
 <p>Check out an <a href="https://asciinema.org/a/659712">asciinema demo</a> to see how ghciwatch feels in practice:</p>
@@ -273,15 +274,15 @@ when source files change.</p>
 <h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
 <dl>
 <dt><a id="FILE", href="cli.html#FILE"><code> &lt;FILE&gt;</code></a></dt><dd>
-<p>A Haskell source file to load into a <code>ghci</code> REPL.</p>
+<p>A Haskell source file to load into a GHCi REPL.</p>
 <p>Shortcut for <code>--command 'ghci PATH'</code>. Conflicts with <code>--command</code>.</p>
 </dd>
 </dl>
 <h2 id="options"><a class="header" href="#options">Options</a></h2>
 <dl>
 <dt><a id="--command" href="cli.html#--command"><code>--command &lt;SHELL_COMMAND&gt;</code></a></dt><dd>
-<p>A shell command which starts a <code>ghci</code> REPL, e.g. <code>ghci</code> or <code>cabal v2-repl</code> or similar.</p>
-<p>This is used to launch the underlying <code>ghci</code> session that <code>ghciwatch</code> controls.</p>
+<p>A shell command which starts a GHCi REPL, e.g. <code>ghci</code> or <code>cabal v2-repl</code> or similar.</p>
+<p>This is used to launch the underlying GHCi session that <code>ghciwatch</code> controls.</p>
 <p>May contain quoted arguments which will be parsed in a <code>sh</code>-like manner.</p>
 </dd>
 <dt><a id="--error-file" href="cli.html#--error-file"><code>--error-file &lt;ERROR_FILE&gt;</code></a></dt><dd>
@@ -320,20 +321,20 @@ when source files change.</p>
 </dd>
 <dt><a id="--before-startup-shell" href="cli.html#--before-startup-shell"><code>--before-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
 <p>Shell commands to run before startup</p>
-<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Startup hooks run when GHCi is started (at <code>ghciwatch</code> startup and after GHCi restarts).</p>
 <p>Commands starting with <code>async:</code> will be run in the background.</p>
 <p>This can be used to regenerate <code>.cabal</code> files with <code>hpack</code>.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--after-startup-ghci" href="cli.html#--after-startup-ghci"><code>--after-startup-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
 <p><code>ghci</code> commands to run after startup</p>
-<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Startup hooks run when GHCi is started (at <code>ghciwatch</code> startup and after GHCi restarts).</p>
 <p>Use <code>:set args ...</code> to set command-line arguments for test hooks.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--after-startup-shell" href="cli.html#--after-startup-shell"><code>--after-startup-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
 <p>Shell commands to run after startup</p>
-<p>Startup hooks run when <code>ghci</code> is started (at <code>ghciwatch</code> startup and after <code>ghci</code> restarts).</p>
+<p>Startup hooks run when GHCi is started (at <code>ghciwatch</code> startup and after GHCi restarts).</p>
 <p>Commands starting with <code>async:</code> will be run in the background.</p>
 <p>Can be given multiple times.</p>
 </dd>
@@ -361,27 +362,23 @@ when source files change.</p>
 </dd>
 <dt><a id="--before-restart-ghci" href="cli.html#--before-restart-ghci"><code>--before-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
 <p><code>ghci</code> commands to run before restart</p>
-<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
-are removed or renamed.</p>
+<p>The GHCi session must be restarted when <code>.cabal</code> or <code>.ghci</code> files are modified.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--before-restart-shell" href="cli.html#--before-restart-shell"><code>--before-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
 <p>Shell commands to run before restart</p>
-<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
-are removed or renamed.</p>
+<p>The GHCi session must be restarted when <code>.cabal</code> or <code>.ghci</code> files are modified.</p>
 <p>Commands starting with <code>async:</code> will be run in the background.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--after-restart-ghci" href="cli.html#--after-restart-ghci"><code>--after-restart-ghci &lt;GHCI_CMD&gt;</code></a></dt><dd>
 <p><code>ghci</code> commands to run after restart</p>
-<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
-are removed or renamed.</p>
+<p>The GHCi session must be restarted when <code>.cabal</code> or <code>.ghci</code> files are modified.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--after-restart-shell" href="cli.html#--after-restart-shell"><code>--after-restart-shell &lt;SHELL_CMD&gt;</code></a></dt><dd>
 <p>Shell commands to run after restart</p>
-<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules
-are removed or renamed.</p>
+<p>The GHCi session must be restarted when <code>.cabal</code> or <code>.ghci</code> files are modified.</p>
 <p>Commands starting with <code>async:</code> will be run in the background.</p>
 <p>Can be given multiple times.</p>
 </dd>
@@ -402,16 +399,15 @@ are removed or renamed.</p>
 <p>Directories are watched recursively. Can be given multiple times.</p>
 </dd>
 <dt><a id="--reload-glob" href="cli.html#--reload-glob"><code>--reload-glob &lt;RELOAD_GLOBS&gt;</code></a></dt><dd>
-<p>Reload the <code>ghci</code> session when paths matching this glob change.</p>
+<p>Reload the GHCi session when paths matching this glob change.</p>
 <p>By default, only changes to Haskell source files trigger reloads. If you’d like to exclude some files from that, you can add an ignore glob here, like <code>!src/my-special-dir/**/*.hs</code>.</p>
 <p>Globs provided here have precisely the same semantics as a single line in a <code>gitignore</code> file (<code>man gitignore</code>), where the meaning of <code>!</code> is inverted: namely, <code>!</code> at the beginning of a glob will ignore a file.</p>
 <p>The last matching glob will determine if a reload is triggered.</p>
 <p>Can be given multiple times.</p>
 </dd>
 <dt><a id="--restart-glob" href="cli.html#--restart-glob"><code>--restart-glob &lt;RESTART_GLOBS&gt;</code></a></dt><dd>
-<p>Restart the <code>ghci</code> session when paths matching this glob change.</p>
-<p>By default, only changes to <code>.cabal</code> or <code>.ghci</code> files or Haskell source files being moved/removed will trigger restarts.</p>
-<p>Due to <a href="https://gitlab.haskell.org/ghc/ghc/-/issues/11596">a <code>ghci</code> bug</a>, the <code>ghci</code> session must be restarted when Haskell modules are removed or renamed.</p>
+<p>Restart the GHCi session when paths matching this glob change.</p>
+<p>By default, only changes to <code>.cabal</code> or <code>.ghci</code> files will trigger restarts.</p>
 <p>See <code>--reload-globs</code> for more details.</p>
 <p>Can be given multiple times.</p>
 </dd>
@@ -661,6 +657,28 @@ Executed in   11.41 secs
 only the specified modules and their dependencies will be interpreted. If you
 only need to edit a small portion of a library’s total modules, this can
 provide a significantly faster workflow than loading every module up-front.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="faq"><a class="header" href="#faq">FAQ</a></h1>
+<h2 id="why-a-reimplementation"><a class="header" href="#why-a-reimplementation">Why a reimplementation?</a></h2>
+<p>Ghciwatch started out as a reimplementation and reimagination of
+<a href="https://github.com/ndmitchell/ghcid"><code>ghcid</code></a>, a similar tool with smaller scope. When we started working on
+ghciwatch, <code>ghcid</code> suffered from some significant limitations. In particular,
+<code>ghcid</code> couldn’t deal with moved or deleted modules, and wouldn’t detect new
+directories because it <a href="https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Wait.hs#L81-L83">can’t easily update the set of files being watched at
+runtime.</a> We’ve also seen memory leaks requiring multiple restarts
+per day. Due to the <code>ghcid</code> codebase’s relatively small size, a
+reimplementation seemed like a more efficient path forward than making
+wide-spanning changes to an unfamiliar codebase.</p>
+<h2 id="why-not-just-use-watchexec-or-similar"><a class="header" href="#why-not-just-use-watchexec-or-similar">Why not just use <code>watchexec</code> or similar?</a></h2>
+<p>TL;DR: Managing a GHCi session is often faster than recompiling a project with
+<code>cabal</code> or similar.</p>
+<p>Recompiling a project when files change is a fairly common development task, so
+there’s a bunch of tools with this same rough goal. In particular,
+[<code>watchexec</code>][watchexec] is a nice off-the-shelf solution. Why not just run
+<code>watchexec -e hs cabal build</code>? In truth, ghciwatch doesn’t just recompile the
+project when it detects changes. It instead manages an interactive GHCi
+session, instructing it to reload modules when relevant. This involves a fairly
+complex dance of communicating to GHCi over stdin and parsing its stdout, so
+a bespoke tool is useful here.</p>
 
                     </main>
 

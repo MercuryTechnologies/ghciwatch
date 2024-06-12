@@ -88,7 +88,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html" class="active"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html" class="active"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">8.</strong> FAQ</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -184,18 +184,10 @@
 when source files change.</p>
 <h2 id="features"><a class="header" href="#features">Features</a></h2>
 <ul>
-<li>Ghciwatch can <a href="cli.html#--clear">clear the screen between reloads</a>.</li>
-<li>Compilation errors can be written to a file with <a href="cli.html#--error-file"><code>--error-file</code></a>, for
-compatibility with <a href="https://github.com/ndmitchell/ghcid">ghcid’s</a> <code>--outputfile</code> option.</li>
-<li>Comments starting with <code>-- $&gt;</code> <a href="comment-evaluation.html">can be evaluated</a> in
-GHCi.
-<ul>
-<li>Eval comments have access to the top-level bindings of the module they’re
-defined in, including unexported bindings.</li>
-<li>Multi-line eval comments are supported with <code>{- $&gt; ... &lt;$ -}</code>.</li>
-</ul>
-</li>
-<li>A variety of <a href="lilifecycle-hooks.html">lifecycle hooks</a> let you run Haskell code
+<li>GHCi output is displayed to the user as soon as it’s printed.</li>
+<li>Ghciwatch can handle new modules, removed modules, or moved modules without a
+hitch</li>
+<li>A variety of <a href="lifecycle-hooks.html">lifecycle hooks</a> let you run Haskell code
 or shell commands on a variety of events.
 <ul>
 <li>Run a test suite with <a href="cli.html#--test-ghci"><code>--test-ghci TestMain.testMain</code></a>.</li>
@@ -207,8 +199,17 @@ or shell commands on a variety of events.
 <li><a href="cli.html#--reload-glob">Custom globs</a> can be supplied to reload or restart the
 GHCi session when non-Haskell files (like templates or database schema
 definitions) change.</li>
-<li>Ghciwatch can handle new modules, removed modules, or moved modules without a
-hitch, so you don’t need to manually restart it.</li>
+<li>Ghciwatch can <a href="cli.html#--clear">clear the screen between reloads</a>.</li>
+<li>Compilation errors can be written to a file with <a href="cli.html#--error-file"><code>--error-file</code></a>, for
+compatibility with <a href="https://github.com/ndmitchell/ghcid">ghcid’s</a> <code>--outputfile</code> option.</li>
+<li>Comments starting with <code>-- $&gt;</code> <a href="comment-evaluation.html">can be evaluated</a> in
+GHCi.
+<ul>
+<li>Eval comments have access to the top-level bindings of the module they’re
+defined in, including unexported bindings.</li>
+<li>Multi-line eval comments are supported with <code>{- $&gt; ... &lt;$ -}</code>.</li>
+</ul>
+</li>
 </ul>
 <h2 id="demo"><a class="header" href="#demo">Demo</a></h2>
 <p>Check out an <a href="https://asciinema.org/a/659712">asciinema demo</a> to see how ghciwatch feels in practice:</p>
