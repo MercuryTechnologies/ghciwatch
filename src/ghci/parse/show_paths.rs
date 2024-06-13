@@ -37,14 +37,13 @@ impl ShowPaths {
     }
 
     /// Convert a target (from `:show targets` output) to a module source path.
-    pub fn target_to_path(&self, target: &str) -> miette::Result<(Utf8PathBuf, TargetKind)> {
+    pub fn target_to_path(&self, target: &str) -> miette::Result<(NormalPath, TargetKind)> {
         let target_path = Utf8Path::new(target);
         if is_haskell_source_file(target_path) {
             // The target is already a path.
-            if let Some(path) = self.target_path_to_path(target_path) {
-                tracing::trace!(%path, %target, "Target is path");
-                return Ok((path, TargetKind::Path));
-            }
+            let path = self.cwd.join(target_path);
+            tracing::trace!(%path, %target, "Target is path");
+            return Ok((NormalPath::new(path, &self.cwd)?, TargetKind::Path));
         } else {
             // Else, split by `.` to get path components.
             let mut path = target.split('.').collect::<Utf8PathBuf>();
@@ -53,31 +52,26 @@ impl ShowPaths {
             for haskell_source_extension in HASKELL_SOURCE_EXTENSIONS {
                 path.set_extension(haskell_source_extension);
 
-                if let Some(path) = self.target_path_to_path(&path) {
-                    tracing::trace!(%path, %target, "Found path for target");
-                    return Ok((path, TargetKind::Module));
+                for search_path in self.absolute_search_paths() {
+                    let path = search_path.join(&path);
+                    if path.exists() {
+                        tracing::trace!(%path, %target, "Found path for target");
+                        return Ok((NormalPath::new(path, &self.cwd)?, TargetKind::Module));
+                    }
                 }
             }
         }
         Err(miette!("Couldn't find source path for {target}"))
     }
 
-    /// Convert a target path like `src/MyLib.hs` to a module source path starting with one of the
-    /// `search_paths`.
-    fn target_path_to_path(&self, target: &Utf8Path) -> Option<Utf8PathBuf> {
-        for search_path in self.paths() {
-            let path = search_path.join(target);
-            if path.exists() {
-                // Found it!
-                return Some(path);
+    fn absolute_search_paths(&self) -> impl Iterator<Item = Utf8PathBuf> + '_ {
+        self.search_paths.iter().map(|path| {
+            if path.is_absolute() {
+                path.clone()
+            } else {
+                self.cwd.join(path)
             }
-        }
-
-        None
-    }
-
-    fn paths(&self) -> impl Iterator<Item = &Utf8PathBuf> {
-        self.search_paths.iter().chain(std::iter::once(&self.cwd))
+        })
     }
 
     /// Convert a Haskell source path to a module name.
@@ -85,7 +79,7 @@ impl ShowPaths {
         let path = path.with_extension("");
         let path_str = path.as_str();
 
-        for search_path in self.paths() {
+        for search_path in self.absolute_search_paths() {
             if let Some(suffix) = path_str.strip_prefix(search_path.as_str()) {
                 let module_name = Utf8Path::new(suffix)
                     .components()
@@ -238,12 +232,12 @@ mod tests {
     fn test_path_to_module() {
         let paths = ShowPaths {
             cwd: Utf8PathBuf::from("/Users/wiggles/ghciwatch/"),
-            search_paths: vec![],
+            search_paths: vec![Utf8PathBuf::from("src")],
         };
 
         assert_eq!(
             paths
-                .path_to_module(Utf8Path::new("/Users/wiggles/ghciwatch/Foo/Bar/Baz.hs"))
+                .path_to_module(Utf8Path::new("/Users/wiggles/ghciwatch/src/Foo/Bar/Baz.hs"))
                 .unwrap(),
             "Foo.Bar.Baz"
         );
