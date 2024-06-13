@@ -26,7 +26,7 @@ pub fn compiling(input: &mut &str) -> PResult<GhcMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use module_and_files::Module;
+    use module_and_files::CompilingModule;
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
@@ -37,7 +37,7 @@ mod tests {
             compiling
                 .parse("[1 of 3] Compiling Foo ( Foo.hs, Foo.o, interpreted )\n")
                 .unwrap(),
-            GhcMessage::Compiling(Module {
+            GhcMessage::Compiling(CompilingModule {
                 name: "Foo".into(),
                 path: "Foo.hs".into()
             })
@@ -51,7 +51,7 @@ mod tests {
                       /Users/wiggles/doggy-web-backend6/dist-newstyle/build/aarch64-osx/ghc-9.6.2/doggy-web-backend-0/l/test-dev/noopt/build/test-dev/A/DoggyPrelude/Puppy.dyn_o \
                       ) [Doggy.Lint package changed]\n")
                 .unwrap(),
-            GhcMessage::Compiling(Module{
+            GhcMessage::Compiling(CompilingModule {
                 name: "A.DoggyPrelude.Puppy".into(),
                 path: "src/A/DoggyPrelude/Puppy.hs".into()
             })
@@ -61,7 +61,7 @@ mod tests {
             compiling
                 .parse("[1 of 4] Compiling MyLib            ( src/MyLib.hs )\n")
                 .unwrap(),
-            GhcMessage::Compiling(Module {
+            GhcMessage::Compiling(CompilingModule {
                 name: "MyLib".into(),
                 path: "src/MyLib.hs".into()
             })

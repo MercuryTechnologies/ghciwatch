@@ -44,7 +44,7 @@ mod no_location_info_diagnostic;
 use no_location_info_diagnostic::no_location_info_diagnostic;
 
 use super::rest_of_line;
-use super::Module;
+use super::CompilingModule;
 
 /// A message printed by GHC or GHCi while compiling.
 ///
@@ -56,7 +56,7 @@ pub enum GhcMessage {
     /// ```text
     /// [1 of 2] Compiling Foo ( Foo.hs, interpreted )
     /// ```
-    Compiling(Module),
+    Compiling(CompilingModule),
     /// An error or warning diagnostic message.
     ///
     /// ```text
@@ -233,11 +233,11 @@ mod tests {
                 GhcMessage::LoadConfig {
                     path: "/Users/wiggles/.ghci".into()
                 },
-                GhcMessage::Compiling(Module {
+                GhcMessage::Compiling(CompilingModule {
                     name: "MyLib".into(),
                     path: "src/MyLib.hs".into(),
                 }),
-                GhcMessage::Compiling(Module {
+                GhcMessage::Compiling(CompilingModule {
                     name: "MyModule".into(),
                     path: "src/MyModule.hs".into(),
                 }),
