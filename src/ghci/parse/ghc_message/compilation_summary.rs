@@ -1,10 +1,10 @@
 use winnow::ascii::digit1;
-use winnow::ascii::line_ending;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
 use winnow::PResult;
 use winnow::Parser;
 
+use crate::ghci::parse::lines::line_ending_or_eof;
 use crate::ghci::parse::CompilationResult;
 
 use super::GhcMessage;
@@ -54,7 +54,7 @@ pub fn compilation_summary(input: &mut &str) -> PResult<GhcMessage> {
     let _ = " module".parse_next(input)?;
     let _ = opt("s").parse_next(input)?;
     let _ = " loaded.".parse_next(input)?;
-    let _ = line_ending.parse_next(input)?;
+    let _ = line_ending_or_eof.parse_next(input)?;
 
     Ok(GhcMessage::Summary(CompilationSummary {
         result,
