@@ -7,6 +7,7 @@ mod lines;
 mod module_and_files;
 mod show_paths;
 mod show_targets;
+mod transform_till;
 
 use haskell_grammar::module_name;
 use lines::rest_of_line;
@@ -24,3 +25,5 @@ pub use module_and_files::CompilingModule;
 pub use show_paths::parse_show_paths;
 pub use show_paths::ShowPaths;
 pub use show_targets::parse_show_targets;
+pub use transform_till::recognize_till;
+pub use transform_till::transform_till;
