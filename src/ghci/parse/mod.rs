@@ -3,6 +3,7 @@
 mod eval;
 mod ghc_message;
 mod haskell_grammar;
+mod haskell_source_file;
 mod lines;
 mod module_and_files;
 mod module_set;
@@ -11,6 +12,7 @@ mod show_targets;
 mod target_kind;
 
 use haskell_grammar::module_name;
+use haskell_source_file::haskell_source_file;
 use lines::rest_of_line;
 use module_and_files::module_and_files;
 
