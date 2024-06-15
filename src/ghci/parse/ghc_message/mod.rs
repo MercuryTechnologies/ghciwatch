@@ -43,6 +43,10 @@ use module_import_cycle_diagnostic::module_import_cycle_diagnostic;
 mod no_location_info_diagnostic;
 use no_location_info_diagnostic::no_location_info_diagnostic;
 
+mod not_found;
+use not_found::not_found;
+pub use not_found::NotFound;
+
 use super::rest_of_line;
 use super::CompilingModule;
 
@@ -51,6 +55,13 @@ use super::CompilingModule;
 /// These include progress updates on compilation, errors and warnings, or GHCi messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GhcMessage {
+    /// A module or file was not found.
+    ///
+    /// ```text
+    /// File src/Foo.hs not found
+    /// Module Foo not found
+    /// ```
+    NotFound(NotFound),
     /// A module being compiled.
     ///
     /// ```text
@@ -172,6 +183,7 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
                 .map(GhcMessage::Diagnostic)
                 .map(Item::One),
             compilation_summary.map(GhcMessage::Summary).map(Item::One),
+            not_found.map(GhcMessage::NotFound).map(Item::One),
             cant_find_file_diagnostic
                 .map(GhcMessage::Diagnostic)
                 .map(Item::One),
@@ -219,6 +231,10 @@ mod tests {
                 Preprocessing library 'test-dev' for my-simple-package-0.1.0.0..
                 GHCi, version 9.0.2: https://www.haskell.org/ghc/  :? for help
                 Loaded GHCi configuration from /Users/wiggles/.ghci
+                File src/Puppy.hs not found
+                File src/
+                Puppy.hs not found
+                Module Puppy.Doggy not found
                 [1 of 4] Compiling MyLib            ( src/MyLib.hs, interpreted )
                 [2 of 4] Compiling MyModule         ( src/MyModule.hs, interpreted )
 
@@ -239,6 +255,9 @@ mod tests {
                 GhcMessage::LoadConfig {
                     path: "/Users/wiggles/.ghci".into()
                 },
+                GhcMessage::NotFound(NotFound::File("src/Puppy.hs".into())),
+                GhcMessage::NotFound(NotFound::File("src/\nPuppy.hs".into())),
+                GhcMessage::NotFound(NotFound::Module("Puppy.Doggy".into())),
                 GhcMessage::Compiling(CompilingModule {
                     name: "MyLib".into(),
                     path: "src/MyLib.hs".into(),
