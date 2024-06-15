@@ -167,13 +167,19 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
     repeat(
         0..,
         alt((
-            compiling.map(Item::One),
-            generic_diagnostic.map(Item::One),
-            cant_find_file_diagnostic.map(Item::One),
-            no_location_info_diagnostic.map(Item::One),
+            compiling.map(GhcMessage::Compiling).map(Item::One),
+            generic_diagnostic
+                .map(GhcMessage::Diagnostic)
+                .map(Item::One),
+            compilation_summary.map(GhcMessage::Summary).map(Item::One),
+            cant_find_file_diagnostic
+                .map(GhcMessage::Diagnostic)
+                .map(Item::One),
+            no_location_info_diagnostic
+                .map(GhcMessage::Diagnostic)
+                .map(Item::One),
             module_import_cycle_diagnostic.map(Item::Many),
             loaded_configuration.map(Item::One),
-            compilation_summary.map(Item::One),
             rest_of_line.map(|line| {
                 tracing::debug!(line, "Ignoring GHC output line");
                 Item::Ignore

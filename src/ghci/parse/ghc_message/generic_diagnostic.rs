@@ -7,7 +7,6 @@ use crate::ghci::parse::ghc_message::message_body::parse_message_body;
 use crate::ghci::parse::ghc_message::path_colon;
 use crate::ghci::parse::ghc_message::position;
 use crate::ghci::parse::ghc_message::severity;
-use crate::ghci::parse::ghc_message::GhcMessage;
 
 use super::GhcDiagnostic;
 
@@ -23,7 +22,7 @@ use super::GhcDiagnostic;
 /// 6 |   deriving MyClass
 ///   |            ^^^^^^^
 /// ```
-pub fn generic_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
+pub fn generic_diagnostic(input: &mut &str) -> PResult<GhcDiagnostic> {
     // TODO: Confirm that the input doesn't start with space?
     let path = path_colon.parse_next(input)?;
     let span = position::parse_position_range.parse_next(input)?;
@@ -32,12 +31,12 @@ pub fn generic_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
     let _ = space0.parse_next(input)?;
     let message = parse_message_body.parse_next(input)?;
 
-    Ok(GhcMessage::Diagnostic(GhcDiagnostic {
+    Ok(GhcDiagnostic {
         severity,
         path: Some(path.to_owned()),
         span,
         message: message.to_owned(),
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -65,7 +64,7 @@ mod tests {
                     "
                 ))
                 .unwrap(),
-            GhcMessage::Diagnostic(GhcDiagnostic {
+            GhcDiagnostic {
                 severity: Severity::Error,
                 path: Some("NotStockDeriveable.hs".into()),
                 span: PositionRange::new(6, 12, 6, 12),
@@ -81,7 +80,7 @@ mod tests {
                     "
                 )
                 .into()
-            })
+            }
         );
 
         // Doesn't parse another error message.
