@@ -1,4 +1,3 @@
-use camino::Utf8PathBuf;
 use miette::miette;
 use winnow::combinator::repeat;
 use winnow::Parser;
@@ -6,12 +5,13 @@ use winnow::Parser;
 use super::lines::until_newline;
 use super::show_paths::ShowPaths;
 use super::TargetKind;
+use crate::normal_path::NormalPath;
 
 /// Parse `:show targets` output into a set of module source paths.
 pub fn parse_show_targets(
     search_paths: &ShowPaths,
     input: &str,
-) -> miette::Result<Vec<(Utf8PathBuf, TargetKind)>> {
+) -> miette::Result<Vec<(NormalPath, TargetKind)>> {
     let targets: Vec<_> = repeat(0.., until_newline)
         .parse(input)
         .map_err(|err| miette!("{err}"))?;
@@ -24,19 +24,24 @@ pub fn parse_show_targets(
 
 #[cfg(test)]
 mod tests {
+    use crate::normal_path::NormalPath;
+
     use super::*;
+    use camino::Utf8PathBuf;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_parse_show_targets() {
         let show_paths = ShowPaths {
-            cwd: Utf8PathBuf::from("tests/data/simple"),
-            search_paths: vec![
-                Utf8PathBuf::from("tests/data/simple/test"),
-                Utf8PathBuf::from("tests/data/simple/src"),
-            ],
+            cwd: NormalPath::from_cwd("tests/data/simple")
+                .unwrap()
+                .absolute()
+                .to_owned(),
+            search_paths: vec![Utf8PathBuf::from("test"), Utf8PathBuf::from("src")],
         };
+
+        let normal_path = |p: &str| NormalPath::new(p, &show_paths.cwd).unwrap();
 
         assert_eq!(
             parse_show_targets(
@@ -44,7 +49,6 @@ mod tests {
                 indoc!(
                     "
                     src/MyLib.hs
-                    MyLib.hs
                     TestMain
                     MyLib
                     MyModule
@@ -53,26 +57,10 @@ mod tests {
             )
             .unwrap(),
             vec![
-                (
-                    Utf8PathBuf::from("tests/data/simple/src/MyLib.hs"),
-                    TargetKind::Path
-                ),
-                (
-                    Utf8PathBuf::from("tests/data/simple/src/MyLib.hs"),
-                    TargetKind::Path
-                ),
-                (
-                    Utf8PathBuf::from("tests/data/simple/test/TestMain.hs"),
-                    TargetKind::Module
-                ),
-                (
-                    Utf8PathBuf::from("tests/data/simple/src/MyLib.hs"),
-                    TargetKind::Module
-                ),
-                (
-                    Utf8PathBuf::from("tests/data/simple/src/MyModule.hs"),
-                    TargetKind::Module
-                ),
+                (normal_path("src/MyLib.hs"), TargetKind::Path),
+                (normal_path("test/TestMain.hs"), TargetKind::Module),
+                (normal_path("src/MyLib.hs"), TargetKind::Module),
+                (normal_path("src/MyModule.hs"), TargetKind::Module),
             ]
         );
     }

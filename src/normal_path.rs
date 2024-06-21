@@ -201,4 +201,49 @@ mod tests {
 
         assert_eq!(test_path.into_absolute().as_os_str(), dir.as_os_str());
     }
+
+    #[test]
+    fn test_normalpath_new() {
+        let base = Utf8Path::new("/Users/wiggles/ghciwatch/tests/data/simple");
+        let relative = Utf8Path::new("src/MyLib.hs");
+        let path = NormalPath::new(relative, base).unwrap();
+
+        assert_eq!(
+            path.absolute(),
+            Utf8Path::new("/Users/wiggles/ghciwatch/tests/data/simple/src/MyLib.hs")
+        );
+        assert_eq!(path.relative(), Utf8Path::new("src/MyLib.hs"));
+    }
+
+    #[test]
+    fn test_normalpath_new_parent() {
+        let base = Utf8Path::new("/a/b/c");
+        let relative = Utf8Path::new("../puppy");
+        let path = NormalPath::new(relative, base).unwrap();
+
+        assert_eq!(path.absolute(), Utf8Path::new("/a/b/puppy"));
+        assert_eq!(path.relative(), Utf8Path::new("../puppy"));
+    }
+
+    #[test]
+    fn test_normalpath_new_unrelated() {
+        let base = Utf8Path::new("/a/b/c");
+        let relative = Utf8Path::new("/d/e/f");
+        let path = NormalPath::new(relative, base).unwrap();
+
+        assert_eq!(path.absolute(), Utf8Path::new("/d/e/f"));
+        // This is kinda silly; the paths share no components in common, they're both absolute, but
+        // we don't get an absolute path out of it.
+        assert_eq!(path.relative(), Utf8Path::new("../../../d/e/f"));
+    }
+
+    #[test]
+    fn test_normalpath_new_both_relative() {
+        let base = Utf8Path::new("a/b/c");
+        let relative = Utf8Path::new("d/e/f");
+        let path = NormalPath::new(relative, base).unwrap();
+
+        assert_eq!(path.absolute(), Utf8Path::new("a/b/c/d/e/f"));
+        assert_eq!(path.relative(), Utf8Path::new("d/e/f"));
+    }
 }
