@@ -3,17 +3,20 @@
 use camino::Utf8Path;
 
 /// File extensions for Haskell source code.
-pub const HASKELL_SOURCE_EXTENSIONS: [&str; 9] = [
+///
+/// See: <https://downloads.haskell.org/ghc/latest/docs/users_guide/using.html#meaningful-file-suffixes>
+///
+/// See: <https://gitlab.haskell.org/ghc/ghc/-/blob/077cb2e11fa81076e8c9c5f8dd3bdfa99c8aaf8d/compiler/GHC/Driver/Phases.hs#L236-L252>
+pub const HASKELL_SOURCE_EXTENSIONS: [&str; 8] = [
     // NOTE: This should start with `hs` so that iterators try the most common extension first.
-    "hs",      // Haskell
-    "lhs",     // Literate Haskell
+    "hs",       // Haskell
+    "lhs",      // Literate Haskell
     "hs-boot", // See: https://downloads.haskell.org/ghc/latest/docs/users_guide/separate_compilation.html#how-to-compile-mutually-recursive-modules
+    "lhs-boot", // Literate `hs-boot`.
     "hsig", // Backpack module signatures: https://ghc.gitlab.haskell.org/ghc/doc/users_guide/separate_compilation.html#module-signatures
-    "hsc", // `hsc2hs` C bindings: https://downloads.haskell.org/ghc/latest/docs/users_guide/utils.html?highlight=interfaces#writing-haskell-interfaces-to-c-code-hsc2hs
-    "x",   // `alex` (lexer generator): https://hackage.haskell.org/package/alex
-    "y",   // `happy` (parser generator): https://hackage.haskell.org/package/happy
-    "c2hs", // `c2hs` C bindings: https://hackage.haskell.org/package/c2hs
-    "gc",  // `greencard` C bindings: https://hackage.haskell.org/package/greencard
+    "lhsig", // Literate backpack module signatures.
+    "hspp", // "A file created by the preprocessor".
+    "hscpp", // Haskell C-preprocessor files.
 ];
 
 /// Determine if a given path represents a Haskell source file.

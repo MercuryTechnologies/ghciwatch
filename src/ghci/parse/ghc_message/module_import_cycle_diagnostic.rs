@@ -4,16 +4,16 @@ use winnow::ascii::space1;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
 use winnow::combinator::repeat;
-use winnow::token::take_until;
 use winnow::PResult;
 use winnow::Parser;
 
 use crate::ghci::parse::haskell_grammar::module_name;
+use crate::ghci::parse::haskell_source_file;
 use crate::ghci::parse::lines::line_ending_or_eof;
 use crate::ghci::parse::lines::rest_of_line;
 use crate::ghci::parse::Severity;
 
-use super::single_quote::single_quote;
+use super::single_quoted::single_quoted;
 use super::GhcDiagnostic;
 use super::GhcMessage;
 
@@ -39,16 +39,12 @@ pub fn module_import_cycle_diagnostic(input: &mut &str) -> PResult<Vec<GhcMessag
         let _ = opt("which ").parse_next(input)?;
         let _ = opt("imports ").parse_next(input)?;
         let _ = "module ".parse_next(input)?;
-        let _ = single_quote.parse_next(input)?;
-        let _name = module_name.parse_next(input)?;
-        let _ = single_quote.parse_next(input)?;
-        let _ = space1.parse_next(input)?;
+        let (_name, _) = single_quoted(module_name, space1).parse_next(input)?;
         let _ = "(".parse_next(input)?;
-        let path = take_until(1.., ")").parse_next(input)?;
-        let _ = ")".parse_next(input)?;
+        let (path, _) = haskell_source_file(')').parse_next(input)?;
         let _ = rest_of_line.parse_next(input)?;
 
-        Ok(Utf8PathBuf::from(path))
+        Ok(path)
     }
 
     fn inner(input: &mut &str) -> PResult<Vec<Utf8PathBuf>> {
