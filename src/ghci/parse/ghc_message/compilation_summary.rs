@@ -7,8 +7,6 @@ use winnow::Parser;
 use crate::ghci::parse::lines::line_ending_or_eof;
 use crate::ghci::parse::CompilationResult;
 
-use super::GhcMessage;
-
 /// Compilation finished.
 ///
 /// ```text
@@ -29,7 +27,7 @@ pub struct CompilationSummary {
 }
 
 /// Parse a compilation summary, like `Ok, one module loaded.`.
-pub fn compilation_summary(input: &mut &str) -> PResult<GhcMessage> {
+pub fn compilation_summary(input: &mut &str) -> PResult<CompilationSummary> {
     let result = alt((
         "Ok".map(|_| CompilationResult::Ok),
         "Failed".map(|_| CompilationResult::Err),
@@ -56,10 +54,10 @@ pub fn compilation_summary(input: &mut &str) -> PResult<GhcMessage> {
     let _ = " loaded.".parse_next(input)?;
     let _ = line_ending_or_eof.parse_next(input)?;
 
-    Ok(GhcMessage::Summary(CompilationSummary {
+    Ok(CompilationSummary {
         result,
         modules_loaded,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -75,60 +73,60 @@ mod tests {
             compilation_summary
                 .parse("Ok, 123 modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Ok,
                 modules_loaded: 123,
-            })
+            }
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, no modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Ok,
                 modules_loaded: 0,
-            })
+            }
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, one module loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Ok,
                 modules_loaded: 1,
-            })
+            }
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Ok, six modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Ok,
                 modules_loaded: 6,
-            })
+            }
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Failed, 7 modules loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Err,
                 modules_loaded: 7,
-            })
+            }
         );
 
         assert_eq!(
             compilation_summary
                 .parse("Failed, one module loaded.\n")
                 .unwrap(),
-            GhcMessage::Summary(CompilationSummary {
+            CompilationSummary {
                 result: CompilationResult::Err,
                 modules_loaded: 1,
-            })
+            }
         );
 
         // Negative cases

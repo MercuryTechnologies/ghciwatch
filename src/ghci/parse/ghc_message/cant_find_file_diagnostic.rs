@@ -7,7 +7,6 @@ use crate::ghci::parse::lines::until_newline;
 
 use crate::ghci::parse::ghc_message::position;
 use crate::ghci::parse::ghc_message::severity;
-use crate::ghci::parse::ghc_message::GhcMessage;
 
 use super::GhcDiagnostic;
 
@@ -16,7 +15,7 @@ use super::GhcDiagnostic;
 /// ```plain
 /// <no location info>: error: can't find file: Why.hs
 /// ```
-pub fn cant_find_file_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
+pub fn cant_find_file_diagnostic(input: &mut &str) -> PResult<GhcDiagnostic> {
     let _ = position::parse_unhelpful_position.parse_next(input)?;
     let _ = space1.parse_next(input)?;
     let severity = severity::parse_severity_colon.parse_next(input)?;
@@ -24,12 +23,12 @@ pub fn cant_find_file_diagnostic(input: &mut &str) -> PResult<GhcMessage> {
     let _ = "can't find file: ".parse_next(input)?;
     let path = until_newline.parse_next(input)?;
 
-    Ok(GhcMessage::Diagnostic(GhcDiagnostic {
+    Ok(GhcDiagnostic {
         severity,
         path: Some(Utf8PathBuf::from(path)),
         span: Default::default(),
         message: "can't find file".to_owned(),
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -46,12 +45,12 @@ mod tests {
             cant_find_file_diagnostic
                 .parse("<no location info>: error: can't find file: Why.hs\n")
                 .unwrap(),
-            GhcMessage::Diagnostic(GhcDiagnostic {
+            GhcDiagnostic {
                 severity: Severity::Error,
                 path: Some("Why.hs".into()),
                 span: Default::default(),
                 message: "can't find file".to_owned()
-            })
+            }
         );
 
         // Doesn't parse another error message.
@@ -70,8 +69,6 @@ mod tests {
         assert_eq!(
             cant_find_file_diagnostic
                 .parse("<no location info>: error: can't find file: Why.hs\n")
-                .unwrap()
-                .into_diagnostic()
                 .unwrap()
                 .to_string(),
             "Why.hs: error: can't find file"
