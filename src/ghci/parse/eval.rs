@@ -7,7 +7,6 @@ use miette::miette;
 use winnow::ascii::line_ending;
 use winnow::ascii::space0;
 use winnow::combinator::alt;
-use winnow::combinator::eof;
 use winnow::combinator::opt;
 use winnow::combinator::peek;
 use winnow::combinator::repeat;
@@ -16,6 +15,7 @@ use winnow::Located;
 use winnow::PResult;
 use winnow::Parser;
 
+use crate::ghci::parse::lines::line_ending_or_eof;
 use crate::ghci::GhciCommand;
 
 use super::lines::rest_of_line;
@@ -173,7 +173,7 @@ fn multiline_eval_command(input: &mut Located<&str>) -> PResult<ByteSpanCommand>
             .with_span()
             .parse_next(input)?;
     multiline_eval_end.parse_next(input)?;
-    let _ = (space0, alt((line_ending, eof))).parse_next(input)?;
+    let _ = (space0, line_ending_or_eof).parse_next(input)?;
 
     Ok(ByteSpanCommand {
         // `command` ends with a newline so we put a newline after the `:{` but not before the

@@ -1,6 +1,5 @@
 use camino::Utf8PathBuf;
 use itertools::Itertools;
-use winnow::ascii::line_ending;
 use winnow::ascii::space1;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
@@ -10,6 +9,7 @@ use winnow::PResult;
 use winnow::Parser;
 
 use crate::ghci::parse::haskell_grammar::module_name;
+use crate::ghci::parse::lines::line_ending_or_eof;
 use crate::ghci::parse::lines::rest_of_line;
 use crate::ghci::parse::Severity;
 
@@ -57,7 +57,7 @@ pub fn module_import_cycle_diagnostic(input: &mut &str) -> PResult<Vec<GhcMessag
             "Module graph contains a cycle:",
         ))
         .parse_next(input)?;
-        let _ = line_ending.parse_next(input)?;
+        let _ = line_ending_or_eof.parse_next(input)?;
         repeat(1.., parse_import_cycle_line).parse_next(input)
     }
 

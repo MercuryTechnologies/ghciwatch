@@ -34,13 +34,31 @@ where
     <I as Stream>::Slice: SliceLen,
 {
     let line = till_line_ending.parse_next(input)?;
-    let ending = alt((line_ending, eof)).parse_next(input)?;
+    let ending = line_ending_or_eof.parse_next(input)?;
 
     if line.slice_len() == 0 && ending.slice_len() == 0 {
         Err(ErrMode::Backtrack(ContextError::new()))
     } else {
         Ok(line)
     }
+}
+
+/// Parse a line ending or the end of the file.
+///
+/// This is useful for line-oriented parsers that may consume input with no trailing newline
+/// character. While this is a [violation of the POSIX spec][posix], VS Code [does it by
+/// default][vscode].
+///
+/// [posix]: https://stackoverflow.com/a/729795
+/// [vscode]: https://stackoverflow.com/questions/44704968/visual-studio-code-insert-newline-at-the-end-of-files
+pub fn line_ending_or_eof<I>(input: &mut I) -> PResult<<I as Stream>::Slice>
+where
+    I: Stream + StreamIsPartial + for<'i> FindSlice<&'i str> + for<'i> Compare<&'i str>,
+    <I as Stream>::Token: AsChar,
+    <I as Stream>::Token: Clone,
+    <I as Stream>::Slice: SliceLen,
+{
+    alt((line_ending, eof)).parse_next(input)
 }
 
 #[cfg(test)]
