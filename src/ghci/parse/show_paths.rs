@@ -14,12 +14,12 @@ use winnow::combinator::repeat;
 use winnow::PResult;
 use winnow::Parser;
 
+use crate::ghci::loaded_module::LoadedModule;
 use crate::haskell_source_file::is_haskell_source_file;
 use crate::haskell_source_file::HASKELL_SOURCE_EXTENSIONS;
 use crate::normal_path::NormalPath;
 
 use super::lines::until_newline;
-use super::TargetKind;
 
 /// Parsed `:show paths` output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,13 +37,13 @@ impl ShowPaths {
     }
 
     /// Convert a target (from `:show targets` output) to a module source path.
-    pub fn target_to_path(&self, target: &str) -> miette::Result<(NormalPath, TargetKind)> {
+    pub fn target_to_path(&self, target: &str) -> miette::Result<LoadedModule> {
         let target_path = Utf8Path::new(target);
         if is_haskell_source_file(target_path) {
             // The target is already a path.
             let path = self.cwd.join(target_path);
             tracing::trace!(%path, %target, "Target is path");
-            return Ok((NormalPath::new(path, &self.cwd)?, TargetKind::Path));
+            return Ok(LoadedModule::new(NormalPath::new(path, &self.cwd)?));
         } else {
             // Else, split by `.` to get path components.
             let mut path = target.split('.').collect::<Utf8PathBuf>();
@@ -56,7 +56,10 @@ impl ShowPaths {
                     let path = search_path.join(&path);
                     if path.exists() {
                         tracing::trace!(%path, %target, "Found path for target");
-                        return Ok((NormalPath::new(path, &self.cwd)?, TargetKind::Module));
+                        return Ok(LoadedModule::with_name(
+                            NormalPath::new(path, &self.cwd)?,
+                            target.to_owned(),
+                        ));
                     }
                 }
             }

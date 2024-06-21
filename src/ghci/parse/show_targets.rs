@@ -2,16 +2,13 @@ use miette::miette;
 use winnow::combinator::repeat;
 use winnow::Parser;
 
+use crate::ghci::ModuleSet;
+
 use super::lines::until_newline;
 use super::show_paths::ShowPaths;
-use super::TargetKind;
-use crate::normal_path::NormalPath;
 
 /// Parse `:show targets` output into a set of module source paths.
-pub fn parse_show_targets(
-    search_paths: &ShowPaths,
-    input: &str,
-) -> miette::Result<Vec<(NormalPath, TargetKind)>> {
+pub fn parse_show_targets(search_paths: &ShowPaths, input: &str) -> miette::Result<ModuleSet> {
     let targets: Vec<_> = repeat(0.., until_newline)
         .parse(input)
         .map_err(|err| miette!("{err}"))?;
@@ -24,6 +21,9 @@ pub fn parse_show_targets(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
+    use crate::ghci::loaded_module::LoadedModule;
     use crate::normal_path::NormalPath;
 
     use super::*;
@@ -55,13 +55,17 @@ mod tests {
                     "
                 )
             )
-            .unwrap(),
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>(),
             vec![
-                (normal_path("src/MyLib.hs"), TargetKind::Path),
-                (normal_path("test/TestMain.hs"), TargetKind::Module),
-                (normal_path("src/MyLib.hs"), TargetKind::Module),
-                (normal_path("src/MyModule.hs"), TargetKind::Module),
+                LoadedModule::new(normal_path("src/MyLib.hs")),
+                LoadedModule::with_name(normal_path("test/TestMain.hs"), "TestMain".to_owned()),
+                LoadedModule::with_name(normal_path("src/MyLib.hs"), "MyLib".to_owned()),
+                LoadedModule::with_name(normal_path("src/MyModule.hs"), "MyModule".to_owned()),
             ]
+            .into_iter()
+            .collect()
         );
     }
 }
