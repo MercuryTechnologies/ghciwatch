@@ -159,53 +159,23 @@ impl Tui {
         // TODO: Steal Evan's declarative key matching macros?
         // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
         match event {
-            Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
-                self.scroll_up(SCROLL_AMOUNT);
-            }
-            Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollDown => {
-                self.scroll_down(SCROLL_AMOUNT);
-            }
-            Event::Key(key) => match key.modifiers {
-                KeyModifiers::NONE => match key.code {
-                    KeyCode::Char('j') => {
-                        self.scroll_down(1);
-                    }
-                    KeyCode::Char('k') => {
-                        self.scroll_up(1);
-                    }
-                    KeyCode::Char('g') => {
-                        self.scroll_to(0);
-                    }
-                    _ => {}
-                },
-
-                #[allow(clippy::single_match)]
-                KeyModifiers::SHIFT => match key.code {
-                    KeyCode::Char('g' | 'G') => {
-                        self.scroll_to(usize::MAX);
-                    }
-                    _ => {}
-                },
-
-                KeyModifiers::CONTROL => match key.code {
-                    KeyCode::Char('u') => {
-                        self.scroll_up(self.half_height().0);
-                    }
-                    KeyCode::Char('d') => {
-                        self.scroll_down(self.half_height().0);
-                    }
-                    KeyCode::Char('e') => {
-                        self.scroll_down(1);
-                    }
-                    KeyCode::Char('y') => {
-                        self.scroll_up(1);
-                    }
-                    KeyCode::Char('c') => {
-                        self.quit = true;
-                    }
-                    _ => {}
-                },
-
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollUp => self.scroll_up(SCROLL_AMOUNT),
+                MouseEventKind::ScrollDown => self.scroll_down(SCROLL_AMOUNT),
+                _ => {}
+            },
+            Event::Key(key) => match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Char('j')) => self.scroll_down(1),
+                (KeyModifiers::NONE, KeyCode::Char('k')) => self.scroll_up(1),
+                (KeyModifiers::NONE, KeyCode::Char('g')) => self.scroll_to(0),
+                (KeyModifiers::SHIFT, KeyCode::Char('g' | 'G')) => self.scroll_to(usize::MAX),
+                (KeyModifiers::CONTROL, KeyCode::Char('u')) => self.scroll_up(self.half_height().0),
+                (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                    self.scroll_down(self.half_height().0)
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('e')) => self.scroll_down(1),
+                (KeyModifiers::CONTROL, KeyCode::Char('y')) => self.scroll_up(1),
+                (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit = true,
                 _ => {}
             },
             _ => {}
