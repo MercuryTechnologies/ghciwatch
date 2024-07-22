@@ -11,6 +11,8 @@ use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use ratatui::prelude::Buffer;
+use ratatui::prelude::Constraint;
+use ratatui::prelude::Layout;
 use ratatui::prelude::Rect;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
@@ -34,6 +36,7 @@ const SCROLL_AMOUNT: usize = 3;
 /// State data for drawing the TUI.
 #[derive(Debug)]
 struct TuiState {
+    debug: bool,
     quit: bool,
     scrollback: Vec<u8>,
     line_count: Saturating<usize>,
@@ -43,6 +46,7 @@ struct TuiState {
 impl Default for TuiState {
     fn default() -> Self {
         Self {
+            debug: false,
             quit: false,
             scrollback: Vec::with_capacity(TUI_SCROLLBACK_CAPACITY),
             line_count: Saturating(1),
@@ -58,6 +62,12 @@ impl TuiState {
             return Ok(());
         }
 
+        let areas = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(if self.debug { 1 } else { 0 }),
+        ])
+        .split(area);
+
         let text = self.scrollback.into_text().into_diagnostic()?;
 
         let scroll_offset = u16::try_from(self.scroll_offset.0)
@@ -67,7 +77,16 @@ impl TuiState {
         Paragraph::new(text)
             .wrap(Wrap::default())
             .scroll((scroll_offset, 0))
-            .render(area, buffer);
+            .render(areas[0], buffer);
+
+        if self.debug {
+            let line_count = self.line_count;
+            let scroll_offset = self.scroll_offset;
+            Paragraph::new(format!(
+                "(☞ ﾟ ヮﾟ )☞  line_count={line_count}, scroll_offset={scroll_offset}"
+            ))
+            .render(areas[1], buffer);
+        }
 
         Ok(())
     }
@@ -176,6 +195,8 @@ impl Tui {
                 (KeyModifiers::CONTROL, KeyCode::Char('e')) => self.scroll_down(1),
                 (KeyModifiers::CONTROL, KeyCode::Char('y')) => self.scroll_up(1),
                 (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit = true,
+                (KeyModifiers::NONE, KeyCode::Char('`')) => self.debug = false,
+                (KeyModifiers::SHIFT, KeyCode::Char('`' | '~')) => self.debug = true,
                 _ => {}
             },
             _ => {}
