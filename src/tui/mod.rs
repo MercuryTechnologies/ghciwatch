@@ -146,7 +146,13 @@ impl Tui {
 
     fn maybe_follow(&mut self) {
         let height = self.size.height as usize;
-        if self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1) {
+
+        let scrolled_to_bottom =
+            self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1);
+
+        let scrollback_exceeds_height = self.line_count > Saturating(height);
+
+        if scrolled_to_bottom && scrollback_exceeds_height {
             self.scroll_offset += Saturating(1);
         }
     }
