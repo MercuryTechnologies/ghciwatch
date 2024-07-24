@@ -11,6 +11,8 @@ use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
 use ratatui::prelude::Buffer;
+use ratatui::prelude::Constraint;
+use ratatui::prelude::Layout;
 use ratatui::prelude::Rect;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
@@ -34,6 +36,7 @@ const SCROLL_AMOUNT: usize = 3;
 /// State data for drawing the TUI.
 #[derive(Debug)]
 struct TuiState {
+    debug: bool,
     quit: bool,
     scrollback: Vec<u8>,
     line_count: Saturating<usize>,
@@ -43,6 +46,7 @@ struct TuiState {
 impl Default for TuiState {
     fn default() -> Self {
         Self {
+            debug: false,
             quit: false,
             scrollback: Vec::with_capacity(TUI_SCROLLBACK_CAPACITY),
             line_count: Saturating(1),
@@ -58,6 +62,12 @@ impl TuiState {
             return Ok(());
         }
 
+        let areas = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(if self.debug { 1 } else { 0 }),
+        ])
+        .split(area);
+
         let text = self.scrollback.into_text().into_diagnostic()?;
 
         let scroll_offset = u16::try_from(self.scroll_offset.0)
@@ -67,7 +77,16 @@ impl TuiState {
         Paragraph::new(text)
             .wrap(Wrap::default())
             .scroll((scroll_offset, 0))
-            .render(area, buffer);
+            .render(areas[0], buffer);
+
+        if self.debug {
+            let line_count = self.line_count;
+            let scroll_offset = self.scroll_offset;
+            Paragraph::new(format!(
+                "(☞ ﾟ ヮﾟ )☞  line_count={line_count}, scroll_offset={scroll_offset}"
+            ))
+            .render(areas[1], buffer);
+        }
 
         Ok(())
     }
@@ -127,7 +146,13 @@ impl Tui {
 
     fn maybe_follow(&mut self) {
         let height = self.size.height as usize;
-        if self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1) {
+
+        let scrolled_to_bottom =
+            self.scroll_offset >= self.line_count - Saturating(height) - Saturating(1);
+
+        let scrollback_exceeds_height = self.line_count > Saturating(height);
+
+        if scrolled_to_bottom && scrollback_exceeds_height {
             self.scroll_offset += Saturating(1);
         }
     }
@@ -159,53 +184,25 @@ impl Tui {
         // TODO: Steal Evan's declarative key matching macros?
         // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
         match event {
-            Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollUp => {
-                self.scroll_up(SCROLL_AMOUNT);
-            }
-            Event::Mouse(mouse) if mouse.kind == MouseEventKind::ScrollDown => {
-                self.scroll_down(SCROLL_AMOUNT);
-            }
-            Event::Key(key) => match key.modifiers {
-                KeyModifiers::NONE => match key.code {
-                    KeyCode::Char('j') => {
-                        self.scroll_down(1);
-                    }
-                    KeyCode::Char('k') => {
-                        self.scroll_up(1);
-                    }
-                    KeyCode::Char('g') => {
-                        self.scroll_to(0);
-                    }
-                    _ => {}
-                },
-
-                #[allow(clippy::single_match)]
-                KeyModifiers::SHIFT => match key.code {
-                    KeyCode::Char('g' | 'G') => {
-                        self.scroll_to(usize::MAX);
-                    }
-                    _ => {}
-                },
-
-                KeyModifiers::CONTROL => match key.code {
-                    KeyCode::Char('u') => {
-                        self.scroll_up(self.half_height().0);
-                    }
-                    KeyCode::Char('d') => {
-                        self.scroll_down(self.half_height().0);
-                    }
-                    KeyCode::Char('e') => {
-                        self.scroll_down(1);
-                    }
-                    KeyCode::Char('y') => {
-                        self.scroll_up(1);
-                    }
-                    KeyCode::Char('c') => {
-                        self.quit = true;
-                    }
-                    _ => {}
-                },
-
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollUp => self.scroll_up(SCROLL_AMOUNT),
+                MouseEventKind::ScrollDown => self.scroll_down(SCROLL_AMOUNT),
+                _ => {}
+            },
+            Event::Key(key) => match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Char('j')) => self.scroll_down(1),
+                (KeyModifiers::NONE, KeyCode::Char('k')) => self.scroll_up(1),
+                (KeyModifiers::NONE, KeyCode::Char('g')) => self.scroll_to(0),
+                (KeyModifiers::SHIFT, KeyCode::Char('g' | 'G')) => self.scroll_to(usize::MAX),
+                (KeyModifiers::CONTROL, KeyCode::Char('u')) => self.scroll_up(self.half_height().0),
+                (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                    self.scroll_down(self.half_height().0)
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('e')) => self.scroll_down(1),
+                (KeyModifiers::CONTROL, KeyCode::Char('y')) => self.scroll_up(1),
+                (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit = true,
+                (KeyModifiers::NONE, KeyCode::Char('`')) => self.debug = false,
+                (KeyModifiers::SHIFT, KeyCode::Char('`' | '~')) => self.debug = true,
                 _ => {}
             },
             _ => {}
