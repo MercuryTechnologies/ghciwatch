@@ -56,6 +56,10 @@ Check out a quick demo to see how ghciwatch feels in practice:
 
 <a href="https://asciinema.org/a/659712" target="_blank"><img src="https://asciinema.org/a/659712.svg" /></a>
 
+## Learn More
+
+[Read the manual here](https://mercurytechnologies.github.io/ghciwatch/).
+
 ## Developing ghciwatch
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for information on hacking
