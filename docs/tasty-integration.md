@@ -2,7 +2,7 @@
 
 ## bubblewrap
 
-Because `ghciwatch` is waiting for lines to come from `ghci`, if you don't change the buffering, you
+Because `ghciwatch` is waiting for lines to come from `ghci`, you
 can end up waiting forever if you don't change the output buffering from `Tasty`. Something like this works:
 
 ```haskell
