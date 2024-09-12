@@ -1,28 +1,38 @@
-# using tasty with ghciwatch
+# Using ghciwatch with tasty
 
-## bubblewrap
+Tips and tricks for using ghciwatch with the [Tasty][tasty] test framework.
 
-Because `ghciwatch` is waiting for lines to come from `ghci`, you
-can end up waiting forever if you don't change the output buffering from `Tasty`. Something like this works:
+[tasty]: https://hackage.haskell.org/package/tasty
+
+Ghciwatch will wait for GHCi to print output, and it can end up waiting forever
+if the Tasty output is buffered. Something like this works:
 
 ```haskell
 module TestMain where
 
-import Control.Exception (SomeException, try)
-import System.IO (BufferMode (NoBuffering), hSetBuffering, stdout)
+import Control.Exception (bracket)
+import System.IO (hGetBuffering, hSetBuffering, stdout)
 import Test.Tasty (TestTree, defaultMain, testGroup)
 
-bubblewrap :: IO () -> IO ()
-bubblewrap io = do
-  try io :: IO (Either SomeException ())
-  hSetBuffering stdout NoBuffering
+-- | Run an `IO` action, restoring `stdout`\'s buffering mode after the action
+-- completes or errors.
+protectStdoutBuffering :: IO a -> IO a
+protectStdoutBuffering action =
+  bracket
+    (hGetBuffering stdout)
+    (\bufferMode -> hSetBuffering stdout bufferMode)
+    (const action)
 
 main :: IO ()
-main = bubblewrap $ defaultMain $ mytestgroup
+main = protectStdoutBuffering $ defaultMain $ mytestgroup
 ```
 
-## tasty-discover issues
+## `tasty-discover` issues
 
-If you add a new test file, the top level [tasty-discover](https://hackage.haskell.org/package/tasty-discover)
-module will not have it set up as a dependency, so will not be reloaded until you restart the `ghciwatch` process. [tasty-autocollect](https://hackage.haskell.org/package/tasty-autocollect) relies on a compiler plugin and seems to avoid 
-this problem.
+If you add a new test file, you may need to write the top level
+[`tasty-discover`][tasty-discover] module to convince ghciwatch to reload it.
+[`tasty-autocollect`][tasty-autocollect] relies on a compiler plugin and seems
+to avoid this problem.
+
+[tasty-discover]: https://hackage.haskell.org/package/tasty
+[tasty-autocollect]: https://github.com/MercuryTechnologies/ghciwatch/pull/321/files?short_path=c86caa3#diff-c86caa33ad4639b624ef8db59e739295f362bf4c211bed24c8ba484c79af9bdb
