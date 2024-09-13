@@ -1,4 +1,4 @@
-# Using ghciwatch with tasty
+# Tasty
 
 Tips and tricks for using ghciwatch with the [Tasty][tasty] test framework.
 
