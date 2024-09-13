@@ -12,3 +12,4 @@
 # Integration and tips
 
 - [Tasty](./integration/tasty.md)
+- [Multiple Cabal components](./integration/multiple-components.md)
