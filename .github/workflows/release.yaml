@@ -206,38 +206,3 @@ jobs:
             [Release ${{ needs.version.outputs.version }}][release] was built and published successfully!
 
             [release]: ${{ steps.create_release.outputs.url }}
-
-  github-pages:
-    name: Publish user manual to GitHub Pages
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Download artifacts
-        # This downloads the uploaded artifacts to the current directory; the
-        # path format for downloaded artifacts is `{name}/{basename}`, where
-        # `{basename}` is the basename of the upload `path`.
-        #
-        # For example, the following artifact:
-        #
-        #     - uses: actions/upload-artifact@v3
-        #       with:
-        #         name: linux
-        #         path: target/release/ghciwatch-aarch64-linux
-        #
-        # will be downloaded to `linux/ghciwatch-aarch64-linux`.
-        uses: actions/download-artifact@v3
-
-      - name: Extract user manual
-        run: |
-          tar --extract \
-              --verbose \
-              --file linux/ghciwatch-user-manual.tar.xz
-
-      - name: Publish to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: ghciwatch-user-manual/

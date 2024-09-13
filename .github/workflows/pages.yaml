@@ -1,0 +1,36 @@
+---
+# This workflow runs when PRs are merged and tags/builds/publishes a release.
+
+# Run when PRs to main are closed.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+name: Build and publish a release
+
+jobs:
+  github-pages:
+    name: Publish user manual to GitHub Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: cachix/install-nix-action@v22
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build user manual
+        run: |
+          RESULT=$(nix build --no-link --print-out-paths --print-build-logs .#ghciwatch.user-manual)
+          cp -r "$RESULT/share/ghciwatch/html-manual" ghciwatch-user-manual
+
+      - name: Publish to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: ghciwatch-user-manual/
