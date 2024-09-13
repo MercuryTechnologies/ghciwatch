@@ -89,7 +89,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">8.</strong> FAQ</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="install.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="getting-started.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command-line arguments</a></li><li class="chapter-item expanded "><a href="lifecycle-hooks.html"><strong aria-hidden="true">5.</strong> Lifecycle hooks</a></li><li class="chapter-item expanded "><a href="comment-evaluation.html"><strong aria-hidden="true">6.</strong> Comment evaluation</a></li><li class="chapter-item expanded "><a href="no-load.html"><strong aria-hidden="true">7.</strong> Only load modules you need</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">8.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Integration and tips</li><li class="chapter-item expanded "><a href="integration/tasty.html"><strong aria-hidden="true">9.</strong> Tasty</a></li><li class="chapter-item expanded "><a href="integration/multiple-components.html"><strong aria-hidden="true">10.</strong> Multiple Cabal components</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -679,6 +679,110 @@ project when it detects changes. It instead manages an interactive GHCi
 session, instructing it to reload modules when relevant. This involves a fairly
 complex dance of communicating to GHCi over stdin and parsing its stdout, so
 a bespoke tool is useful here.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="tasty"><a class="header" href="#tasty">Tasty</a></h1>
+<p>Tips and tricks for using ghciwatch with the <a href="https://hackage.haskell.org/package/tasty">Tasty</a> test framework.</p>
+<p>Ghciwatch will wait for GHCi to print output, and it can end up waiting forever
+if the Tasty output is buffered. Something like this works:</p>
+<pre><code class="language-haskell">module TestMain where
+
+import Control.Exception (bracket)
+import System.IO (hGetBuffering, hSetBuffering, stdout)
+import Test.Tasty (TestTree, defaultMain, testGroup)
+
+-- | Run an `IO` action, restoring `stdout`\'s buffering mode after the action
+-- completes or errors.
+protectStdoutBuffering :: IO a -&gt; IO a
+protectStdoutBuffering action =
+  bracket
+    (hGetBuffering stdout)
+    (\bufferMode -&gt; hSetBuffering stdout bufferMode)
+    (const action)
+
+main :: IO ()
+main = protectStdoutBuffering $ defaultMain $ mytestgroup
+</code></pre>
+<h2 id="tasty-discover-issues"><a class="header" href="#tasty-discover-issues"><code>tasty-discover</code> issues</a></h2>
+<p>If you add a new test file, you may need to write the top level
+<a href="https://hackage.haskell.org/package/tasty"><code>tasty-discover</code></a> module to convince ghciwatch to reload it.
+<a href="https://github.com/MercuryTechnologies/ghciwatch/pull/321/files?short_path=c86caa3#diff-c86caa33ad4639b624ef8db59e739295f362bf4c211bed24c8ba484c79af9bdb"><code>tasty-autocollect</code></a> relies on a compiler plugin and seems
+to avoid this problem.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="multiple-cabal-components"><a class="header" href="#multiple-cabal-components">Multiple Cabal components</a></h1>
+<p>Currently, multiple Cabal components don’t work. You can work around this with
+<a href="https://jade.fyi/blog/cabal-test-dev-trick/">the Cabal <code>test-dev</code> trick</a> as described by the venerable Jade
+Lovelace. This works by defining a new component in our <code>.cabal</code> file which
+includes the sources from the library and the tests, which has the added
+benefit of speeding up compile times by allowing the compilation of different
+components to be interleaved.</p>
+<p>You can <a href="https://github.com/MercuryTechnologies/ghciwatch/blob/93fbb67fba6abd3903596876394acf234cb9bdb2/tests/data/simple/package.yaml">see this demonstrated in the ghciwatch test sources
+here</a>. We define four components:</p>
+<ul>
+<li><code>library</code></li>
+<li><code>tests</code></li>
+<li>An internal <code>test-lib</code> library</li>
+<li>An internal <code>test-dev</code> library</li>
+</ul>
+<p>Then, we can use a command like <code>cabal v2-repl test-dev</code> to run a GHCi session
+containing both the library and test sources.</p>
+<p>The <code>package.yaml</code> should look something like this:</p>
+<pre><code class="language-yaml">---
+spec-version: 0.36.0
+name: my-simple-package
+version: 0.1.0.0
+
+flags:
+  local-dev:
+    description: Turn on development settings, like auto-reload templates.
+    manual: true
+    default: false
+
+library:
+  source-dirs: src
+
+tests:
+  test:
+    main: Main.hs
+    source-dirs:
+      - test-main
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
+    when:
+    - condition: flag(local-dev)
+      then:
+        dependencies:
+        - test-dev
+      else:
+        dependencies:
+        - my-simple-package
+        - test-lib
+
+internal-libraries:
+  test-lib:
+    source-dirs:
+      - test
+
+  test-dev:
+    source-dirs:
+      - test
+      - src
+    when:
+    - condition: flag(local-dev)
+      then:
+        buildable: true
+      else:
+        buildable: false
+</code></pre>
+<p>Then, we can set the <code>local-dev</code> flag in our <code>cabal.project.local</code>, so that we
+use the <code>test-dev</code> target locally:</p>
+<pre><code class="language-cabal">package my-simple-package
+  flags: +local-dev
+</code></pre>
+<h2 id="haskell-language-server"><a class="header" href="#haskell-language-server">haskell-language-server</a></h2>
+<p>Defining the <code>test-dev</code> component does tend to confuse
+<code>haskell-language-server</code>, as a single file is now in multiple components. Fix
+this by writing <a href="https://haskell-language-server.readthedocs.io/en/stable/configuration.html#configuring-your-project-build">an <code>hie.yaml</code></a> like this:</p>
+<pre><code class="language-yaml">cradle:
+  cabal:
+    component: test-dev
+</code></pre>
 
                     </main>
 
