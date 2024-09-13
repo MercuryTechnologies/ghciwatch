@@ -96,6 +96,10 @@ jobs:
           #
           # I'd love a better way of implementing this but GitHub doesn't have
           # one: https://github.com/github-community/community/discussions/13836
+          #
+          # Also, PRs created with the default `secrets.GITHUB_TOKEN` won't
+          # trigger `pull_request` workflows, so regular CI won't run either.
+          # See: https://github.com/orgs/community/discussions/65321
           token: ${{ secrets.REPO_GITHUB_TOKEN }}
           branch: release/${{ steps.new_cargo_metadata.outputs.version }}
           delete-branch: true
