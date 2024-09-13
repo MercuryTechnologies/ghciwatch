@@ -1,4 +1,4 @@
-# Summary
+# User Manual
 
 - [Introduction](./introduction.md)
 - [Installation](./install.md)
@@ -8,3 +8,7 @@
 - [Comment evaluation](./comment-evaluation.md)
 - [Only load modules you need](./no-load.md)
 - [FAQ](./faq.md)
+
+# Integration and tips
+
+- [Tasty](./integration/tasty.md)
