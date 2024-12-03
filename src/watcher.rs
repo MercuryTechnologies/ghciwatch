@@ -96,7 +96,18 @@ async fn run_debouncer<T: notify::Watcher>(
         for path in &opts.watch {
             watcher
                 .watch(path.as_std_path(), RecursiveMode::Recursive)
-                .into_diagnostic()?;
+                .map_err(|err| match err {
+                    notify::Error {
+                        kind: notify::ErrorKind::Io(e),
+                        ..
+                    } if e.kind() == std::io::ErrorKind::NotFound => {
+                        miette!(
+                            "Cannot watch path that doesn't exist: {:?}",
+                            path.absolute()
+                        )
+                    }
+                    err => miette!("{err}"),
+                })?;
         }
         let mut cache = debouncer.cache();
         for path in &opts.watch {
