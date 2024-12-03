@@ -9,7 +9,7 @@
 # and update the `REPO_GITHUB_TOKEN` secret to a new, valid token.
 
 on:
-  pull_request:
+  pull_request_target:
     types:
       - closed
     branches:
