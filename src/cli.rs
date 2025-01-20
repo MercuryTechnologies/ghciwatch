@@ -82,6 +82,10 @@ pub struct Opts {
     #[arg(long, alias = "allow-eval")]
     pub enable_eval: bool,
 
+    /// More verbose logging output.
+    #[arg(long, alias = "--log-filter ghciwatch=debug,info")]
+    pub verbose: bool,
+
     /// Clear the screen before reloads and restarts.
     #[arg(long)]
     pub clear: bool,
