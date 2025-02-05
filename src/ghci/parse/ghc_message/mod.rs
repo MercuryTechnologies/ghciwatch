@@ -27,6 +27,7 @@ mod message_body;
 mod compilation_summary;
 use compilation_summary::compilation_summary;
 pub use compilation_summary::CompilationSummary;
+pub use compilation_summary::ModulesLoaded;
 
 mod loaded_configuration;
 use loaded_configuration::loaded_configuration;
@@ -267,8 +268,66 @@ mod tests {
                 }),
                 GhcMessage::Summary(CompilationSummary {
                     result: CompilationResult::Err,
-                    modules_loaded: 1,
+                    modules_loaded: ModulesLoaded::Count(1),
                 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_messages_ghc910() {
+        assert_eq!(
+            parse_ghc_messages(indoc!(
+                r#"
+                [2 of 3] Compiling MyModule         ( src/MyModule.hs, interpreted ) [Source file changed]
+
+                src/MyModule.hs:4:11: error: [GHC-83865]
+                    • Couldn't match type ‘[Char]’ with ‘()’
+                      Expected: ()
+                        Actual: String
+                    • In the expression: "example"
+                      In an equation for ‘example’: example = "example"
+                  |
+                4 | example = "example"
+                  |           ^^^^^^^^^
+                Failed, two modules loaded.
+                "#
+            ))
+            .unwrap(),
+            vec![
+                GhcMessage::Compiling(
+                    CompilingModule {
+                        name: "MyModule".into(),
+                        path: "src/MyModule.hs".into(),
+                    },
+                ),
+                GhcMessage::Diagnostic(
+                    GhcDiagnostic {
+                        severity: Severity::Error,
+                        path: Some(
+                            "src/MyModule.hs".into(),
+                        ),
+                        span: PositionRange::new(4, 11, 4, 11),
+                        message: [
+                            "[GHC-83865]",
+                            "    • Couldn't match type ‘[Char]’ with ‘()’",
+                            "      Expected: ()",
+                            "        Actual: String",
+                            "    • In the expression: \"example\"",
+                            "      In an equation for ‘example’: example = \"example\"",
+                            "  |",
+                            "4 | example = \"example\"",
+                            "  |           ^^^^^^^^^",
+                            ""
+                        ].join("\n"),
+                    },
+                ),
+                GhcMessage::Summary(
+                    CompilationSummary {
+                        result: CompilationResult::Err,
+                        modules_loaded: ModulesLoaded::Count(2),
+                    },
+                ),
             ]
         );
     }

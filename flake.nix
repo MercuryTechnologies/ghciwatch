@@ -75,6 +75,8 @@
     ghcVersions = [
       "ghc96"
       "ghc98"
+      "ghc910"
+      "ghc912"
     ];
   in {
     _pkgs = eachSystem (localSystem: makePkgs {inherit localSystem;});
