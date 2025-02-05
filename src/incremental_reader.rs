@@ -187,7 +187,13 @@ where
                     ret = match ret {
                         Some(lines) => Some(lines),
                         None => {
-                            match opts.find(opts.end_marker, &self.line) {
+                            // HACK(jadel): eat ANSI escapes right before doing our end
+                            // marker matching. This is because hspec is a naughty
+                            // library and outputs "\n\x1b[0mMARKER" which is really
+                            // rude of it imo.
+                            let stripped = strip_ansi_escapes::strip_str(&self.line);
+
+                            match opts.find(opts.end_marker, &stripped) {
                                 Some(_match) => {
                                     // If we found an `end_marker` in `self.line`, our chunk is
                                     // `self.lines`.
@@ -403,6 +409,7 @@ impl<'a> ReadOpts<'a> {
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     use crate::fake_reader::FakeReader;
@@ -646,6 +653,160 @@ mod tests {
         );
 
         assert_eq!(reader.buffer(), String::new());
+    }
+
+    async fn step<T: AsyncRead, W: AsyncWrite>(
+        reader: &mut IncrementalReader<T, W>,
+        buffer: &mut Vec<u8>,
+        end_marker: &AhoCorasick,
+        expected: expect_test::Expect,
+    ) {
+        let out = reader
+            .read_until(&mut ReadOpts {
+                end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer,
+            })
+            .await
+            .unwrap()
+            .lines()
+            // We escape here since expect_test seemingly only does raw strings
+            // which should not have CR characters shoved in them in literal
+            // form.
+            .map(|l| l.trim_end().escape_debug().to_string())
+            .join("\n");
+        expected.assert_eq(&out);
+    }
+
+    /// Verifies that some kinda colour weirds from hspec don't break it.
+    #[tokio::test]
+    async fn try_read_until_colour_weirds() {
+        let fake_reader = FakeReader::with_byte_chunks([
+b"Build profile: -w ghc-9.6.6 -O1\n###~GHCIWATCH",
+b"-PROMPT~###",
+b"test/Main.hs",
+b"\n###~GHCIWATCH-PROMPT~###",
+b"###~GHCIWATCH-PROMPT~###",
+b"\x1b[?25l\n\x1b[?7lhas unit [ ]\x1b[?7h",
+b"\r\x1b[Khas unit [\x1b[32m\xE2\x9C\x94\x1b[0m]\n\nFinished in 0.0001 seconds\n\x1b[32m1 example, 0 failures\x1b[0m\n\x1b[?25h",
+b"###~GHCIWATCH-PROMPT~###",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["###~GHCIWATCH-PROMPT~###"]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect!["Build profile: -w ghc-9.6.6 -O1"],
+        )
+        .await;
+
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect!["test/Main.hs"],
+        )
+        .await;
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect![""],
+        )
+        .await;
+
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect![[r#"
+                \u{1b}[?25l
+                \u{1b}[?7lhas unit [ ]\u{1b}[?7h\r\u{1b}[Khas unit [\u{1b}[32m✔\u{1b}[0m]
+
+                Finished in 0.0001 seconds
+                \u{1b}[32m1 example, 0 failures\u{1b}[0m"#]],
+        )
+        .await;
+
+        assert_eq!(reader.buffer(), String::new());
+    }
+
+    #[tokio::test]
+    async fn try_read_until_colour_weirds_ok() {
+        let fake_reader = FakeReader::with_byte_chunks([
+b"Build profile: -w ghc-9.6.6 -O1\n",
+b"\xCE\xBB> ###~GHCIWATCH-PROMPT~",
+b"###",
+b"###~GHCIW",
+b"ATCH-PROMPT~###",
+b"current working direc",
+b"tory: \n  /Users/jade/dev/repro/ghciwatch-bug-demo\nm",
+b"odule import search paths:\n  test\n  dist-newstyle/build/aarch64-osx/ghc-9.6.6/ghciwatch-bug-demo-",
+b"0.1.0.0/t/ghciwatch-bug-demo-test/build/ghciwatch-bug-demo-t",
+b"est/ghciwatch-bug-demo-test-tmp\n  dist-newstyle/build/aarch64-",
+b"osx/ghc-9.6.6/ghciwatch-bug-demo-0.1.0.0/t/ghciwatch-bug-demo-test/bu",
+b"ild/ghciwatch-bug-demo-test/autogen\n  dist-newstyle/build/aarch64-os",
+b"x/ghc-9.6.6/ghciwatch-bug-demo-0.1.0.0/t/ghciwatch-bug-demo-test/b",
+b"uild/global-autogen\n###~GHCIWATCH-PROMPT~###",
+b"test/Main",
+b".hs\n###~GHCIWATCH-PROMPT~###",
+b"###~GHCIWATCH-PROMPT~###",
+b"\nhas unit [\xE2\x9C\x94]\n\n",
+b"Finished in 0.0001 seconds\n1 example, 0 failures\n###~GHCIWATCH-PROMPT~###",
+b"[1 of 2] Compiling Main             ( test/Main.hs, interpreted ) [Source file changed]\n",
+b"Ok, one module loaded.\n",
+b"###~GHCIWATCH-PROMPT~#",
+b"##",
+b"\nhas a unit [\xE2\x9C\x94]\n\n",
+b"Finished in 0.0001 seconds\n1 example, 0 failures\n###~GHCIWATCH-PROMPT",
+b"~###",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["###~GHCIWATCH-PROMPT~###"]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        step(&mut reader, &mut buffer, &end_marker, expect_test::expect![[r#"
+            Build profile: -w ghc-9.6.6 -O1
+            λ> ###~GHCIWATCH-PROMPT~######~GHCIWATCH-PROMPT~###current working directory:
+              /Users/jade/dev/repro/ghciwatch-bug-demo
+            module import search paths:
+              test
+              dist-newstyle/build/aarch64-osx/ghc-9.6.6/ghciwatch-bug-demo-0.1.0.0/t/ghciwatch-bug-demo-test/build/ghciwatch-bug-demo-test/ghciwatch-bug-demo-test-tmp
+              dist-newstyle/build/aarch64-osx/ghc-9.6.6/ghciwatch-bug-demo-0.1.0.0/t/ghciwatch-bug-demo-test/build/ghciwatch-bug-demo-test/autogen
+              dist-newstyle/build/aarch64-osx/ghc-9.6.6/ghciwatch-bug-demo-0.1.0.0/t/ghciwatch-bug-demo-test/build/global-autogen"#]]).await;
+
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect!["test/Main.hs"],
+        )
+        .await;
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect![""],
+        )
+        .await;
+        step(
+            &mut reader,
+            &mut buffer,
+            &end_marker,
+            expect_test::expect![[r#"
+
+                has unit [✔]
+
+                Finished in 0.0001 seconds
+                1 example, 0 failures"#]],
+        )
+        .await;
     }
 
     /// Test that we can keep reading when a chunk from `read()` splits a UTF-8 boundary.
