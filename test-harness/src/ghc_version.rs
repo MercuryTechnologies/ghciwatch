@@ -43,6 +43,10 @@ pub enum GhcVersion {
     Ghc96,
     /// GHC 9.8
     Ghc98,
+    /// GHC 9.10
+    Ghc910,
+    /// GHC 9.12
+    Ghc912,
 }
 
 fn ghc_version_re() -> &'static Regex {
@@ -66,8 +70,17 @@ impl FromStr for GhcVersion {
             ("9", "4") => Ok(Self::Ghc94),
             ("9", "6") => Ok(Self::Ghc96),
             ("9", "8") => Ok(Self::Ghc98),
+            ("9", "10") => Ok(Self::Ghc910),
+            ("9", "12") => Ok(Self::Ghc912),
             (_, _) => Err(miette!(
-                "Only GHC versions 9.0, 9.2, 9.4, 9.6, and 9.8 are supported"
+                "Only the following GHC versions are supported:\n\
+                - 9.0\n\
+                - 9.2\n\
+                - 9.4\n\
+                - 9.6\n\
+                - 9.8\n\
+                - 9.10\n\
+                - 9.12"
             )),
         }
     }
@@ -83,6 +96,8 @@ mod tests {
         assert_eq!("9.2.4".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc92);
         assert_eq!("9.4.8".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc94);
         assert_eq!("9.6.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc96);
+        assert_eq!("9.10.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
+        assert_eq!("9.12.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
 
         "9.6.1rc1"
             .parse::<GhcVersion>()
