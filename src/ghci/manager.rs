@@ -21,9 +21,9 @@ use super::Ghci;
 use super::GhciOpts;
 use super::GhciReloadKind;
 
-/// An event sent to [`Ghci`].
+/// An event sent to [`Ghci`] by the watcher.
 #[derive(Debug, Clone)]
-pub enum GhciEvent {
+pub enum WatcherEvent {
     /// Reload the `ghci` session.
     Reload {
         /// The file events to respond to.
@@ -31,14 +31,14 @@ pub enum GhciEvent {
     },
 }
 
-impl GhciEvent {
+impl WatcherEvent {
     /// When we interrupt an event to reload, add the file events together so that we don't lose
     /// work.
-    fn merge(&mut self, other: GhciEvent) {
+    fn merge(&mut self, other: WatcherEvent) {
         match (self, other) {
             (
-                GhciEvent::Reload { events },
-                GhciEvent::Reload {
+                WatcherEvent::Reload { events },
+                WatcherEvent::Reload {
                     events: other_events,
                 },
             ) => {
@@ -53,7 +53,7 @@ impl GhciEvent {
 pub async fn run_ghci(
     mut handle: ShutdownHandle,
     opts: GhciOpts,
-    mut receiver: mpsc::Receiver<GhciEvent>,
+    mut receiver: mpsc::Receiver<WatcherEvent>,
 ) -> miette::Result<()> {
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
@@ -144,11 +144,11 @@ pub async fn run_ghci(
 #[instrument(level = "debug", skip(ghci, reload_sender))]
 async fn dispatch(
     ghci: Arc<Mutex<Ghci>>,
-    event: GhciEvent,
+    event: WatcherEvent,
     reload_sender: oneshot::Sender<GhciReloadKind>,
 ) -> miette::Result<()> {
     match event {
-        GhciEvent::Reload { events } => {
+        WatcherEvent::Reload { events } => {
             ghci.lock().await.reload(events, reload_sender).await?;
         }
     }

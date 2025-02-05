@@ -17,7 +17,7 @@ use tracing::instrument;
 
 use crate::cli::Opts;
 use crate::event_filter::file_events_from_action;
-use crate::ghci::manager::GhciEvent;
+use crate::ghci::manager::WatcherEvent;
 use crate::normal_path::NormalPath;
 use crate::shutdown::ShutdownHandle;
 
@@ -51,7 +51,7 @@ impl WatcherOpts {
 #[instrument(level = "debug", skip_all)]
 pub async fn run_watcher(
     handle: ShutdownHandle,
-    ghci_sender: mpsc::Sender<GhciEvent>,
+    ghci_sender: mpsc::Sender<WatcherEvent>,
     opts: WatcherOpts,
 ) -> miette::Result<()> {
     if opts.poll.is_some() {
@@ -63,7 +63,7 @@ pub async fn run_watcher(
 
 async fn run_debouncer<T: notify::Watcher>(
     mut handle: ShutdownHandle,
-    ghci_sender: mpsc::Sender<GhciEvent>,
+    ghci_sender: mpsc::Sender<WatcherEvent>,
     opts: WatcherOpts,
 ) -> miette::Result<()> {
     let mut config = notify::Config::default();
@@ -127,7 +127,7 @@ async fn run_debouncer<T: notify::Watcher>(
 
 struct EventHandler {
     handle: Handle,
-    ghci_sender: mpsc::Sender<GhciEvent>,
+    ghci_sender: mpsc::Sender<WatcherEvent>,
     shutdown: ShutdownHandle,
 }
 
@@ -162,7 +162,7 @@ impl EventHandler {
         } else {
             tracing::trace!(?events, "Processed events");
             self.ghci_sender
-                .send(GhciEvent::Reload { events })
+                .send(WatcherEvent::Reload { events })
                 .await
                 .into_diagnostic()?;
         }
