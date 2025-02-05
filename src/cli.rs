@@ -215,7 +215,7 @@ pub struct LoggingOpts {
     /// A nice value is `ghciwatch=debug`.
     ///
     /// [1]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
-    #[arg(long, default_value = "ghciwatch=info")]
+    #[arg(long, env = "GHCIWATCH_LOG", default_value = "ghciwatch=info")]
     pub log_filter: String,
 
     /// How to display backtraces in error messages.
