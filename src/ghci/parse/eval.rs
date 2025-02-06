@@ -39,7 +39,11 @@ pub struct EvalCommand {
 
 impl Display for EvalCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.line, self.column, self.display_command)
+        write!(
+            f,
+            "{}:{}: -- $> {}",
+            self.line, self.column, self.display_command
+        )
     }
 }
 
