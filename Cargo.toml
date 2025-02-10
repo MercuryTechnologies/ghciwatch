@@ -88,3 +88,7 @@ cargo-llvm-cov = "0.6.9"
 
 [lib]
 path = "src/lib.rs"
+
+[profile.release]
+codegen-units = 1
+lto = true
