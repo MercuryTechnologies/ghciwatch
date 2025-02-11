@@ -129,14 +129,14 @@ jobs:
           cp "$RESULT" target/ghciwatch-user-manual.tar.xz
 
       - name: Upload macOS executable
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:
           name: macos
           path: target/release/ghciwatch-macos
 
       - name: Upload Linux executables
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
           name: linux
@@ -174,13 +174,13 @@ jobs:
         #
         # For example, the following artifact:
         #
-        #     - uses: actions/upload-artifact@v3
+        #     - uses: actions/upload-artifact@v4
         #       with:
         #         name: linux
         #         path: target/release/ghciwatch-aarch64-linux
         #
         # will be downloaded to `linux/ghciwatch-aarch64-linux`.
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: Create release
         id: create_release
