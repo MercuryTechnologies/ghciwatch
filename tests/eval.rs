@@ -33,7 +33,7 @@ async fn can_eval_commands() {
     let defined_in_multiple_files =
         BaseMatcher::message("Read stderr line").with_field("line", "defined in multiple files");
 
-    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: example \+\+ example")
+    let eval_message = BaseMatcher::message(r"MyModule.hs:\d+:\d+: -- \$> example \+\+ example")
         .but_not(defined_in_multiple_files.clone());
     session
         .assert_logged_or_wait(eval_message.clone())
@@ -95,8 +95,10 @@ async fn can_load_new_eval_commands_multiline() {
         .await
         .unwrap();
 
-    let eval_message =
-        BaseMatcher::message(&format!(r"MyModule.hs:\d+:\d+: {}", regex::escape(cmd)));
+    let eval_message = BaseMatcher::message(&format!(
+        r"MyModule.hs:\d+:\d+: -- \$> {}",
+        regex::escape(cmd)
+    ));
     session
         .wait_for_log(&eval_message)
         .await
@@ -177,7 +179,7 @@ async fn can_eval_commands_in_non_interpreted_modules() {
             BaseMatcher::message("All good!")
                 // Evals the command.
                 .and(BaseMatcher::message(
-                    r"MyModule.hs:\d+:\d+: example \+\+ example",
+                    r"MyModule.hs:\d+:\d+: -- \$> example \+\+ example",
                 ))
                 // Reads eval output.
                 .and(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
@@ -220,7 +222,7 @@ async fn can_eval_commands_twice() {
     let ok_reload = BaseMatcher::message("All good!")
         // Evals the command.
         .and(BaseMatcher::message(
-            r"MyModule.hs:\d+:\d+: example \+\+ example",
+            r"MyModule.hs:\d+:\d+: -- \$> example \+\+ example",
         ))
         // Reads eval output.
         .and(BaseMatcher::message("Read line").with_field("line", "exampleexample"))
