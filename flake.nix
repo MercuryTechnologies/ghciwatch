@@ -73,9 +73,6 @@
     # GHC versions to include in the environment for integration tests.
     # Keep this in sync with `./test-harness/src/ghc_version.rs`.
     ghcVersions = [
-      "ghc90"
-      "ghc92"
-      "ghc94"
       "ghc96"
       "ghc98"
     ];
