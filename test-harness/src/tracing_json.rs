@@ -30,7 +30,7 @@ pub struct Event {
 
 impl Event {
     /// Get an iterator over this event's spans, from the outside in (root to leaf).
-    pub fn spans(&self) -> impl Iterator<Item = &Span> + DoubleEndedIterator {
+    pub fn spans(&self) -> impl DoubleEndedIterator<Item = &Span> {
         self.spans.iter().chain({
             // The `new`, `exit`, and `close` span lifecycle events aren't emitted from inside the
             // relevant span, so the span isn't listed in `spans`. Instead, the relevant span is in

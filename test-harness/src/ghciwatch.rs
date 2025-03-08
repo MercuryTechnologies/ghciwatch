@@ -429,7 +429,7 @@ impl GhciWatch {
     /// Returns the first matching event.
     pub fn assert_logged_in_checkpoint(
         &self,
-        checkpoints: impl CheckpointIndex + Clone,
+        checkpoints: impl CheckpointIndex,
         matcher: impl IntoMatcher,
     ) -> miette::Result<&Event> {
         let mut matcher = matcher.into_matcher()?;

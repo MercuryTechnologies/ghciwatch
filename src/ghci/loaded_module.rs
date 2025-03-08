@@ -73,7 +73,7 @@ impl PartialEq for LoadedModule {
 
 impl PartialOrd for LoadedModule {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.path.partial_cmp(&other.path)
+        Some(self.cmp(other))
     }
 }
 

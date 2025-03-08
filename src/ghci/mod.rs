@@ -294,10 +294,7 @@ impl Ghci {
             prompt_patterns: AhoCorasick::from_anchored_patterns([PROMPT]),
         };
 
-        let stdin = GhciStdin {
-            stdin,
-            stderr_sender: stderr_sender.clone(),
-        };
+        let stdin = GhciStdin { stdin };
 
         shutdown
             .spawn("stderr", |shutdown| {

@@ -283,7 +283,7 @@ where
         if arg.is_positional() {
             let id = arg
                 .get_value_names()
-                .and_then(|names| names.get(0))
+                .and_then(|names| names.first())
                 .map(|name| name.as_str())
                 .unwrap_or_else(|| arg.get_id().as_str());
 
