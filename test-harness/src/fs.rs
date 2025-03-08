@@ -77,6 +77,7 @@ impl Fs {
             }
             OpenOptions::new()
                 .create(true)
+                .append(true)
                 .write(true)
                 .open(path)
                 .await

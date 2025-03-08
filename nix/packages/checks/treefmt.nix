@@ -13,7 +13,7 @@ mkCheck {
   ];
 
   checkPhase = ''
-    treefmt --fail-on-change
+    HOME="$PWD" treefmt --fail-on-change
   '';
 
   meta.description = ''

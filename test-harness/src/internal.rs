@@ -16,16 +16,16 @@ use tokio::process::Child;
 thread_local! {
     /// The temporary directory where `ghciwatch` is run. Note that because tests are run with the
     /// `tokio` current-thread runtime, this is unique per-test.
-    pub(crate) static TEMPDIR: RefCell<Option<PathBuf>> = RefCell::new(None);
+    pub(crate) static TEMPDIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 
     /// The GHC version to use for this test. This should be a string like `ghc962`.
     /// This is used to select the correct GHC version to run.
-    pub(crate) static GHC_VERSION: RefCell<String> = RefCell::new(String::new());
+    pub(crate) static GHC_VERSION: RefCell<String> = const { RefCell::new(String::new()) };
 
     /// The `ghciwatch` process for this test.
     ///
     /// This is set so that we can make sure to kill it when the test ends.
-    pub(crate) static GHCIWATCH_PROCESS: RefCell<Option<Child>> = RefCell::new(None);
+    pub(crate) static GHCIWATCH_PROCESS: RefCell<Option<Child>> = const { RefCell::new(None) };
 }
 
 /// Wraps an asynchronous test with startup/cleanup code.

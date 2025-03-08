@@ -5,7 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     crane = {
       url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     systems.url = "github:nix-systems/default";
     rust-overlay = {
@@ -52,7 +51,7 @@
           (
             final: prev: {
               # TODO: Bump the Rust version here...
-              rustToolchain = final.pkgsBuildHost.rust-bin.stable."1.72.1".default.override {
+              rustToolchain = final.pkgsBuildHost.rust-bin.stable."1.81.0".default.override {
                 targets =
                   final.lib.optionals final.stdenv.targetPlatform.isDarwin [
                     "x86_64-apple-darwin"
@@ -74,9 +73,6 @@
     # GHC versions to include in the environment for integration tests.
     # Keep this in sync with `./test-harness/src/ghc_version.rs`.
     ghcVersions = [
-      "ghc90"
-      "ghc92"
-      "ghc94"
       "ghc96"
       "ghc98"
     ];

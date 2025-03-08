@@ -3,14 +3,12 @@ use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
-use tokio::sync::mpsc;
 use tracing::instrument;
 
 use crate::incremental_reader::FindAt;
 
 use super::loaded_module::LoadedModule;
 use super::parse::ShowPaths;
-use super::stderr::StderrEvent;
 use super::CompilationLog;
 use super::GhciCommand;
 use super::ModuleSet;
@@ -20,8 +18,6 @@ use crate::ghci::GhciStdout;
 pub struct GhciStdin {
     /// Inner stdin writer.
     pub stdin: ChildStdin,
-    /// Channel sender for communicating with the stderr task.
-    pub stderr_sender: mpsc::Sender<StderrEvent>,
 }
 
 impl GhciStdin {
