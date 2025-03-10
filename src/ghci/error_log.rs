@@ -6,6 +6,7 @@ use tokio::io::BufWriter;
 use tracing::instrument;
 
 use super::parse::CompilationResult;
+use super::parse::ModulesLoaded;
 use super::CompilationLog;
 
 /// Error log writer.
@@ -40,7 +41,7 @@ impl ErrorLog {
             // `ghcid` only writes the headline if there's no errors.
             if let CompilationResult::Ok = summary.result {
                 tracing::debug!(%path, "Writing 'All good'");
-                let modules_loaded = if summary.modules_loaded != 1 {
+                let modules_loaded = if summary.modules_loaded != ModulesLoaded::Count(1) {
                     format!("{} modules", summary.modules_loaded)
                 } else {
                     format!("{} module", summary.modules_loaded)

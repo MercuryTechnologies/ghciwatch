@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use winnow::ascii::digit1;
 use winnow::combinator::alt;
 use winnow::combinator::opt;
@@ -23,10 +25,31 @@ pub struct CompilationSummary {
     /// The compilation result; whether compilation succeeded or failed.
     pub result: CompilationResult,
     /// The count of modules loaded.
-    pub modules_loaded: usize,
+    pub modules_loaded: ModulesLoaded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModulesLoaded {
+    /// The count of modules loaded.
+    Count(usize),
+    /// All modules were loaded, unknown count.
+    All,
+}
+
+impl Display for ModulesLoaded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ModulesLoaded::Count(n) => write!(f, "{n}"),
+            ModulesLoaded::All => write!(f, "all"),
+        }
+    }
 }
 
 /// Parse a compilation summary, like `Ok, one module loaded.`.
+///
+/// NB: This will definitely explode if you have `Opt_ShowLoadedModules` enabled.
+///
+/// See: <https://gitlab.haskell.org/ghc/ghc/-/blob/6d779c0fab30c39475aef50d39064ed67ce839d7/ghc/GHCi/UI.hs#L2309-L2329>
 pub fn compilation_summary(input: &mut &str) -> PResult<CompilationSummary> {
     let result = alt((
         "Ok".map(|_| CompilationResult::Ok),
@@ -35,6 +58,33 @@ pub fn compilation_summary(input: &mut &str) -> PResult<CompilationSummary> {
     .parse_next(input)?;
     let _ = ", ".parse_next(input)?;
 
+    let modules_loaded = alt((
+        compilation_summary_no_modules,
+        compilation_summary_unloaded_all,
+        compilation_summary_count,
+    ))
+    .parse_next(input)?;
+
+    let _ = '.'.parse_next(input)?;
+    let _ = line_ending_or_eof.parse_next(input)?;
+
+    Ok(CompilationSummary {
+        result,
+        modules_loaded,
+    })
+}
+
+fn compilation_summary_no_modules(input: &mut &str) -> PResult<ModulesLoaded> {
+    let _ = "no modules to be reloaded".parse_next(input)?;
+    Ok(ModulesLoaded::Count(0))
+}
+
+fn compilation_summary_unloaded_all(input: &mut &str) -> PResult<ModulesLoaded> {
+    let _ = "unloaded all modules".parse_next(input)?;
+    Ok(ModulesLoaded::All)
+}
+
+fn compilation_summary_count(input: &mut &str) -> PResult<ModulesLoaded> {
     // There's special cases for 0-6 modules!
     // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/ghc/GHCi/UI.hs#L2286-L2287
     // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L1429-L1453
@@ -51,13 +101,10 @@ pub fn compilation_summary(input: &mut &str) -> PResult<CompilationSummary> {
     .parse_next(input)?;
     let _ = " module".parse_next(input)?;
     let _ = opt("s").parse_next(input)?;
-    let _ = " loaded.".parse_next(input)?;
-    let _ = line_ending_or_eof.parse_next(input)?;
+    let _ = ' '.parse_next(input)?;
+    let _ = alt(("loaded", "reloaded", "added", "unadded", "checked")).parse_next(input)?;
 
-    Ok(CompilationSummary {
-        result,
-        modules_loaded,
-    })
+    Ok(ModulesLoaded::Count(modules_loaded))
 }
 
 #[cfg(test)]
@@ -75,7 +122,7 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Ok,
-                modules_loaded: 123,
+                modules_loaded: ModulesLoaded::Count(123),
             }
         );
 
@@ -85,7 +132,7 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Ok,
-                modules_loaded: 0,
+                modules_loaded: ModulesLoaded::Count(0),
             }
         );
 
@@ -95,7 +142,7 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Ok,
-                modules_loaded: 1,
+                modules_loaded: ModulesLoaded::Count(1),
             }
         );
 
@@ -105,7 +152,7 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Ok,
-                modules_loaded: 6,
+                modules_loaded: ModulesLoaded::Count(6),
             }
         );
 
@@ -115,7 +162,7 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Err,
-                modules_loaded: 7,
+                modules_loaded: ModulesLoaded::Count(7)
             }
         );
 
@@ -125,7 +172,71 @@ mod tests {
                 .unwrap(),
             CompilationSummary {
                 result: CompilationResult::Err,
-                modules_loaded: 1,
+                modules_loaded: ModulesLoaded::Count(1),
+            }
+        );
+
+        // Other verbs.
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, 10 modules reloaded.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(10),
+            }
+        );
+
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, 10 modules added.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(10),
+            }
+        );
+
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, 10 modules unadded.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(10),
+            }
+        );
+
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, 10 modules checked.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(10),
+            }
+        );
+
+        // Special cases!
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, no modules to be reloaded.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(0),
+            }
+        );
+
+        // Literally just for the 'unloaded' message. You can definitely reload all modules too,
+        // but whatever.
+        assert_eq!(
+            compilation_summary
+                .parse("Ok, unloaded all modules.\n")
+                .unwrap(),
+            CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::All,
             }
         );
 
