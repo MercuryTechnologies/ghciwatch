@@ -564,7 +564,6 @@ impl Ghci {
         // restore the old value when the function returns.
         for (path, commands) in self.eval_commands.clone() {
             for command in commands {
-                tracing::info!("{path}:{command}");
                 // If the `module` was already compiled, `ghci` may have loaded the interface file instead
                 // of the interpreted bytecode, giving us this error message when we attempt to
                 // load the top-level scope with `:module + *{module}`:
@@ -574,8 +573,10 @@ impl Ghci {
                 // We use `:add *{module}` to force interpreting the module. We do this here instead of in
                 // `add_module` to save time if eval commands aren't used (or aren't needed for a
                 // particular module).
+                tracing::info!("Loading {path} in interpreted mode for eval commands");
                 self.interpret_module(&path, log).await?;
                 let module = self.search_paths.path_to_module(&path)?;
+                tracing::info!("Eval {path}:{command}");
                 self.stdin
                     .eval(&mut self.stdout, &module, &command.command, log)
                     .await?;
