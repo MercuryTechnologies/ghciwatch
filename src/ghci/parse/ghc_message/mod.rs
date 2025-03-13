@@ -44,6 +44,9 @@ use module_import_cycle_diagnostic::module_import_cycle_diagnostic;
 mod no_location_info_diagnostic;
 use no_location_info_diagnostic::no_location_info_diagnostic;
 
+mod exception;
+use exception::exception;
+
 use super::rest_of_line;
 use super::CompilingModule;
 
@@ -64,6 +67,15 @@ pub enum GhcMessage {
     /// Foo.hs:81:1: Warning: Defined but not used: `bar'
     /// ```
     Diagnostic(GhcDiagnostic),
+    /// An exception while running a command or similar.
+    ///
+    /// These may be multiple lines, but there's no good way to determine where the message ends,
+    /// so we just parse the first line.
+    ///
+    /// ```text
+    /// *** Exception: /Users/.../dist-newstyle/ghc82733_tmp_1/ghc_tmp_34657.h: withFile: does not exist (No such file or directory)
+    /// ```
+    Exception(String),
     /// A configuration file being loaded.
     ///
     /// ```text
@@ -181,6 +193,7 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
                 .map(Item::One),
             module_import_cycle_diagnostic.map(Item::Many),
             loaded_configuration.map(Item::One),
+            exception.map(Item::One),
             rest_of_line.map(|line| {
                 tracing::debug!(line, "Ignoring GHC output line");
                 Item::Ignore
@@ -290,6 +303,7 @@ mod tests {
                   |
                 4 | example = "example"
                   |           ^^^^^^^^^
+                *** Exception: /Users/.../dist-newstyle/ghc82733_tmp_1/ghc_tmp_34657.h: withFile: does not exist (No such file or directory)
                 Failed, two modules loaded.
                 "#
             ))
@@ -322,6 +336,7 @@ mod tests {
                         ].join("\n"),
                     },
                 ),
+                GhcMessage::Exception("/Users/.../dist-newstyle/ghc82733_tmp_1/ghc_tmp_34657.h: withFile: does not exist (No such file or directory)".to_owned()),
                 GhcMessage::Summary(
                     CompilationSummary {
                         result: CompilationResult::Err,
