@@ -14,7 +14,7 @@ pub use position::PositionRange;
 mod severity;
 pub use severity::Severity;
 
-mod single_quote;
+mod single_quoted;
 
 mod path_colon;
 use path_colon::path_colon;
