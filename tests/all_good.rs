@@ -50,15 +50,18 @@ async fn can_detect_compilation_failure() {
 #[test]
 async fn can_detect_exception() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .with_args(["--after-reload-ghci", r#"error "oopsie daisy!""#])
         .start()
         .await
         .expect("ghciwatch starts");
-    let module_path = session.path("src/MyModule.hs");
-
     session.wait_until_ready().await.expect("ghciwatch loads");
 
-    session.fs().append(&module_path, "\n").await.unwrap();
+    let module_path = session.path("src/MyModule.hs");
+
+    session
+        .fs()
+        .prepend(&module_path, "{-# OPTIONS_GHC -F -pgmF false #-}\n")
+        .await
+        .unwrap();
 
     session
         .wait_for_log(BaseMatcher::compilation_failed())
