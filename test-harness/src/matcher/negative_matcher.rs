@@ -65,11 +65,11 @@ mod tests {
             target: "ghciwatch::ghci".to_owned(),
             span: Some(Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }),
             spans: vec![Span {
                 name: "ghci".to_owned(),
-                rest: Default::default(),
+                fields: Default::default(),
             }],
         };
 
