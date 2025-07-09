@@ -134,7 +134,13 @@
     );
 
     devShells = eachSystem (system: {
-      default = self.packages.${system}.default.devShell;
+      default = let
+        pkgs = self._pkgs.${system};
+      in
+        pkgs.mkShell {
+          inputsFrom = [self.packages.${system}.default.devShell];
+          packages = [pkgs.cargo-release];
+        };
     });
   };
 }
