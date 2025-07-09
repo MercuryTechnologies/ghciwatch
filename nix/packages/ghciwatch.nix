@@ -49,7 +49,7 @@
 
   commonArgs' =
     (craneLib.crateNameFromCargoToml {
-      cargoToml = "${inputs.self}/Cargo.toml";
+      cargoToml = "${inputs.self}/crates/ghciwatch/Cargo.toml";
     })
     // {
       inherit src;
