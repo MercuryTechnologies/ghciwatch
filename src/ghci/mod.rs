@@ -1797,7 +1797,7 @@ mod tests {
         }
 
         // Add tracked warnings (only warnings, not errors)
-        for (_file_path, file_warnings) in &warnings {
+        for file_warnings in warnings.values() {
             for warning in file_warnings {
                 // Only include warnings, not errors
                 if warning.severity != Severity::Warning {
@@ -1931,7 +1931,7 @@ mod tests {
         }
 
         // Write tracked warnings (only warnings, not errors) that are not already in current compilation
-        for (_file_path, file_warnings) in &warnings {
+        for file_warnings in warnings.values() {
             for warning in file_warnings {
                 // Only include warnings, not errors
                 if warning.severity != Severity::Warning {
@@ -2037,7 +2037,7 @@ mod tests {
         }
 
         // Write tracked warnings (only warnings, not errors) that are not already in current compilation
-        for (_file_path, file_warnings) in &warnings {
+        for file_warnings in warnings.values() {
             for warning in file_warnings {
                 // Only include warnings, not errors
                 if warning.severity != Severity::Warning {
