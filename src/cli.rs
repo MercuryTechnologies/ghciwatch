@@ -20,43 +20,32 @@ use crate::normal_path::NormalPath;
 ///
 /// Load `cabal v2-repl` and watch for changes in `src`:
 ///
-/// ```bash
-/// ghciwatch
-/// ```
+///     ghciwatch
 ///
 /// Load a custom GHCi session and watch for changes in multiple locations:
 ///
-/// ```bash
-/// ghciwatch --command "cabal v2-repl lib:test-dev" \
-///           --watch src --watch test
-/// ```
+///     ghciwatch --command "cabal v2-repl lib:test-dev" \
+///               --watch src --watch test
 ///
 /// Run tests after reloads:
 ///
-/// ```bash
-/// ghciwatch --test-ghci TestMain.testMain \
-///           --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
-/// ```
+///     ghciwatch --test-ghci TestMain.testMain \
+///               --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
 ///
 /// Use `hpack` to regenerate `.cabal` files:
 ///
-/// ```bash
-/// ghciwatch --before-startup-shell hpack \
-///           --restart-glob '**/package.yaml'
-/// ```
+///     ghciwatch --before-startup-shell hpack \
+///               --restart-glob '**/package.yaml'
 ///
 /// Also reload the session when `.persistentmodels` change:
 ///
-/// ```bash
-/// ghciwatch --watch config/modelsFiles \
-///           --reload-glob '**/*.persistentmodels'
-/// ```
+///     ghciwatch --watch config/modelsFiles \
+///               --reload-glob '**/*.persistentmodels'
 ///
 /// Don't reload for `README.md` files:
 ///
-/// ```bash
-/// ghciwatch --reload-glob '!src/**/README.md'
-/// ```
+///     ghciwatch --reload-glob '!src/**/README.md'
+#[allow(rustdoc::invalid_rust_codeblocks)]
 #[derive(Debug, Clone, Parser)]
 #[command(
     version,
