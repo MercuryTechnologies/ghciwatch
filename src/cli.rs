@@ -20,32 +20,43 @@ use crate::normal_path::NormalPath;
 ///
 /// Load `cabal v2-repl` and watch for changes in `src`:
 ///
-///     ghciwatch
+/// ```bash
+/// ghciwatch
+/// ```
 ///
 /// Load a custom GHCi session and watch for changes in multiple locations:
 ///
-///     ghciwatch --command "cabal v2-repl lib:test-dev" \
-///               --watch src --watch test
+/// ```bash
+/// ghciwatch --command "cabal v2-repl lib:test-dev" \
+///           --watch src --watch test
+/// ```
 ///
 /// Run tests after reloads:
 ///
-///     ghciwatch --test-ghci TestMain.testMain \
-///               --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+/// ```bash
+/// ghciwatch --test-ghci TestMain.testMain \
+///           --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+/// ```
 ///
 /// Use `hpack` to regenerate `.cabal` files:
 ///
-///     ghciwatch --before-startup-shell hpack \
-///               --restart-glob '**/package.yaml'
+/// ```bash
+/// ghciwatch --before-startup-shell hpack \
+///           --restart-glob '**/package.yaml'
+/// ```
 ///
 /// Also reload the session when `.persistentmodels` change:
 ///
-///     ghciwatch --watch config/modelsFiles \
-///               --reload-glob '**/*.persistentmodels'
+/// ```bash
+/// ghciwatch --watch config/modelsFiles \
+///           --reload-glob '**/*.persistentmodels'
+/// ```
 ///
 /// Don't reload for `README.md` files:
 ///
-///     ghciwatch --reload-glob '!src/**/README.md'
-#[allow(rustdoc::invalid_rust_codeblocks)]
+/// ```bash
+/// ghciwatch --reload-glob '!src/**/README.md'
+/// ```
 #[derive(Debug, Clone, Parser)]
 #[command(
     version,
@@ -95,6 +106,13 @@ pub struct Opts {
     /// Enable TUI mode (experimental).
     #[arg(long, hide = true)]
     pub tui: bool,
+
+    /// Track warnings across recompilations.
+    ///
+    /// When enabled, warnings will be preserved in memory even when files are recompiled
+    /// due to dependency changes, helping prevent "ephemeral warnings" from being missed.
+    #[arg(long, env = "GHCIWATCH_TRACK_WARNINGS")]
+    pub track_warnings: bool,
 
     /// Generate Markdown CLI documentation.
     #[cfg(feature = "clap-markdown")]

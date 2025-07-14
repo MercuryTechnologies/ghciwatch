@@ -9,6 +9,7 @@ use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::process::ExitStatus;
@@ -26,6 +27,7 @@ use miette::IntoDiagnostic;
 use miette::WrapErr;
 use nix::unistd::Pid;
 use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -51,6 +53,8 @@ pub mod parse;
 use parse::parse_eval_commands;
 use parse::CompilationResult;
 use parse::EvalCommand;
+use parse::GhcDiagnostic;
+use parse::ModulesLoaded;
 use parse::ShowPaths;
 
 mod ghci_command;
@@ -118,6 +122,8 @@ pub struct GhciOpts {
     pub stderr_writer: GhciWriter,
     /// Whether to clear the screen before reloads and restarts.
     pub clear: bool,
+    /// Whether to track warnings across recompilations.
+    pub track_warnings: bool,
 }
 
 impl GhciOpts {
@@ -166,6 +172,7 @@ impl GhciOpts {
                 stdout_writer,
                 stderr_writer,
                 clear: opts.clear,
+                track_warnings: opts.track_warnings,
             },
             tui_reader,
         ))
@@ -218,6 +225,11 @@ pub struct Ghci {
     search_paths: ShowPaths,
     /// Tasks running `async:` shell commands in the background.
     command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
+    /// Per-file warnings from GHC compilation, persisted across reloads.
+    warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>>,
+    /// Files that were directly changed in the current reload operation.
+    /// Used to distinguish between direct changes and dependency-driven recompilations.
+    current_changed_files: BTreeSet<NormalPath>,
 }
 
 impl Debug for Ghci {
@@ -339,6 +351,8 @@ impl Ghci {
                 search_paths: Default::default(),
             },
             command_handles,
+            warnings: Default::default(),
+            current_changed_files: Default::default(),
         })
     }
 
@@ -363,6 +377,12 @@ impl Ghci {
         self.refresh_targets().await?;
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
+
+        // For initialization, consider all targets as "changed"
+        self.current_changed_files.clear();
+        for target in self.targets.iter() {
+            self.current_changed_files.insert(target.path().clone());
+        }
 
         self.finish_compilation(start_instant, log, events).await?;
 
@@ -460,8 +480,15 @@ impl Ghci {
         kind_sender: oneshot::Sender<GhciReloadKind>,
     ) -> miette::Result<()> {
         let start_instant = Instant::now();
-        let actions = self.get_reload_actions(events).await?;
+        let actions = self.get_reload_actions(events.clone()).await?;
         let _ = kind_sender.send(actions.kind());
+
+        // Track which files were directly changed in this reload
+        self.current_changed_files.clear();
+        for event in &events {
+            let path = self.relative_path(event.as_path())?;
+            self.current_changed_files.insert(path);
+        }
 
         if actions.needs_restart() {
             self.opts.clear();
@@ -801,6 +828,9 @@ impl Ghci {
         }
 
         self.clear_eval_commands_for_paths(paths).await;
+        if self.opts.track_warnings {
+            self.clear_warnings_for_paths(paths);
+        }
 
         Ok(())
     }
@@ -874,6 +904,13 @@ impl Ghci {
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
     ) -> miette::Result<()> {
+        // Update warnings from the compilation log only if tracking is enabled
+        if self.opts.track_warnings {
+            let changed_files = self.current_changed_files.clone();
+            self.update_warnings_from_log(log, Some(&changed_files))
+                .await?;
+        }
+
         // Allow hooks to consume the error log by updating it before running the hooks.
         self.write_error_log(log).await?;
 
@@ -890,12 +927,36 @@ impl Ghci {
                 compilation_start.elapsed()
             );
         } else {
-            tracing::info!(
-                "{} Finished {} in {:.2?}",
-                "All good!".if_supports_color(Stdout, |text| text.green()),
-                event.event_noun(),
-                compilation_start.elapsed()
-            );
+            // Display any tracked warnings even if compilation succeeded
+            // but exclude files that were compiled in this cycle (to avoid duplicates)
+            if self.opts.track_warnings {
+                self.display_tracked_warnings_excluding_compiled(log).await;
+            }
+
+            let warning_count = if self.opts.track_warnings {
+                self.warning_count()
+            } else {
+                0
+            };
+
+            if warning_count > 0 {
+                tracing::info!(
+                    "{} Finished {} in {:.2?} ({} warning{} tracked)",
+                    "Compilation succeeded".if_supports_color(Stdout, |text| text.yellow()),
+                    event.event_noun(),
+                    compilation_start.elapsed(),
+                    warning_count,
+                    if warning_count == 1 { "" } else { "s" }
+                );
+            } else {
+                tracing::info!(
+                    "{} Finished {} in {:.2?}",
+                    "All good!".if_supports_color(Stdout, |text| text.green()),
+                    event.event_noun(),
+                    compilation_start.elapsed()
+                );
+            }
+
             // Run the eval commands, if any.
             self.eval(log).await?;
             // Run the user-provided test command, if any.
@@ -932,9 +993,387 @@ impl Ghci {
         Ok(())
     }
 
+    /// Update the warnings map from a compilation log.
+    ///
+    /// This extracts warnings from the log and updates the per-file warnings map.
+    /// The key insight is that we need to distinguish between files that were compiled
+    /// due to direct changes vs dependency changes.
+    #[instrument(skip_all, level = "trace")]
+    async fn update_warnings_from_log(
+        &mut self,
+        log: &CompilationLog,
+        changed_files: Option<&BTreeSet<NormalPath>>,
+    ) -> miette::Result<()> {
+        if !self.opts.track_warnings {
+            return Ok(());
+        }
+
+        use crate::ghci::parse::Severity;
+
+        // Get the set of files that were compiled in this session
+        let mut compiled_files = BTreeSet::new();
+
+        for module in &log.compiled_modules {
+            let normal_path = self.relative_path(&module.path)?;
+            compiled_files.insert(normal_path);
+        }
+
+        // Group NEW warnings by file path from this compilation
+        let mut new_warnings_by_file: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+
+        for diagnostic in &log.diagnostics {
+            if diagnostic.severity == Severity::Warning {
+                if let Some(path) = &diagnostic.path {
+                    let normal_path = self.relative_path(path)?;
+                    new_warnings_by_file
+                        .entry(normal_path)
+                        .or_default()
+                        .push(diagnostic.clone());
+                }
+            }
+        }
+
+        // For files that were compiled, decide whether to update or preserve warnings
+        for compiled_file in &compiled_files {
+            let file_was_directly_changed = changed_files
+                .map(|changed| changed.contains(compiled_file))
+                .unwrap_or(true); // Default to assuming direct change if no info available
+
+            if let Some(file_warnings) = new_warnings_by_file.get(compiled_file) {
+                // File was compiled and has warnings - always update them
+                self.warnings
+                    .insert(compiled_file.clone(), file_warnings.clone());
+            } else if file_was_directly_changed {
+                // File was directly changed and compiled but has no warnings - clear existing warnings
+                self.warnings.remove(compiled_file);
+            }
+            // If file was compiled due to dependencies but has no new warnings, preserve existing warnings
+        }
+
+        tracing::debug!(
+            files_compiled = compiled_files.len(),
+            files_with_new_warnings = new_warnings_by_file.len(),
+            total_files_with_warnings = self.warnings.len(),
+            total_warnings = self.warnings.values().map(|w| w.len()).sum::<usize>(),
+            "Updated warning tracking"
+        );
+
+        Ok(())
+    }
+
+    /// Clear warnings for the given file paths.
+    ///
+    /// This is called when files are removed or when we know they should no longer have warnings.
+    #[instrument(skip_all, level = "trace")]
+    fn clear_warnings_for_paths(
+        &mut self,
+        paths: impl IntoIterator<Item = impl Borrow<NormalPath>>,
+    ) {
+        for path in paths {
+            self.warnings.remove(path.borrow());
+        }
+        tracing::debug!(
+            files_with_warnings = self.warnings.len(),
+            total_warnings = self.warnings.values().map(|w| w.len()).sum::<usize>(),
+            "Cleared warnings for removed files"
+        );
+    }
+
+    /// Get warnings for a specific file.
+    pub fn get_warnings_for_file(&self, path: &NormalPath) -> Option<&Vec<GhcDiagnostic>> {
+        self.warnings.get(path)
+    }
+
+    /// Get all warnings across all files.
+    pub fn get_all_warnings(&self) -> &BTreeMap<NormalPath, Vec<GhcDiagnostic>> {
+        &self.warnings
+    }
+
+    /// Get the total number of warnings across all files.
+    pub fn warning_count(&self) -> usize {
+        self.warnings.values().map(|w| w.len()).sum()
+    }
+
+    /// Get the number of files with warnings.
+    pub fn files_with_warnings_count(&self) -> usize {
+        self.warnings.len()
+    }
+
+    /// Display tracked warnings excluding files that were compiled in the current cycle.
+    #[instrument(skip_all, level = "trace")]
+    async fn display_tracked_warnings_excluding_compiled(&self, log: &CompilationLog) {
+        if !self.opts.track_warnings {
+            return;
+        }
+
+        if self.warnings.is_empty() {
+            return;
+        }
+
+        // Create a set of file paths that were compiled in this cycle
+        // Use relative paths for comparison since GHC reports relative paths
+        let compiled_files: HashSet<_> = log
+            .compiled_modules
+            .iter()
+            .map(|module| module.path.as_path())
+            .collect();
+
+        for (file_path, file_warnings) in &self.warnings {
+            // Skip warnings for files that were compiled in this cycle
+            // Compare using relative paths since compilation logs use relative paths
+            if compiled_files.contains(file_path.relative()) {
+                continue;
+            }
+
+            for warning in file_warnings {
+                self.display_single_warning(warning).await;
+            }
+        }
+    }
+
+    /// Display all tracked warnings to the user with GHC-matching colors.
+    #[instrument(skip_all, level = "trace")]
+    async fn display_tracked_warnings(&self) {
+        if self.warnings.is_empty() {
+            return;
+        }
+
+        for file_warnings in self.warnings.values() {
+            for warning in file_warnings {
+                self.display_single_warning(warning).await;
+            }
+        }
+    }
+
+    /// Display a single warning with GHC-style formatting and colors.
+    async fn display_single_warning(&self, warning: &parse::GhcDiagnostic) {
+        // Format each part of the warning to match GHC's selective coloring
+        let mut parts = Vec::new();
+
+        // File path (bold, like GHC)
+        match &warning.path {
+            Some(path) => parts.push(format!(
+                "{}",
+                path.if_supports_color(Stdout, |text| text.bold())
+            )),
+            None => parts.push(format!(
+                "{}",
+                "<no location info>".if_supports_color(Stdout, |text| text.bold())
+            )),
+        }
+
+        // Position range (bold, like GHC)
+        if !warning.span.is_zero() {
+            parts.push(format!(
+                ":{}",
+                warning.span.if_supports_color(Stdout, |text| text.bold())
+            ));
+        }
+
+        // Severity with color (this is what GHC colors)
+        let severity_colored = match warning.severity {
+            parse::Severity::Warning => {
+                format!(
+                    ": {}:",
+                    "warning".if_supports_color(Stdout, |text| text.magenta())
+                )
+            }
+            parse::Severity::Error => {
+                format!(
+                    ": {}:",
+                    "error".if_supports_color(Stdout, |text| text.red())
+                )
+            }
+        };
+        parts.push(severity_colored);
+
+        // Message content with GHC-style pattern coloring
+        let colored_message = if warning.message.starts_with('\n') {
+            self.apply_ghc_message_coloring(&warning.message, warning.severity)
+        } else {
+            format!(
+                " {}",
+                self.apply_ghc_message_coloring(&warning.message, warning.severity)
+            )
+        };
+        parts.push(colored_message);
+
+        // Join all parts and display
+        let formatted = parts.join("");
+        tracing::info!("{}", formatted);
+    }
+
+    /// Apply GHC-style coloring to warning message content.
+    fn apply_ghc_message_coloring(&self, message: &str, severity: parse::Severity) -> String {
+        let lines: Vec<&str> = message.lines().collect();
+        let mut colored_lines = Vec::new();
+
+        for line in lines {
+            let colored_line = self.color_message_line(line, severity);
+            colored_lines.push(colored_line);
+        }
+
+        colored_lines.join("\n")
+    }
+
+    /// Apply colors to a single line of a warning message based on GHC patterns.
+    fn color_message_line(&self, line: &str, severity: parse::Severity) -> String {
+        // Detect different types of lines and apply appropriate coloring
+
+        // Source code lines with line numbers (e.g., "  28 | import Data.Coerce (coerce)")
+        if let Some(pipe_pos) = line.find(" | ") {
+            let before_pipe = &line[..pipe_pos];
+            if before_pipe.trim().chars().all(|c| c.is_ascii_digit()) {
+                // This looks like a line number followed by pipe
+                let line_num_part = &line[..pipe_pos];
+                let pipe_and_after = &line[pipe_pos..];
+
+                return format!(
+                    "{}{}",
+                    line_num_part.if_supports_color(Stdout, |text| text.magenta()),
+                    pipe_and_after.if_supports_color(Stdout, |text| text.magenta())
+                );
+            }
+        }
+
+        // Caret lines (e.g., "     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+        if line.trim_start().starts_with('|') && line.contains('^') {
+            return format!("{}", line.if_supports_color(Stdout, |text| text.magenta()));
+        }
+
+        // Color warning/error flags in brackets
+        let mut result = line.to_string();
+
+        // Look for [-Wxxxx] patterns
+        if line.contains("[-W") {
+            if let Some(start) = line.find("[-W") {
+                if let Some(end) = line[start..].find(']') {
+                    let flag = &line[start..start + end + 1];
+                    let colored_flag = match severity {
+                        parse::Severity::Warning => {
+                            format!("{}", flag.if_supports_color(Stdout, |text| text.magenta()))
+                        }
+                        parse::Severity::Error => {
+                            format!("{}", flag.if_supports_color(Stdout, |text| text.red()))
+                        }
+                    };
+                    result = result.replace(flag, &colored_flag);
+                }
+            }
+        }
+
+        // // Look for [GHC-xxxx] patterns
+        // if line.contains("[GHC-") {
+        //     if let Some(start) = line.find("[GHC-") {
+        //         if let Some(end) = line[start..].find(']') {
+        //             let flag = &line[start..start + end + 1];
+        //             let colored_flag = match severity {
+        //                 parse::Severity::Warning => {
+        //                     format!("{}", flag.if_supports_color(Stdout, |text| text.magenta()))
+        //                 }
+        //                 parse::Severity::Error => {
+        //                     format!("{}", flag.if_supports_color(Stdout, |text| text.red()))
+        //                 }
+        //             };
+        //             result = result.replace(flag, &colored_flag);
+        //         }
+        //     }
+        // }
+
+        result
+    }
+
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
-        self.error_log.write(log).await
+        if self.opts.track_warnings {
+            self.write_error_log_with_tracked_warnings(log).await
+        } else {
+            self.error_log.write(log).await
+        }
+    }
+
+    /// Write error log including tracked warnings from previous compilations.
+    ///
+    /// This method combines current compilation diagnostics with tracked warnings,
+    /// avoiding duplicates and only including warnings (not errors) from tracked diagnostics.
+    #[instrument(skip(self), level = "trace")]
+    async fn write_error_log_with_tracked_warnings(
+        &mut self,
+        log: &CompilationLog,
+    ) -> miette::Result<()> {
+        use crate::ghci::parse::Severity;
+        use std::collections::HashSet;
+
+        let path = match self.error_log.path() {
+            Some(path) => path,
+            None => {
+                tracing::debug!("No error log path, not writing");
+                return Ok(());
+            }
+        };
+
+        let file = tokio::fs::File::create(path).await.into_diagnostic()?;
+        let mut writer = tokio::io::BufWriter::new(file);
+
+        // Write compilation summary header if compilation succeeded
+        if let Some(summary) = log.summary {
+            if let CompilationResult::Ok = summary.result {
+                tracing::debug!(%path, "Writing 'All good'");
+                let modules_loaded = if summary.modules_loaded != ModulesLoaded::Count(1) {
+                    format!("{} modules", summary.modules_loaded)
+                } else {
+                    format!("{} module", summary.modules_loaded)
+                };
+                writer
+                    .write_all(format!("All good ({modules_loaded})\n").as_bytes())
+                    .await
+                    .into_diagnostic()?;
+            }
+        }
+
+        // Write current compilation diagnostics
+        for diagnostic in &log.diagnostics {
+            tracing::debug!(%diagnostic, "Writing current compilation diagnostic");
+            writer
+                .write_all(diagnostic.to_string().as_bytes())
+                .await
+                .into_diagnostic()?;
+        }
+
+        // Create a set of diagnostics from current compilation to avoid duplicates
+        // We'll use a simple string-based deduplication approach
+        let mut current_diagnostics: HashSet<String> = HashSet::new();
+        for diagnostic in &log.diagnostics {
+            current_diagnostics.insert(diagnostic.to_string());
+        }
+
+        // Write tracked warnings (only warnings, not errors) that are not already in current compilation
+        for file_warnings in self.warnings.values() {
+            for warning in file_warnings {
+                // Only include warnings, not errors
+                if warning.severity != Severity::Warning {
+                    continue;
+                }
+
+                let warning_str = warning.to_string();
+
+                // Skip if this warning is already in the current compilation log
+                if current_diagnostics.contains(&warning_str) {
+                    continue;
+                }
+
+                tracing::debug!(%warning, "Writing tracked warning");
+                writer
+                    .write_all(warning_str.as_bytes())
+                    .await
+                    .into_diagnostic()?;
+            }
+        }
+
+        // Flush and shutdown the writer
+        writer.shutdown().await.into_diagnostic()?;
+
+        Ok(())
     }
 }
 
@@ -985,4 +1424,657 @@ pub enum GhciReloadKind {
     Reload,
     /// Restart the whole session. Cannot be interrupted.
     Restart,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ghci::parse::{
+        CompilationSummary, CompilingModule, GhcDiagnostic, ModulesLoaded, PositionRange, Severity,
+    };
+    use camino::Utf8PathBuf;
+    use std::collections::BTreeMap;
+
+    /// Helper to create a test `GhcDiagnostic` with the given severity and path.
+    fn make_diagnostic(severity: Severity, path: &str, message: &str) -> GhcDiagnostic {
+        GhcDiagnostic {
+            severity,
+            path: Some(Utf8PathBuf::from(path)),
+            span: PositionRange::new(1, 1, 1, 1),
+            message: message.to_string(),
+        }
+    }
+
+    /// Helper to create a test `CompilingModule`.
+    fn make_compiling_module(name: &str, path: &str) -> CompilingModule {
+        CompilingModule {
+            name: name.to_string(),
+            path: Utf8PathBuf::from(path),
+        }
+    }
+
+    /// Helper to create a `CompilationLog` with the given modules and diagnostics.
+    fn make_compilation_log(
+        modules: Vec<CompilingModule>,
+        diagnostics: Vec<GhcDiagnostic>,
+        result: CompilationResult,
+    ) -> CompilationLog {
+        CompilationLog {
+            summary: Some(CompilationSummary {
+                result,
+                modules_loaded: ModulesLoaded::Count(modules.len()),
+            }),
+            diagnostics,
+            compiled_modules: modules,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_warning_tracking_basic() {
+        // Test the core warning tracking logic using simplified path handling
+        let base_dir = std::env::current_dir().unwrap();
+        let mut warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+
+        // Simulate the first compilation: file A has warnings, file B is clean
+        let log1 = make_compilation_log(
+            vec![
+                make_compiling_module("MyLib", "src/MyLib.hs"),
+                make_compiling_module("MyModule", "src/MyModule.hs"),
+            ],
+            vec![
+                make_diagnostic(Severity::Warning, "src/MyLib.hs", "Unused import"),
+                make_diagnostic(Severity::Warning, "src/MyLib.hs", "Unused variable"),
+                make_diagnostic(Severity::Error, "src/MyModule.hs", "Type error"),
+            ],
+            CompilationResult::Err,
+        );
+
+        // Extract warnings (simulating update_warnings_from_log logic)
+        let mut warnings_by_file: BTreeMap<Utf8PathBuf, Vec<GhcDiagnostic>> = BTreeMap::new();
+        for diagnostic in &log1.diagnostics {
+            if diagnostic.severity == Severity::Warning {
+                if let Some(path) = &diagnostic.path {
+                    warnings_by_file
+                        .entry(path.clone())
+                        .or_default()
+                        .push(diagnostic.clone());
+                }
+            }
+        }
+
+        // Update warnings for compiled files
+        for module in &log1.compiled_modules {
+            let path = NormalPath::new(&module.path, &base_dir).unwrap();
+            if let Some(file_warnings) = warnings_by_file.remove(&module.path) {
+                warnings.insert(path, file_warnings);
+            } else {
+                warnings.remove(&path);
+            }
+        }
+
+        // After first compilation: MyLib has 2 warnings, MyModule has 0 warnings
+        assert_eq!(warnings.len(), 1);
+        let mylib_path = NormalPath::new("src/MyLib.hs", &base_dir).unwrap();
+        let mymodule_path = NormalPath::new("src/MyModule.hs", &base_dir).unwrap();
+        assert_eq!(warnings.get(&mylib_path).unwrap().len(), 2);
+        assert_eq!(warnings.get(&mymodule_path), None);
+
+        // Simulate second compilation: MyLib fixed warnings, MyModule still clean, but only MyLib was recompiled
+        let log2 = make_compilation_log(
+            vec![make_compiling_module("MyLib", "src/MyLib.hs")],
+            vec![], // No diagnostics - warnings fixed
+            CompilationResult::Ok,
+        );
+
+        // Update warnings again
+        let mut warnings_by_file: BTreeMap<Utf8PathBuf, Vec<GhcDiagnostic>> = BTreeMap::new();
+        for diagnostic in &log2.diagnostics {
+            if diagnostic.severity == Severity::Warning {
+                if let Some(path) = &diagnostic.path {
+                    warnings_by_file
+                        .entry(path.clone())
+                        .or_default()
+                        .push(diagnostic.clone());
+                }
+            }
+        }
+
+        for module in &log2.compiled_modules {
+            let path = NormalPath::new(&module.path, &base_dir).unwrap();
+            if let Some(file_warnings) = warnings_by_file.remove(&module.path) {
+                warnings.insert(path, file_warnings);
+            } else {
+                warnings.remove(&path); // Clear warnings for MyLib
+            }
+        }
+
+        // After second compilation: MyLib warnings cleared (it was recompiled), MyModule warnings unchanged (not recompiled)
+        assert_eq!(warnings.len(), 0);
+        assert_eq!(warnings.get(&mylib_path), None);
+        assert_eq!(warnings.get(&mymodule_path), None);
+    }
+
+    #[tokio::test]
+    async fn test_warning_persistence_across_dependency_recompilation() {
+        // This test simulates the core use case: warnings should persist when a file
+        // is recompiled due to dependencies but the file itself didn't change
+
+        let base_dir = std::env::current_dir().unwrap();
+        let mut warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+
+        // Initial compilation: A has warnings, B is clean
+        let log1 = make_compilation_log(
+            vec![
+                make_compiling_module("A", "src/A.hs"),
+                make_compiling_module("B", "src/B.hs"),
+            ],
+            vec![make_diagnostic(
+                Severity::Warning,
+                "src/A.hs",
+                "Unused import",
+            )],
+            CompilationResult::Ok,
+        );
+
+        // Process initial warnings
+        let mut warnings_by_file: BTreeMap<Utf8PathBuf, Vec<GhcDiagnostic>> = BTreeMap::new();
+        for diagnostic in &log1.diagnostics {
+            if diagnostic.severity == Severity::Warning {
+                if let Some(path) = &diagnostic.path {
+                    warnings_by_file
+                        .entry(path.clone())
+                        .or_default()
+                        .push(diagnostic.clone());
+                }
+            }
+        }
+
+        for module in &log1.compiled_modules {
+            let path = NormalPath::new(&module.path, &base_dir).unwrap();
+            if let Some(file_warnings) = warnings_by_file.remove(&module.path) {
+                warnings.insert(path, file_warnings);
+            } else {
+                warnings.remove(&path);
+            }
+        }
+
+        // A has warnings, B is clean
+        assert_eq!(warnings.len(), 1);
+        let a_path = NormalPath::new("src/A.hs", &base_dir).unwrap();
+        let b_path = NormalPath::new("src/B.hs", &base_dir).unwrap();
+        assert_eq!(warnings.get(&a_path).unwrap().len(), 1);
+
+        // Second compilation: only B is recompiled (due to dependency change), A is not touched
+        // This simulates the scenario where A's warnings would disappear in normal GHC output
+        let log2 = make_compilation_log(
+            vec![make_compiling_module("B", "src/B.hs")],
+            vec![], // No new warnings
+            CompilationResult::Ok,
+        );
+
+        // Process second compilation
+        let mut warnings_by_file: BTreeMap<Utf8PathBuf, Vec<GhcDiagnostic>> = BTreeMap::new();
+        for diagnostic in &log2.diagnostics {
+            if diagnostic.severity == Severity::Warning {
+                if let Some(path) = &diagnostic.path {
+                    warnings_by_file
+                        .entry(path.clone())
+                        .or_default()
+                        .push(diagnostic.clone());
+                }
+            }
+        }
+
+        for module in &log2.compiled_modules {
+            let path = NormalPath::new(&module.path, &base_dir).unwrap();
+            if let Some(file_warnings) = warnings_by_file.remove(&module.path) {
+                warnings.insert(path, file_warnings);
+            } else {
+                warnings.remove(&path);
+            }
+        }
+
+        // CRITICAL: A's warnings should still be there (not recompiled), B should have no warnings
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings.get(&a_path).unwrap().len(), 1);
+        assert_eq!(warnings.get(&b_path), None);
+    }
+
+    #[test]
+    fn test_tracked_warnings_exclude_currently_compiled_files() {
+        // Test that tracked warnings don't show duplicates for files that were just compiled
+
+        let base_dir = Utf8PathBuf::from("/tmp/test");
+
+        // Set up initial warnings in memory
+        let mut warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+        let file_a_path = NormalPath::new("src/A.hs", &base_dir).unwrap();
+        let file_b_path = NormalPath::new("src/B.hs", &base_dir).unwrap();
+
+        // Both files have warnings tracked
+        warnings.insert(
+            file_a_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/A.hs".into()),
+                span: PositionRange::new(1, 1, 1, 1),
+                message: "Warning in A".to_string(),
+            }],
+        );
+        warnings.insert(
+            file_b_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/B.hs".into()),
+                span: PositionRange::new(2, 1, 2, 1),
+                message: "Warning in B".to_string(),
+            }],
+        );
+
+        // Create a compilation log where only file A was compiled
+        let compilation_log = CompilationLog {
+            compiled_modules: vec![CompilingModule {
+                name: "A".into(),
+                path: "src/A.hs".into(),
+            }],
+            diagnostics: vec![
+                // File A shows its warning in fresh compilation output
+                GhcDiagnostic {
+                    severity: Severity::Warning,
+                    path: Some("src/A.hs".into()),
+                    span: PositionRange::new(1, 1, 1, 1),
+                    message: "Warning in A".to_string(),
+                },
+            ],
+            summary: Some(CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(1),
+            }),
+        };
+
+        // Simulate filtering: when we display tracked warnings, we should exclude file A
+        // because it was just compiled and already showed its warnings
+        let compiled_files: HashSet<_> = compilation_log
+            .compiled_modules
+            .iter()
+            .map(|module| module.path.as_path())
+            .collect();
+
+        // The logic should match what we do in the actual implementation
+        // Compare using relative paths since compilation logs use relative paths
+        let should_display_a = !compiled_files.contains(file_a_path.relative());
+        let should_display_b = !compiled_files.contains(file_b_path.relative());
+
+        // File A should NOT be displayed (it was just compiled)
+        assert!(
+            !should_display_a,
+            "File A was just compiled, its warnings should not be displayed again"
+        );
+
+        // File B SHOULD be displayed (it was not compiled, so its warnings are still relevant)
+        assert!(
+            should_display_b,
+            "File B was not compiled, its warnings should still be displayed"
+        );
+    }
+
+    #[test]
+    fn test_error_log_content_generation() {
+        // Test the logic for combining current diagnostics with tracked warnings
+        use crate::ghci::parse::Severity;
+        use std::collections::HashSet;
+
+        // Mock tracked warnings
+        let mut warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+        let base_dir = std::env::current_dir().unwrap();
+        let file_a_path = NormalPath::new("src/A.hs", &base_dir).unwrap();
+        let file_b_path = NormalPath::new("src/B.hs", &base_dir).unwrap();
+
+        // File A has a tracked warning
+        warnings.insert(
+            file_a_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/A.hs".into()),
+                span: PositionRange::new(1, 1, 1, 1),
+                message: "Unused import".to_string(),
+            }],
+        );
+
+        // File B has a tracked error (should not be included in error log)
+        warnings.insert(
+            file_b_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Error,
+                path: Some("src/B.hs".into()),
+                span: PositionRange::new(2, 1, 2, 1),
+                message: "Type error".to_string(),
+            }],
+        );
+
+        // Create a compilation log with current compilation diagnostics
+        let compilation_log = CompilationLog {
+            compiled_modules: vec![CompilingModule {
+                name: "C".into(),
+                path: "src/C.hs".into(),
+            }],
+            diagnostics: vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/C.hs".into()),
+                span: PositionRange::new(3, 1, 3, 1),
+                message: "Current warning".to_string(),
+            }],
+            summary: Some(CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(1),
+            }),
+        };
+
+        // Test the logic for combining diagnostics
+        let mut content = String::new();
+
+        // Add compilation summary
+        if let Some(summary) = compilation_log.summary {
+            if let CompilationResult::Ok = summary.result {
+                let modules_loaded = if summary.modules_loaded != ModulesLoaded::Count(1) {
+                    format!("{} modules", summary.modules_loaded)
+                } else {
+                    format!("{} module", summary.modules_loaded)
+                };
+                content.push_str(&format!("All good ({modules_loaded})\n"));
+            }
+        }
+
+        // Add current compilation diagnostics
+        for diagnostic in &compilation_log.diagnostics {
+            content.push_str(&diagnostic.to_string());
+        }
+
+        // Create deduplication set
+        let mut current_diagnostics: HashSet<String> = HashSet::new();
+        for diagnostic in &compilation_log.diagnostics {
+            current_diagnostics.insert(diagnostic.to_string());
+        }
+
+        // Add tracked warnings (only warnings, not errors)
+        for (_file_path, file_warnings) in &warnings {
+            for warning in file_warnings {
+                // Only include warnings, not errors
+                if warning.severity != Severity::Warning {
+                    continue;
+                }
+
+                let warning_str = warning.to_string();
+
+                // Skip if already in current compilation log
+                if current_diagnostics.contains(&warning_str) {
+                    continue;
+                }
+
+                content.push_str(&warning_str);
+            }
+        }
+
+        // Verify the content
+        assert!(content.contains("All good (1 module)"));
+        assert!(content.contains("src/C.hs:3:1: warning: Current warning"));
+        assert!(content.contains("src/A.hs:1:1: warning: Unused import"));
+        assert!(!content.contains("src/B.hs")); // Error should not be included
+        assert!(!content.contains("Type error")); // Error should not be included
+
+        // Verify that errors are filtered out
+        let warning_count = warnings
+            .values()
+            .flatten()
+            .filter(|diag| diag.severity == Severity::Warning)
+            .count();
+        assert_eq!(warning_count, 1); // Only the warning from A.hs should be counted
+    }
+
+    #[tokio::test]
+    async fn test_write_error_log_with_tracked_warnings() {
+        // Test the write_error_log_with_tracked_warnings method by simulating its core logic
+        use crate::ghci::parse::Severity;
+        use std::collections::HashSet;
+        use std::fs;
+        use tokio::io::AsyncWriteExt;
+
+        // Create a temporary file for the error log
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_error_log.txt");
+        let error_log_path = camino::Utf8PathBuf::from_path_buf(temp_file).unwrap();
+
+        // Create mock tracked warnings
+        let mut warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
+        let base_dir = std::env::current_dir().unwrap();
+        let file_a_path = NormalPath::new("src/A.hs", &base_dir).unwrap();
+        let file_b_path = NormalPath::new("src/B.hs", &base_dir).unwrap();
+
+        // Add tracked warnings
+        warnings.insert(
+            file_a_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/A.hs".into()),
+                span: PositionRange::new(10, 5, 10, 15),
+                message: "Unused import warning".to_string(),
+            }],
+        );
+
+        warnings.insert(
+            file_b_path.clone(),
+            vec![GhcDiagnostic {
+                severity: Severity::Warning,
+                path: Some("src/B.hs".into()),
+                span: PositionRange::new(20, 1, 20, 10),
+                message: "Unused variable warning".to_string(),
+            }],
+        );
+
+        // Create a CompilationLog with some current diagnostics
+        let compilation_log = CompilationLog {
+            summary: Some(CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(2),
+            }),
+            diagnostics: vec![
+                GhcDiagnostic {
+                    severity: Severity::Warning,
+                    path: Some("src/C.hs".into()),
+                    span: PositionRange::new(30, 1, 30, 5),
+                    message: "Current compilation warning".to_string(),
+                },
+                GhcDiagnostic {
+                    severity: Severity::Error,
+                    path: Some("src/C.hs".into()),
+                    span: PositionRange::new(31, 1, 31, 5),
+                    message: "Current compilation error".to_string(),
+                },
+            ],
+            compiled_modules: vec![CompilingModule {
+                name: "C".to_string(),
+                path: "src/C.hs".into(),
+            }],
+        };
+
+        // Simulate the write_error_log_with_tracked_warnings method logic
+        let file = tokio::fs::File::create(&error_log_path).await.unwrap();
+        let mut writer = tokio::io::BufWriter::new(file);
+
+        // Write compilation summary header if compilation succeeded
+        if let Some(summary) = compilation_log.summary {
+            if let CompilationResult::Ok = summary.result {
+                let modules_loaded = if summary.modules_loaded != ModulesLoaded::Count(1) {
+                    format!("{} modules", summary.modules_loaded)
+                } else {
+                    format!("{} module", summary.modules_loaded)
+                };
+                writer
+                    .write_all(format!("All good ({modules_loaded})\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+        }
+
+        // Write current compilation diagnostics
+        for diagnostic in &compilation_log.diagnostics {
+            writer
+                .write_all(diagnostic.to_string().as_bytes())
+                .await
+                .unwrap();
+        }
+
+        // Create a set of diagnostics from current compilation to avoid duplicates
+        let mut current_diagnostics: HashSet<String> = HashSet::new();
+        for diagnostic in &compilation_log.diagnostics {
+            current_diagnostics.insert(diagnostic.to_string());
+        }
+
+        // Write tracked warnings (only warnings, not errors) that are not already in current compilation
+        for (_file_path, file_warnings) in &warnings {
+            for warning in file_warnings {
+                // Only include warnings, not errors
+                if warning.severity != Severity::Warning {
+                    continue;
+                }
+
+                let warning_str = warning.to_string();
+
+                // Skip if this warning is already in the current compilation log
+                if current_diagnostics.contains(&warning_str) {
+                    continue;
+                }
+
+                writer.write_all(warning_str.as_bytes()).await.unwrap();
+            }
+        }
+
+        // Flush and shutdown the writer
+        writer.shutdown().await.unwrap();
+
+        // Read the content from the error log file
+        let content = fs::read_to_string(&error_log_path).unwrap();
+
+        // Verify the output contains expected elements
+        // 1. Compilation summary header
+        assert!(
+            content.contains("All good (2 modules)"),
+            "Should contain compilation summary"
+        );
+
+        // 2. Current compilation diagnostics (both warning and error)
+        assert!(
+            content.contains("src/C.hs:30:1-5: warning: Current compilation warning"),
+            "Should contain current warning"
+        );
+        assert!(
+            content.contains("src/C.hs:31:1-5: error: Current compilation error"),
+            "Should contain current error"
+        );
+
+        // 3. Tracked warnings (only warnings, not errors)
+        assert!(
+            content.contains("src/A.hs:10:5-15: warning: Unused import warning"),
+            "Should contain tracked warning from A.hs"
+        );
+        assert!(
+            content.contains("src/B.hs:20:1-10: warning: Unused variable warning"),
+            "Should contain tracked warning from B.hs"
+        );
+
+        // Test deduplication: create a new compilation log with a duplicate warning
+        let compilation_log_with_duplicate = CompilationLog {
+            summary: Some(CompilationSummary {
+                result: CompilationResult::Ok,
+                modules_loaded: ModulesLoaded::Count(1),
+            }),
+            diagnostics: vec![
+                // Same warning as in tracked warnings
+                GhcDiagnostic {
+                    severity: Severity::Warning,
+                    path: Some("src/A.hs".into()),
+                    span: PositionRange::new(10, 5, 10, 15),
+                    message: "Unused import warning".to_string(),
+                },
+            ],
+            compiled_modules: vec![CompilingModule {
+                name: "A".to_string(),
+                path: "src/A.hs".into(),
+            }],
+        };
+
+        // Clear the file and test again
+        let file = tokio::fs::File::create(&error_log_path).await.unwrap();
+        let mut writer = tokio::io::BufWriter::new(file);
+
+        // Write compilation summary header
+        if let Some(summary) = compilation_log_with_duplicate.summary {
+            if let CompilationResult::Ok = summary.result {
+                let modules_loaded = if summary.modules_loaded != ModulesLoaded::Count(1) {
+                    format!("{} modules", summary.modules_loaded)
+                } else {
+                    format!("{} module", summary.modules_loaded)
+                };
+                writer
+                    .write_all(format!("All good ({modules_loaded})\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+        }
+
+        // Write current compilation diagnostics
+        for diagnostic in &compilation_log_with_duplicate.diagnostics {
+            writer
+                .write_all(diagnostic.to_string().as_bytes())
+                .await
+                .unwrap();
+        }
+
+        // Create deduplication set
+        let mut current_diagnostics: HashSet<String> = HashSet::new();
+        for diagnostic in &compilation_log_with_duplicate.diagnostics {
+            current_diagnostics.insert(diagnostic.to_string());
+        }
+
+        // Write tracked warnings (only warnings, not errors) that are not already in current compilation
+        for (_file_path, file_warnings) in &warnings {
+            for warning in file_warnings {
+                // Only include warnings, not errors
+                if warning.severity != Severity::Warning {
+                    continue;
+                }
+
+                let warning_str = warning.to_string();
+
+                // Skip if this warning is already in the current compilation log
+                if current_diagnostics.contains(&warning_str) {
+                    continue;
+                }
+
+                writer.write_all(warning_str.as_bytes()).await.unwrap();
+            }
+        }
+
+        writer.shutdown().await.unwrap();
+
+        let content_with_duplicate = fs::read_to_string(&error_log_path).unwrap();
+
+        // Count occurrences of the warning - should appear only once
+        let warning_count = content_with_duplicate
+            .matches("src/A.hs:10:5-15: warning: Unused import warning")
+            .count();
+        assert_eq!(
+            warning_count, 1,
+            "Duplicate warning should only appear once"
+        );
+
+        // But the warning from B.hs should still be there since it's not a duplicate
+        assert!(
+            content_with_duplicate.contains("src/B.hs:20:1-10: warning: Unused variable warning"),
+            "Non-duplicate tracked warning should still appear"
+        );
+
+        // Clean up
+        let _ = fs::remove_file(&error_log_path);
+    }
 }

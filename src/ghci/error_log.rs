@@ -23,6 +23,11 @@ impl ErrorLog {
         Self { path }
     }
 
+    /// Get the path for this error log writer, if any.
+    pub fn path(&self) -> Option<&Utf8PathBuf> {
+        self.path.as_ref()
+    }
+
     /// Write the error log, if any, with the given compilation summary and diagnostic messages.
     #[instrument(skip(self, log), name = "error_log_write", level = "debug")]
     pub async fn write(&mut self, log: &CompilationLog) -> miette::Result<()> {
