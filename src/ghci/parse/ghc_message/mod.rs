@@ -4,6 +4,8 @@ use std::fmt::Display;
 
 use camino::Utf8PathBuf;
 use miette::miette;
+use owo_colors::OwoColorize;
+use owo_colors::Stream::Stdout;
 use winnow::combinator::alt;
 use winnow::combinator::repeat;
 use winnow::prelude::*;
@@ -145,6 +147,66 @@ impl Display for GhcDiagnostic {
         }
 
         Ok(())
+    }
+}
+
+impl GhcDiagnostic {
+    /// Display this diagnostic with GHC-style coloring.
+    pub fn display_colored(&self) {
+        // Format each part of the warning to match GHC's selective coloring
+        let mut parts = Vec::new();
+
+        // File path (bold, like GHC)
+        match &self.path {
+            Some(path) => parts.push(format!(
+                "{}",
+                path.if_supports_color(Stdout, |text| text.bold())
+            )),
+            None => parts.push(format!(
+                "{}",
+                "<no location info>".if_supports_color(Stdout, |text| text.bold())
+            )),
+        }
+
+        // Position range (bold, like GHC)
+        if !self.span.is_zero() {
+            parts.push(format!(
+                ":{}",
+                self.span.if_supports_color(Stdout, |text| text.bold())
+            ));
+        }
+
+        // Severity with color (this is what GHC colors)
+        let severity_colored = match self.severity {
+            Severity::Warning => {
+                format!(
+                    ": {}:",
+                    "warning".if_supports_color(Stdout, |text| text.magenta())
+                )
+            }
+            Severity::Error => {
+                format!(
+                    ": {}:",
+                    "error".if_supports_color(Stdout, |text| text.red())
+                )
+            }
+        };
+        parts.push(severity_colored);
+
+        // Message content with GHC-style pattern coloring
+        let colored_message = if self.message.starts_with('\n') {
+            super::super::warning_formatter::colorize_message(&self.message, self.severity)
+        } else {
+            format!(
+                " {}",
+                super::super::warning_formatter::colorize_message(&self.message, self.severity)
+            )
+        };
+        parts.push(colored_message);
+
+        // Join all parts and display
+        let formatted = parts.join("");
+        tracing::info!("{}", formatted);
     }
 }
 

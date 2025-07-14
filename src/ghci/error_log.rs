@@ -1,3 +1,4 @@
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::IntoDiagnostic;
 use tokio::fs::File;
@@ -21,6 +22,11 @@ impl ErrorLog {
     /// Construct a new error log writer for the given path.
     pub fn new(path: Option<Utf8PathBuf>) -> Self {
         Self { path }
+    }
+
+    /// Get the path for this error log writer, if any.
+    pub fn path(&self) -> Option<&Utf8Path> {
+        self.path.as_deref()
     }
 
     /// Write the error log, if any, with the given compilation summary and diagnostic messages.
