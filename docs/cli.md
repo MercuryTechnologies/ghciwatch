@@ -37,6 +37,10 @@ Don't reload for `README.md` files:
 
     ghciwatch --reload-glob '!src/**/README.md'
 
+Track warnings across recompilations to prevent them from disappearing:
+
+    ghciwatch --track-warnings
+
 ## Arguments
 <dl>
 
@@ -87,6 +91,19 @@ Clear the screen before reloads and restarts
 Don't interrupt reloads when files change.
 
 Depending on your workflow, `ghciwatch` may feel more responsive with this set.
+
+</dd>
+<dt><a id="--track-warnings" href="#--track-warnings"><code>--track-warnings</code></a></dt><dd>
+
+Track warnings across recompilations.
+
+When enabled, warnings will be preserved in memory even when files are recompiled due to dependency changes, helping prevent "ephemeral warnings" from being missed.
+
+This feature addresses the common issue where GHC warnings disappear when files are recompiled due to dependency changes (without the file itself changing). With `--track-warnings`, warnings persist until the file is directly modified or removed.
+
+Tracked warnings are displayed with the same formatting and colors as fresh warnings, and are included in the error file output when using `--error-file`.
+
+Can also be enabled by setting the `GHCIWATCH_TRACK_WARNINGS` environment variable to any value.
 
 </dd>
 <dt><a id="--completions" href="#--completions"><code>--completions &lt;COMPLETIONS&gt;</code></a></dt><dd>
