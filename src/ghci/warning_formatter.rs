@@ -24,15 +24,11 @@ impl WarningFormatter {
     /// This processes multi-line messages and applies appropriate coloring
     /// to each line based on GHC's output patterns.
     pub fn colorize_message(&self, message: &str, severity: Severity) -> String {
-        let lines: Vec<&str> = message.lines().collect();
-        let mut colored_lines = Vec::new();
-
-        for line in lines {
-            let colored_line = self.colorize_line(line, severity);
-            colored_lines.push(colored_line);
-        }
-
-        colored_lines.join("\n")
+        message
+            .lines()
+            .map(|line| self.colorize_line(line, severity))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Apply colors to a single line of a diagnostic message based on GHC patterns.
