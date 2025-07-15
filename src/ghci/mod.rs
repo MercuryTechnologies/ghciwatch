@@ -1217,6 +1217,8 @@ impl Ghci {
     }
 
     /// Apply colors to a single line of a warning message based on GHC patterns.
+    // TODO: Extract this into a dedicated parser and connect it to the ANSI colors
+    // that we need to preserve in https://github.com/MercuryTechnologies/ghciwatch/blob/TrackWarnings/src/ghci/parse/ghc_message/mod.rs#L153
     fn color_message_line(&self, line: &str, severity: parse::Severity) -> String {
         // Detect different types of lines and apply appropriate coloring
 
@@ -1261,24 +1263,6 @@ impl Ghci {
                 }
             }
         }
-
-        // // Look for [GHC-xxxx] patterns
-        // if line.contains("[GHC-") {
-        //     if let Some(start) = line.find("[GHC-") {
-        //         if let Some(end) = line[start..].find(']') {
-        //             let flag = &line[start..start + end + 1];
-        //             let colored_flag = match severity {
-        //                 parse::Severity::Warning => {
-        //                     format!("{}", flag.if_supports_color(Stdout, |text| text.magenta()))
-        //                 }
-        //                 parse::Severity::Error => {
-        //                     format!("{}", flag.if_supports_color(Stdout, |text| text.red()))
-        //                 }
-        //             };
-        //             result = result.replace(flag, &colored_flag);
-        //         }
-        //     }
-        // }
 
         result
     }
