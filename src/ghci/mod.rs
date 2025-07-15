@@ -76,6 +76,9 @@ use loaded_module::LoadedModule;
 mod warning_formatter;
 use warning_formatter::WarningFormatter;
 
+mod warning_tracker;
+use warning_tracker::WarningTracker;
+
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
@@ -228,11 +231,8 @@ pub struct Ghci {
     search_paths: ShowPaths,
     /// Tasks running `async:` shell commands in the background.
     command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
-    /// Per-file warnings from GHC compilation, persisted across reloads.
-    warnings: BTreeMap<NormalPath, Vec<GhcDiagnostic>>,
-    /// Files that were directly changed in the current reload operation.
-    /// Used to distinguish between direct changes and dependency-driven recompilations.
-    current_changed_files: BTreeSet<NormalPath>,
+    /// Warning tracker for managing warnings across recompilations.
+    warning_tracker: WarningTracker,
     /// Formatter for applying GHC-style colors to diagnostic messages.
     warning_formatter: WarningFormatter,
 }
@@ -356,8 +356,7 @@ impl Ghci {
                 search_paths: Default::default(),
             },
             command_handles,
-            warnings: Default::default(),
-            current_changed_files: Default::default(),
+            warning_tracker: WarningTracker::new(),
             warning_formatter: WarningFormatter::new(),
         })
     }
@@ -385,9 +384,10 @@ impl Ghci {
         self.refresh_eval_commands().await?;
 
         // For initialization, consider all targets as "changed"
-        self.current_changed_files.clear();
+        self.warning_tracker.reset_changed_files();
         for target in self.targets.iter() {
-            self.current_changed_files.insert(target.path().clone());
+            self.warning_tracker
+                .mark_file_changed(target.path().clone());
         }
 
         self.finish_compilation(start_instant, log, events).await?;
@@ -490,10 +490,10 @@ impl Ghci {
         let _ = kind_sender.send(actions.kind());
 
         // Track which files were directly changed in this reload
-        self.current_changed_files.clear();
+        self.warning_tracker.reset_changed_files();
         for event in &events {
             let path = self.relative_path(event.as_path())?;
-            self.current_changed_files.insert(path);
+            self.warning_tracker.mark_file_changed(path);
         }
 
         if actions.needs_restart() {
@@ -912,9 +912,7 @@ impl Ghci {
     ) -> miette::Result<()> {
         // Update warnings from the compilation log only if tracking is enabled
         if self.opts.track_warnings {
-            let changed_files = self.current_changed_files.clone();
-            self.update_warnings_from_log(log, Some(&changed_files))
-                .await?;
+            self.warning_tracker.update_warnings_from_log(log);
         }
 
         // Allow hooks to consume the error log by updating it before running the hooks.
@@ -1005,67 +1003,7 @@ impl Ghci {
     /// The key insight is that we need to distinguish between files that were compiled
     /// due to direct changes vs dependency changes.
     #[instrument(skip_all, level = "trace")]
-    async fn update_warnings_from_log(
-        &mut self,
-        log: &CompilationLog,
-        changed_files: Option<&BTreeSet<NormalPath>>,
-    ) -> miette::Result<()> {
-        if !self.opts.track_warnings {
-            return Ok(());
-        }
-
-        use crate::ghci::parse::Severity;
-
-        // Get the set of files that were compiled in this session
-        let mut compiled_files = BTreeSet::new();
-
-        for module in &log.compiled_modules {
-            let normal_path = self.relative_path(&module.path)?;
-            compiled_files.insert(normal_path);
-        }
-
-        // Group NEW warnings by file path from this compilation
-        let mut new_warnings_by_file: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
-
-        for diagnostic in &log.diagnostics {
-            if diagnostic.severity == Severity::Warning {
-                if let Some(path) = &diagnostic.path {
-                    let normal_path = self.relative_path(path)?;
-                    new_warnings_by_file
-                        .entry(normal_path)
-                        .or_default()
-                        .push(diagnostic.clone());
-                }
-            }
-        }
-
-        // For files that were compiled, decide whether to update or preserve warnings
-        for compiled_file in &compiled_files {
-            let file_was_directly_changed = changed_files
-                .map(|changed| changed.contains(compiled_file))
-                .unwrap_or(true); // Default to assuming direct change if no info available
-
-            if let Some(file_warnings) = new_warnings_by_file.get(compiled_file) {
-                // File was compiled and has warnings - always update them
-                self.warnings
-                    .insert(compiled_file.clone(), file_warnings.clone());
-            } else if file_was_directly_changed {
-                // File was directly changed and compiled but has no warnings - clear existing warnings
-                self.warnings.remove(compiled_file);
-            }
-            // If file was compiled due to dependencies but has no new warnings, preserve existing warnings
-        }
-
-        tracing::debug!(
-            files_compiled = compiled_files.len(),
-            files_with_new_warnings = new_warnings_by_file.len(),
-            total_files_with_warnings = self.warnings.len(),
-            total_warnings = self.warnings.values().map(|w| w.len()).sum::<usize>(),
-            "Updated warning tracking"
-        );
-
-        Ok(())
-    }
+    // This method is now handled by the WarningTracker - removed
 
     /// Clear warnings for the given file paths.
     ///
@@ -1075,34 +1013,27 @@ impl Ghci {
         &mut self,
         paths: impl IntoIterator<Item = impl Borrow<NormalPath>>,
     ) {
-        for path in paths {
-            self.warnings.remove(path.borrow());
-        }
-        tracing::debug!(
-            files_with_warnings = self.warnings.len(),
-            total_warnings = self.warnings.values().map(|w| w.len()).sum::<usize>(),
-            "Cleared warnings for removed files"
-        );
+        self.warning_tracker.clear_warnings_for_paths(paths);
     }
 
     /// Get warnings for a specific file.
     pub fn get_warnings_for_file(&self, path: &NormalPath) -> Option<&Vec<GhcDiagnostic>> {
-        self.warnings.get(path)
+        self.warning_tracker.get_warnings_for_file(path)
     }
 
     /// Get all warnings across all files.
     pub fn get_all_warnings(&self) -> &BTreeMap<NormalPath, Vec<GhcDiagnostic>> {
-        &self.warnings
+        self.warning_tracker.get_all_warnings()
     }
 
     /// Get the total number of warnings across all files.
     pub fn warning_count(&self) -> usize {
-        self.warnings.values().map(|w| w.len()).sum()
+        self.warning_tracker.warning_count()
     }
 
     /// Get the number of files with warnings.
     pub fn files_with_warnings_count(&self) -> usize {
-        self.warnings.len()
+        self.warning_tracker.files_with_warnings_count()
     }
 
     /// Display tracked warnings excluding files that were compiled in the current cycle.
@@ -1112,7 +1043,7 @@ impl Ghci {
             return;
         }
 
-        if self.warnings.is_empty() {
+        if !self.warning_tracker.has_warnings() {
             return;
         }
 
@@ -1124,7 +1055,7 @@ impl Ghci {
             .map(|module| module.path.as_path())
             .collect();
 
-        for (file_path, file_warnings) in &self.warnings {
+        for (file_path, file_warnings) in self.warning_tracker.get_all_warnings() {
             // Skip warnings for files that were compiled in this cycle
             // Compare using relative paths since compilation logs use relative paths
             if compiled_files.contains(file_path.relative()) {
@@ -1140,11 +1071,11 @@ impl Ghci {
     /// Display all tracked warnings to the user with GHC-matching colors.
     #[instrument(skip_all, level = "trace")]
     async fn display_tracked_warnings(&self) {
-        if self.warnings.is_empty() {
+        if !self.warning_tracker.has_warnings() {
             return;
         }
 
-        for file_warnings in self.warnings.values() {
+        for file_warnings in self.warning_tracker.get_all_warnings().values() {
             for warning in file_warnings {
                 self.display_single_warning(warning).await;
             }
@@ -1195,11 +1126,13 @@ impl Ghci {
 
         // Message content with GHC-style pattern coloring
         let colored_message = if warning.message.starts_with('\n') {
-            self.warning_formatter.colorize_message(&warning.message, warning.severity)
+            self.warning_formatter
+                .colorize_message(&warning.message, warning.severity)
         } else {
             format!(
                 " {}",
-                self.warning_formatter.colorize_message(&warning.message, warning.severity)
+                self.warning_formatter
+                    .colorize_message(&warning.message, warning.severity)
             )
         };
         parts.push(colored_message);
@@ -1208,7 +1141,6 @@ impl Ghci {
         let formatted = parts.join("");
         tracing::info!("{}", formatted);
     }
-
 
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
@@ -1275,7 +1207,7 @@ impl Ghci {
         }
 
         // Write tracked warnings (only warnings, not errors) that are not already in current compilation
-        for file_warnings in self.warnings.values() {
+        for file_warnings in self.warning_tracker.get_all_warnings().values() {
             for warning in file_warnings {
                 // Only include warnings, not errors
                 if warning.severity != Severity::Warning {
