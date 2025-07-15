@@ -997,7 +997,6 @@ impl Ghci {
         Ok(())
     }
 
-
     /// Clear warnings for the given file paths.
     ///
     /// This is called when files are removed or when we know they should no longer have warnings.
