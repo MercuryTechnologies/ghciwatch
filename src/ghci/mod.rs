@@ -997,13 +997,6 @@ impl Ghci {
         Ok(())
     }
 
-    /// Update the warnings map from a compilation log.
-    ///
-    /// This extracts warnings from the log and updates the per-file warnings map.
-    /// The key insight is that we need to distinguish between files that were compiled
-    /// due to direct changes vs dependency changes.
-    #[instrument(skip_all, level = "trace")]
-    // This method is now handled by the WarningTracker - removed
 
     /// Clear warnings for the given file paths.
     ///
