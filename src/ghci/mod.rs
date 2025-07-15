@@ -73,6 +73,9 @@ pub use module_set::ModuleSet;
 mod loaded_module;
 use loaded_module::LoadedModule;
 
+mod warning_formatter;
+use warning_formatter::WarningFormatter;
+
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
 use crate::cli::Opts;
@@ -230,6 +233,8 @@ pub struct Ghci {
     /// Files that were directly changed in the current reload operation.
     /// Used to distinguish between direct changes and dependency-driven recompilations.
     current_changed_files: BTreeSet<NormalPath>,
+    /// Formatter for applying GHC-style colors to diagnostic messages.
+    warning_formatter: WarningFormatter,
 }
 
 impl Debug for Ghci {
@@ -353,6 +358,7 @@ impl Ghci {
             command_handles,
             warnings: Default::default(),
             current_changed_files: Default::default(),
+            warning_formatter: WarningFormatter::new(),
         })
     }
 
@@ -1189,11 +1195,11 @@ impl Ghci {
 
         // Message content with GHC-style pattern coloring
         let colored_message = if warning.message.starts_with('\n') {
-            self.apply_ghc_message_coloring(&warning.message, warning.severity)
+            self.warning_formatter.colorize_message(&warning.message, warning.severity)
         } else {
             format!(
                 " {}",
-                self.apply_ghc_message_coloring(&warning.message, warning.severity)
+                self.warning_formatter.colorize_message(&warning.message, warning.severity)
             )
         };
         parts.push(colored_message);
@@ -1203,69 +1209,6 @@ impl Ghci {
         tracing::info!("{}", formatted);
     }
 
-    /// Apply GHC-style coloring to warning message content.
-    fn apply_ghc_message_coloring(&self, message: &str, severity: parse::Severity) -> String {
-        let lines: Vec<&str> = message.lines().collect();
-        let mut colored_lines = Vec::new();
-
-        for line in lines {
-            let colored_line = self.color_message_line(line, severity);
-            colored_lines.push(colored_line);
-        }
-
-        colored_lines.join("\n")
-    }
-
-    /// Apply colors to a single line of a warning message based on GHC patterns.
-    // TODO: Extract this into a dedicated parser and connect it to the ANSI colors
-    // that we need to preserve in https://github.com/MercuryTechnologies/ghciwatch/blob/TrackWarnings/src/ghci/parse/ghc_message/mod.rs#L153
-    fn color_message_line(&self, line: &str, severity: parse::Severity) -> String {
-        // Detect different types of lines and apply appropriate coloring
-
-        // Source code lines with line numbers (e.g., "  28 | import Data.Coerce (coerce)")
-        if let Some(pipe_pos) = line.find(" | ") {
-            let before_pipe = &line[..pipe_pos];
-            if before_pipe.trim().chars().all(|c| c.is_ascii_digit()) {
-                // This looks like a line number followed by pipe
-                let line_num_part = &line[..pipe_pos];
-                let pipe_and_after = &line[pipe_pos..];
-
-                return format!(
-                    "{}{}",
-                    line_num_part.if_supports_color(Stdout, |text| text.magenta()),
-                    pipe_and_after.if_supports_color(Stdout, |text| text.magenta())
-                );
-            }
-        }
-
-        // Caret lines (e.g., "     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^")
-        if line.trim_start().starts_with('|') && line.contains('^') {
-            return format!("{}", line.if_supports_color(Stdout, |text| text.magenta()));
-        }
-
-        // Color warning/error flags in brackets
-        let mut result = line.to_string();
-
-        // Look for [-Wxxxx] patterns
-        if line.contains("[-W") {
-            if let Some(start) = line.find("[-W") {
-                if let Some(end) = line[start..].find(']') {
-                    let flag = &line[start..start + end + 1];
-                    let colored_flag = match severity {
-                        parse::Severity::Warning => {
-                            format!("{}", flag.if_supports_color(Stdout, |text| text.magenta()))
-                        }
-                        parse::Severity::Error => {
-                            format!("{}", flag.if_supports_color(Stdout, |text| text.red()))
-                        }
-                    };
-                    result = result.replace(flag, &colored_flag);
-                }
-            }
-        }
-
-        result
-    }
 
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
