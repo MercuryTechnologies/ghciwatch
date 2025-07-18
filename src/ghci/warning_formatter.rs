@@ -34,6 +34,7 @@ fn colorize_line(line: &str, severity: Severity) -> String {
     // Detect different types of lines and apply appropriate coloring
 
     // Source code lines with line numbers (e.g., "  28 | import Data.Coerce (coerce)")
+    // TODO: This is a pretty hacky way to find the lines to color. In the future, if we have all of this structured from the parser, we can store the original colors alongside the warning text and re-emit it directly.
     if let Some(pipe_pos) = line.find(" | ") {
         let before_pipe = &line[..pipe_pos];
         if before_pipe.trim().chars().all(|c| c.is_ascii_digit()) {
