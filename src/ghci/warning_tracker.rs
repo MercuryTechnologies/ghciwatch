@@ -107,11 +107,6 @@ impl WarningTracker {
         );
     }
 
-    /// Get warnings for a specific file.
-    pub fn get_warnings_for_file(&self, path: &NormalPath) -> Option<&Vec<GhcDiagnostic>> {
-        self.warnings.get(path)
-    }
-
     /// Get all warnings as a map from file path to warnings.
     pub fn get_all_warnings(&self) -> &BTreeMap<NormalPath, Vec<GhcDiagnostic>> {
         &self.warnings
@@ -120,11 +115,6 @@ impl WarningTracker {
     /// Get the total number of warnings across all files.
     pub fn warning_count(&self) -> usize {
         self.warnings.values().map(|w| w.len()).sum()
-    }
-
-    /// Get the number of files that have warnings.
-    pub fn files_with_warnings_count(&self) -> usize {
-        self.warnings.len()
     }
 
     /// Check if there are any warnings tracked.
@@ -171,7 +161,7 @@ mod tests {
         let tracker = WarningTracker::new();
         assert!(!tracker.has_warnings());
         assert_eq!(tracker.warning_count(), 0);
-        assert_eq!(tracker.files_with_warnings_count(), 0);
+        assert_eq!(tracker.warnings.len(), 0);
     }
 
     #[test]
@@ -202,12 +192,12 @@ mod tests {
 
         tracker.warnings.insert(path1.clone(), warnings.clone());
         tracker.warnings.insert(path2.clone(), warnings);
-        assert_eq!(tracker.files_with_warnings_count(), 2);
+        assert_eq!(tracker.warnings.len(), 2);
 
         tracker.clear_warnings_for_paths([&path1]);
-        assert_eq!(tracker.files_with_warnings_count(), 1);
-        assert!(tracker.get_warnings_for_file(&path1).is_none());
-        assert!(tracker.get_warnings_for_file(&path2).is_some());
+        assert_eq!(tracker.warnings.len(), 1);
+        assert!(!tracker.warnings.contains_key(&path1));
+        assert!(tracker.warnings.contains_key(&path2));
     }
 
     #[test]
@@ -307,7 +297,7 @@ mod tests {
         }
 
         assert_eq!(tracker.warning_count(), 1000);
-        assert_eq!(tracker.files_with_warnings_count(), 100);
+        assert_eq!(tracker.warnings.len(), 100);
     }
 
     #[test]
@@ -330,6 +320,6 @@ mod tests {
             }
         }
 
-        assert!(tracker.files_with_warnings_count() > 0);
+        assert!(!tracker.warnings.is_empty());
     }
 }

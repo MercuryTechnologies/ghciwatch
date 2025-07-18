@@ -53,7 +53,6 @@ pub mod parse;
 use parse::parse_eval_commands;
 use parse::CompilationResult;
 use parse::EvalCommand;
-use parse::GhcDiagnostic;
 use parse::ModulesLoaded;
 use parse::ShowPaths;
 
@@ -835,7 +834,7 @@ impl Ghci {
 
         self.clear_eval_commands_for_paths(paths).await;
         if self.opts.track_warnings {
-            self.clear_warnings_for_paths(paths);
+            self.warning_tracker.clear_warnings_for_paths(paths);
         }
 
         Ok(())
@@ -938,7 +937,7 @@ impl Ghci {
             }
 
             let warning_count = if self.opts.track_warnings {
-                self.warning_count()
+                self.warning_tracker.warning_count()
             } else {
                 0
             };
@@ -995,37 +994,6 @@ impl Ghci {
         }
 
         Ok(())
-    }
-
-    /// Clear warnings for the given file paths.
-    ///
-    /// This is called when files are removed or when we know they should no longer have warnings.
-    #[instrument(skip_all, level = "trace")]
-    fn clear_warnings_for_paths(
-        &mut self,
-        paths: impl IntoIterator<Item = impl Borrow<NormalPath>>,
-    ) {
-        self.warning_tracker.clear_warnings_for_paths(paths);
-    }
-
-    /// Get warnings for a specific file.
-    pub fn get_warnings_for_file(&self, path: &NormalPath) -> Option<&Vec<GhcDiagnostic>> {
-        self.warning_tracker.get_warnings_for_file(path)
-    }
-
-    /// Get all warnings across all files.
-    pub fn get_all_warnings(&self) -> &BTreeMap<NormalPath, Vec<GhcDiagnostic>> {
-        self.warning_tracker.get_all_warnings()
-    }
-
-    /// Get the total number of warnings across all files.
-    pub fn warning_count(&self) -> usize {
-        self.warning_tracker.warning_count()
-    }
-
-    /// Get the number of files with warnings.
-    pub fn files_with_warnings_count(&self) -> usize {
-        self.warning_tracker.files_with_warnings_count()
     }
 
     /// Display tracked warnings excluding files that were compiled in the current cycle.
