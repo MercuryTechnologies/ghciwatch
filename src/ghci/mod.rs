@@ -73,7 +73,6 @@ mod loaded_module;
 use loaded_module::LoadedModule;
 
 mod warning_formatter;
-use warning_formatter::WarningFormatter;
 
 mod warning_tracker;
 use warning_tracker::WarningTracker;
@@ -232,8 +231,6 @@ pub struct Ghci {
     command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
     /// Warning tracker for managing warnings across recompilations.
     warning_tracker: WarningTracker,
-    /// Formatter for applying GHC-style colors to diagnostic messages.
-    warning_formatter: WarningFormatter,
 }
 
 impl Debug for Ghci {
@@ -356,7 +353,6 @@ impl Ghci {
             },
             command_handles,
             warning_tracker: WarningTracker::new(),
-            warning_formatter: WarningFormatter::new(),
         })
     }
 
@@ -1023,7 +1019,7 @@ impl Ghci {
             }
 
             for warning in file_warnings {
-                self.display_single_warning(warning).await;
+                warning.display_colored();
             }
         }
     }
@@ -1037,69 +1033,9 @@ impl Ghci {
 
         for file_warnings in self.warning_tracker.get_all_warnings().values() {
             for warning in file_warnings {
-                self.display_single_warning(warning).await;
+                warning.display_colored();
             }
         }
-    }
-
-    /// Display a single warning with GHC-style formatting and colors.
-    async fn display_single_warning(&self, warning: &parse::GhcDiagnostic) {
-        // Format each part of the warning to match GHC's selective coloring
-        let mut parts = Vec::new();
-
-        // File path (bold, like GHC)
-        match &warning.path {
-            Some(path) => parts.push(format!(
-                "{}",
-                path.if_supports_color(Stdout, |text| text.bold())
-            )),
-            None => parts.push(format!(
-                "{}",
-                "<no location info>".if_supports_color(Stdout, |text| text.bold())
-            )),
-        }
-
-        // Position range (bold, like GHC)
-        if !warning.span.is_zero() {
-            parts.push(format!(
-                ":{}",
-                warning.span.if_supports_color(Stdout, |text| text.bold())
-            ));
-        }
-
-        // Severity with color (this is what GHC colors)
-        let severity_colored = match warning.severity {
-            parse::Severity::Warning => {
-                format!(
-                    ": {}:",
-                    "warning".if_supports_color(Stdout, |text| text.magenta())
-                )
-            }
-            parse::Severity::Error => {
-                format!(
-                    ": {}:",
-                    "error".if_supports_color(Stdout, |text| text.red())
-                )
-            }
-        };
-        parts.push(severity_colored);
-
-        // Message content with GHC-style pattern coloring
-        let colored_message = if warning.message.starts_with('\n') {
-            self.warning_formatter
-                .colorize_message(&warning.message, warning.severity)
-        } else {
-            format!(
-                " {}",
-                self.warning_formatter
-                    .colorize_message(&warning.message, warning.severity)
-            )
-        };
-        parts.push(colored_message);
-
-        // Join all parts and display
-        let formatted = parts.join("");
-        tracing::info!("{}", formatted);
     }
 
     #[instrument(skip(self), level = "trace")]
