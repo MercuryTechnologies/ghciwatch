@@ -29,7 +29,7 @@ pub fn colorize_message(message: &str, severity: Severity) -> String {
 /// - Warning/error flags in brackets (e.g., "[-Wunused-imports]")
 ///
 /// TODO: Connect it to the ANSI colors
-/// that we need to preserve in https://github.com/MercuryTechnologies/ghciwatch/blob/TrackWarnings/src/ghci/parse/ghc_message/mod.rs#L153
+/// that we need to preserve in <https://github.com/MercuryTechnologies/ghciwatch/blob/TrackWarnings/src/ghci/parse/ghc_message/mod.rs#L153>
 fn colorize_line(line: &str, severity: Severity) -> String {
     // Detect different types of lines and apply appropriate coloring
 
