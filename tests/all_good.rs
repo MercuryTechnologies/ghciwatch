@@ -43,3 +43,33 @@ async fn can_detect_compilation_failure() {
         .await
         .unwrap();
 }
+
+/// Test that `ghciwatch` can detect an `*** Exception` diagnostic.
+///
+/// Regression test for DUX-3144.
+#[test]
+async fn can_detect_exception() {
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    session.wait_until_ready().await.expect("ghciwatch loads");
+
+    let module_path = session.path("src/MyModule.hs");
+
+    session
+        .fs()
+        .prepend(&module_path, "{-# OPTIONS_GHC -F -pgmF false #-}\n")
+        .await
+        .unwrap();
+
+    session
+        .wait_for_log(BaseMatcher::compilation_failed())
+        .await
+        .unwrap();
+
+    session
+        .wait_for_log(BaseMatcher::reload_completes().but_not(BaseMatcher::message("All good!")))
+        .await
+        .unwrap();
+}
