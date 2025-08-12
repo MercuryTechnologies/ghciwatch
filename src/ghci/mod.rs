@@ -999,10 +999,6 @@ impl Ghci {
             return;
         }
 
-        if !self.warning_tracker.has_warnings() {
-            return;
-        }
-
         // Create a set of file paths that were compiled in this cycle
         // Use relative paths for comparison since GHC reports relative paths
         let compiled_files: HashSet<_> = log
@@ -1027,10 +1023,7 @@ impl Ghci {
     /// Display all tracked warnings to the user with GHC-matching colors.
     #[instrument(skip_all, level = "trace")]
     async fn display_tracked_warnings(&self) {
-        if !self.warning_tracker.has_warnings() {
-            return;
-        }
-
+        // Single iteration - no need to check has_warnings() first
         for file_warnings in self.warning_tracker.get_all_warnings().values() {
             for warning in file_warnings {
                 warning.display_colored();
