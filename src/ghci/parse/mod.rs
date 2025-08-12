@@ -20,6 +20,8 @@ pub use ghc_message::CompilationSummary;
 pub use ghc_message::GhcDiagnostic;
 pub use ghc_message::GhcMessage;
 pub use ghc_message::ModulesLoaded;
+#[cfg(test)]
+pub use ghc_message::PositionRange;
 pub use ghc_message::Severity;
 pub use module_and_files::CompilingModule;
 pub use show_paths::parse_show_paths;

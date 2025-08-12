@@ -96,6 +96,13 @@ pub struct Opts {
     #[arg(long, hide = true)]
     pub tui: bool,
 
+    /// Track warnings across recompilations.
+    ///
+    /// When enabled, warnings will be preserved in memory even when files are recompiled
+    /// due to dependency changes, helping prevent "ephemeral warnings" from being missed.
+    #[arg(long, env = "GHCIWATCH_TRACK_WARNINGS")]
+    pub track_warnings: bool,
+
     /// Generate Markdown CLI documentation.
     #[cfg(feature = "clap-markdown")]
     #[arg(long, hide = true)]
