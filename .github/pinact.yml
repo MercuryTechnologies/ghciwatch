@@ -1,0 +1,6 @@
+version: 3
+
+# TODO: Remove ignore once we have a global token to check private github actions.
+ignore_actions:
+  - name: MercuryTechnologies/mercury-github-actions/pinact-check
+    ref: "aa5ebb17717cc3279eb4f9f8f7386d746246037f"
