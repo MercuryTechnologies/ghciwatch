@@ -15,7 +15,7 @@ jobs:
     name: Publish user manual to GitHub Pages
     runs-on: ubuntu-latest
     steps:
-      - uses: cachix/install-nix-action@v22
+      - uses: cachix/install-nix-action@6ed004b9ccb68dbc28e7c85bee15fa93dbd214ac # v22
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -23,7 +23,7 @@ jobs:
             accept-flake-config = true
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
       - name: Build user manual
         run: |
@@ -31,6 +31,6 @@ jobs:
           cp -r "$RESULT/share/ghciwatch/html-manual" ghciwatch-user-manual
 
       - name: Publish to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
+        uses: JamesIves/github-pages-deploy-action@6c2d9db40f9296374acc17b90404b6e8864128c8 # v4.7.3
         with:
           folder: ghciwatch-user-manual/

@@ -25,7 +25,7 @@ jobs:
           echo "See: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-your-pull_request-workflow-when-a-pull-request-merges"
 
       - name: Comment on PR with link to this action
-        uses: peter-evans/create-or-update-comment@v2
+        uses: peter-evans/create-or-update-comment@67dcc547d311b736a8e6c5c236542148a47adc3d # v2.1.1
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
@@ -41,9 +41,9 @@ jobs:
       version: ${{ steps.get_cargo_metadata.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-      - uses: cachix/install-nix-action@v22
+      - uses: cachix/install-nix-action@6ed004b9ccb68dbc28e7c85bee15fa93dbd214ac # v22
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -68,10 +68,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
       - name: Install rustup
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4305c38b25d97ef35a8ad1f985ccf2d2242004f2 # stable
         if: runner.os == 'macOS'
         with:
           target: x86_64-apple-darwin, aarch64-apple-darwin
@@ -97,7 +97,7 @@ jobs:
             target/x86_64-apple-darwin/release/ghciwatch \
             target/aarch64-apple-darwin/release/ghciwatch
 
-      - uses: cachix/install-nix-action@v22
+      - uses: cachix/install-nix-action@6ed004b9ccb68dbc28e7c85bee15fa93dbd214ac # v22
         if: runner.os == 'Linux'
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -129,14 +129,14 @@ jobs:
           cp "$RESULT" target/ghciwatch-user-manual.tar.xz
 
       - name: Upload macOS executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: runner.os == 'macOS'
         with:
           name: macos
           path: target/release/ghciwatch-macos
 
       - name: Upload Linux executables
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: runner.os == 'Linux'
         with:
           name: linux
@@ -161,7 +161,7 @@ jobs:
       - version
     steps:
       - name: Tag the release
-        uses: mathieudutour/github-tag-action@v6.0
+        uses: mathieudutour/github-tag-action@d745f2e74aaf1ee82e747b181f7a0967978abee0 # v6.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           commit_sha: ${{ github.event.pull_request.merge_commit_sha }}
@@ -180,11 +180,11 @@ jobs:
         #         path: target/release/ghciwatch-aarch64-linux
         #
         # will be downloaded to `linux/ghciwatch-aarch64-linux`.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
 
       - name: Create release
         id: create_release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -199,7 +199,7 @@ jobs:
             linux/ghciwatch-user-manual.tar.xz
 
       - name: Comment on PR with link to the release
-        uses: peter-evans/create-or-update-comment@v2
+        uses: peter-evans/create-or-update-comment@67dcc547d311b736a8e6c5c236542148a47adc3d # v2.1.1
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
