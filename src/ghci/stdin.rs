@@ -187,6 +187,7 @@ impl GhciStdin {
         stdout.show_targets(show_paths).await
     }
 
+    #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
         self.stdin

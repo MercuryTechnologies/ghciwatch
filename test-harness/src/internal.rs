@@ -186,7 +186,7 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
     })?;
 
     // Now we can persist the tempdir to disk, knowing the test harness will clean it up later.
-    Ok(tempdir.into_path())
+    Ok(tempdir.keep())
 }
 
 /// Set the `GHCIWATCH_PROCESS` for the current thread to the given [`Child`].

@@ -837,6 +837,7 @@ impl Ghci {
         Ok(())
     }
 
+    #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip_all, level = "trace")]
     async fn before_startup_shell(command: &ClonableCommand) -> miette::Result<()> {
         let program = &command.program;

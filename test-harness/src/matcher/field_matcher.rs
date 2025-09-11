@@ -34,7 +34,7 @@ impl FieldMatcher {
     }
 
     /// True if the given field access function yields fields which validate this matcher.
-    pub fn matches<'a>(&'a self, get_field: impl Fn(&'a str) -> Option<&Value>) -> bool {
+    pub fn matches<'a>(&'a self, get_field: impl Fn(&'a str) -> Option<&'a Value>) -> bool {
         for (name, value_regex) in &self.fields {
             let value = get_field(name);
             match value {

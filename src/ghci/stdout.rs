@@ -126,6 +126,7 @@ impl GhciStdout {
         parse_show_targets(search_paths, &lines).wrap_err("Failed to parse `:show targets` output")
     }
 
+    #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip_all, level = "debug")]
     pub async fn quit(&mut self) -> miette::Result<()> {
         let leaving_ghci = AhoCorasick::from_anchored_patterns(["Leaving GHCi."]);

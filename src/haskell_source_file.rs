@@ -27,5 +27,5 @@ pub fn is_haskell_source_file(path: impl AsRef<Utf8Path>) -> bool {
         // `.#`).
         && path
             .file_name()
-            .map_or(false, |name| !name.starts_with('.'))
+            .is_some_and(|name| !name.starts_with('.'))
 }
