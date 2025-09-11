@@ -3,9 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    crane = {
-      url = "github:ipetkov/crane";
-    };
+    crane.url = "github:ipetkov/crane";
     systems.url = "github:nix-systems/default";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
