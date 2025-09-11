@@ -2,7 +2,6 @@
   lib,
   stdenv,
   pkgsStatic,
-  darwin,
   buildPackages,
   haskell,
   haskellPackages,
@@ -57,7 +56,6 @@
       nativeBuildInputs = lib.optionals stdenv.isDarwin [
         # Additional darwin specific inputs can be set here
         pkgsStatic.libiconv
-        darwin.apple_sdk.frameworks.CoreServices
       ];
 
       cargoBuildCommand = "cargoWithProfile build --all";
