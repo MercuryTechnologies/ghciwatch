@@ -34,7 +34,7 @@ async fn can_detect_compilation_failure() {
 
     session
         .fs()
-        .replace(&module_path, "example :: ()", "example :: String")
+        .replace(&module_path, "example :: ()", "example :: Strng")
         .await
         .unwrap();
 

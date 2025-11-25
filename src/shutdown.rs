@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 use tokio::task::AbortHandle;
 use tokio::task::JoinHandle;
 use tracing::instrument;
+use tracing::Instrument;
 
 use crate::format_bulleted_list::format_bulleted_list;
 
@@ -69,14 +70,18 @@ impl ShutdownManager {
     {
         let sender = self.sender.clone();
         let receiver = sender.subscribe();
-        let handle = tokio::task::spawn(make_task(ShutdownHandle {
-            sender,
-            receiver,
-            guard: self.guard_sender.clone(),
-            handles: self.handles.clone(),
-        }));
+        let name = name.into();
+        let handle = tokio::task::spawn(
+            make_task(ShutdownHandle {
+                sender,
+                receiver,
+                guard: self.guard_sender.clone(),
+                handles: self.handles.clone(),
+            })
+            .instrument(tracing::info_span!("{}", name).or_current()),
+        );
         self.handles
-            .push(Task::new(name.into(), handle, self.sender.clone()))
+            .push(Task::new(name, handle, self.sender.clone()))
             .await;
     }
 
@@ -239,9 +244,12 @@ impl ShutdownHandle {
         F: FnOnce(ShutdownHandle) -> Fut,
         Fut: Future<Output = miette::Result<()>> + Send + 'static,
     {
-        let handle = tokio::task::spawn(make_task(self.clone()));
+        let name = name.into();
+        let handle = tokio::task::spawn(
+            make_task(self.clone()).instrument(tracing::info_span!("{}", name).or_current()),
+        );
         self.handles
-            .push(Task::new(name.into(), handle, self.sender.clone()))
+            .push(Task::new(name, handle, self.sender.clone()))
             .await;
     }
 }

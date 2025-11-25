@@ -16,14 +16,19 @@ use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
+use miette::IntoDiagnostic;
+use opentelemetry::trace::SpanContext;
+use opentelemetry::trace::TraceContextExt;
+use tokio::io::DuplexStream;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let mut opts = cli::Opts::parse();
     opts.init()?;
-    let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
+    let mut tracing_guard = TracingOpts::from_cli(&opts).install()?;
 
     #[cfg(feature = "clap-markdown")]
     if opts.generate_markdown_help {
@@ -49,6 +54,32 @@ async fn main() -> miette::Result<()> {
         return Ok(());
     }
 
+    let ret = fuck(opts, tracing_guard.reader.take()).await;
+
+    println!("end ctx: {:#?}", opentelemetry::Context::current());
+
+    dbg!(tracing_guard
+        .otel_tracer_provider
+        .force_flush()
+        .into_diagnostic()?);
+
+    dbg!(tracing_guard
+        .otel_tracer_provider
+        .shutdown()
+        .into_diagnostic()?);
+
+    ret
+}
+
+#[tracing::instrument(skip_all)]
+async fn fuck(opts: cli::Opts, tracing_reader: Option<DuplexStream>) -> miette::Result<()> {
+    println!(
+        "https://ui.honeycomb.io/mercury/environments/dev/datasets/ghciwatch/trace?trace_id={}",
+        opentelemetry::Context::current()
+            .span()
+            .span_context()
+            .trace_id()
+    );
     std::env::set_var("IN_GHCIWATCH", "1");
 
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
@@ -60,7 +91,7 @@ async fn main() -> miette::Result<()> {
 
     if opts.tui {
         let tracing_reader =
-            maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
+            tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
         let ghci_reader =
             maybe_ghci_reader.expect("`tui_reader` must be present if `tui` is given");
         manager

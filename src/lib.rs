@@ -50,6 +50,7 @@ pub use shutdown::ShutdownError;
 pub use shutdown::ShutdownHandle;
 pub use shutdown::ShutdownManager;
 pub use tracing::TracingOpts;
+pub use tracing::TracingGuard;
 pub use tui::run_tui;
 pub use watcher::run_watcher;
 pub use watcher::WatcherOpts;
