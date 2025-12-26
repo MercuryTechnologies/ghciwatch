@@ -142,7 +142,7 @@ pub struct WatchOpts {
     // arguments? I have no clue!
     #[arg(
         long,
-        default_value = "500ms",
+        default_value = "100ms",
         value_name = "DURATION",
         value_parser = crate::clap::DurationValueParser::default(),
     )]
