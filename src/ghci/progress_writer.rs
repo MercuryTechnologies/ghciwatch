@@ -61,9 +61,9 @@ impl ProgressWriter {
     /// terminal and non-progress lines to `pending_output`.
     fn process_complete_lines(&mut self) {
         while let Some(newline_pos) = self.line_buffer.iter().position(|&b| b == b'\n') {
-            let stripped = strip_ansi_escapes::strip_str(
-                String::from_utf8_lossy(&self.line_buffer[..=newline_pos]),
-            );
+            let stripped = strip_ansi_escapes::strip_str(String::from_utf8_lossy(
+                &self.line_buffer[..=newline_pos],
+            ));
 
             if let Some(caps) = self.progress_pattern.captures(&stripped) {
                 let current = &caps[1];
@@ -387,7 +387,9 @@ mod tests {
         let (reader, writer) = tokio::io::duplex(4096);
         let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
 
-        pw.write_all(b"[1 of 3] Compiling Foo ( Foo.hs )").await.unwrap();
+        pw.write_all(b"[1 of 3] Compiling Foo ( Foo.hs )")
+            .await
+            .unwrap();
         pw.write_all(b"\n").await.unwrap();
         pw.write_all(b"other output").await.unwrap();
         pw.write_all(b"\n").await.unwrap();

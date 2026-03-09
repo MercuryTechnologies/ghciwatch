@@ -21,10 +21,7 @@ async fn compilation_emits_progress_fields() {
     // Note: current/total are numeric fields (not strings), so field matchers can't regex-match
     // them. We verify the event exists with the module field instead.
     session
-        .assert_logged_or_wait(
-            BaseMatcher::message("^Compiling$")
-                .with_field("module", "MyLib"),
-        )
+        .assert_logged_or_wait(BaseMatcher::message("^Compiling$").with_field("module", "MyLib"))
         .await
         .expect("Compiling event with module field emitted");
 }

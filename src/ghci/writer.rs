@@ -56,7 +56,10 @@ impl GhciWriter {
     /// Wrap this writer in a progress filter that intercepts `[N of M] Compiling ...` lines
     /// and renders them as a single-line progress indicator.
     pub fn with_progress(self, render_progress: bool) -> Self {
-        Self(Kind::Progress(Box::new(ProgressWriter::new(self, render_progress))))
+        Self(Kind::Progress(Box::new(ProgressWriter::new(
+            self,
+            render_progress,
+        ))))
     }
 }
 

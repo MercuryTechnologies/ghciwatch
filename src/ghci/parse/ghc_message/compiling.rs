@@ -22,19 +22,19 @@ pub struct CompilingProgress {
 pub fn compiling(input: &mut &str) -> PResult<CompilingProgress> {
     let _ = "[".parse_next(input)?;
     let _ = space0.parse_next(input)?;
-    let current: usize = digit1
-        .try_map(str::parse)
-        .parse_next(input)?;
+    let current: usize = digit1.try_map(str::parse).parse_next(input)?;
     let _ = " of ".parse_next(input)?;
-    let total: usize = digit1
-        .try_map(str::parse)
-        .parse_next(input)?;
+    let total: usize = digit1.try_map(str::parse).parse_next(input)?;
     let _ = "]".parse_next(input)?;
     let _ = " Compiling ".parse_next(input)?;
     let module = module_and_files.parse_next(input)?;
     let _ = rest_of_line.parse_next(input)?;
 
-    Ok(CompilingProgress { module, current, total })
+    Ok(CompilingProgress {
+        module,
+        current,
+        total,
+    })
 }
 
 #[cfg(test)]
