@@ -12,6 +12,19 @@
 <img src="https://img.shields.io/badge/User%20manual-mercurytechnologies.github.io%2Fghciwatch-blue" alt="User manual">
 </a>
 
+> [!NOTE]
+> Mercury is migrating our backend build to Buck2 after outgrowing the Cabal build system.
+> As a result, ghciwatch is currently in maintenance mode: we are not developing new features and code review bandwidth is limited.
+>
+> For more information on Mercury's Buck2 migration, see some of the conference talks by our engineers and contractors:
+> - ["Integrating Nix and Buck2 for fun and profit"][nixcon-2024] by Claudio Bley (Tweag) at NixCon 2024 (31 minutes).
+> - ["Remote Execution with Buck2 and Nix"][fosdem-2025] by Claudio Bley (Tweag) at FOSDEM 2025 (20 minutes).
+> - ["Haskell Builds at Scale: Comparing Bazel and Buck2"][bazelcon-2025] by Andreas Herrmann (Tweag) at BazelCon 2025 (32 minutes).
+
+[nixcon-2024]: https://www.youtube.com/watch?v=pDkFk7iggIE
+[fosdem-2025]: https://archive.fosdem.org/2025/schedule/event/fosdem-2025-5710-remote-execution-with-buck2-and-nix/
+[bazelcon-2025]: https://bazelcon2025.sched.com/event/28lOK/haskell-builds-at-scale-comparing-bazel-and-buck2-andreas-herrmann-tweag-by-modus-create
+
 Ghciwatch loads a [GHCi][ghci] session for a Haskell project and reloads it
 when source files change.
 
