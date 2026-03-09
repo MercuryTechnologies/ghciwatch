@@ -86,6 +86,13 @@ pub struct Opts {
     #[arg(long)]
     pub clear: bool,
 
+    /// Disable the single-line compilation progress indicator.
+    ///
+    /// By default, when stdout is a terminal, `ghciwatch` replaces `[N of M] Compiling ...`
+    /// lines with a single updating progress line. This flag disables that behavior.
+    #[arg(long)]
+    pub no_progress: bool,
+
     /// Don't interrupt reloads when files change.
     ///
     /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.

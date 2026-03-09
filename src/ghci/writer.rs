@@ -14,6 +14,8 @@ use tokio_util::compat::Compat;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
+use super::progress_writer::ProgressWriter;
+
 /// A dynamically reconfigurable sink for `ghci` process output. Built for use in `GhciOpts`, but
 /// usable as a general purpose clonable [`AsyncWrite`]r.
 #[derive(Debug)]
@@ -25,6 +27,7 @@ enum Kind {
     Stderr(Stderr),
     DuplexStream(Compat<Arc<Mutex<Compat<DuplexStream>>>>),
     Sink(Sink),
+    Progress(Box<ProgressWriter>),
 }
 
 impl GhciWriter {
@@ -49,6 +52,12 @@ impl GhciWriter {
     pub fn sink() -> Self {
         Self(Kind::Sink(tokio::io::sink()))
     }
+
+    /// Wrap this writer in a progress filter that intercepts `[N of M] Compiling ...` lines
+    /// and renders them as a single-line progress indicator.
+    pub fn with_progress(self, is_tty: bool) -> Self {
+        Self(Kind::Progress(Box::new(ProgressWriter::new(self, is_tty))))
+    }
 }
 
 impl AsyncWrite for GhciWriter {
@@ -62,6 +71,7 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_write(cx, buf),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_write(cx, buf),
             Kind::Sink(ref mut x) => Pin::new(x).poll_write(cx, buf),
+            Kind::Progress(ref mut x) => Pin::new(x).poll_write(cx, buf),
         }
     }
 
@@ -71,6 +81,7 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_flush(cx),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_flush(cx),
             Kind::Sink(ref mut x) => Pin::new(x).poll_flush(cx),
+            Kind::Progress(ref mut x) => Pin::new(x).poll_flush(cx),
         }
     }
 
@@ -80,6 +91,7 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_shutdown(cx),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_shutdown(cx),
             Kind::Sink(ref mut x) => Pin::new(x).poll_shutdown(cx),
+            Kind::Progress(ref mut x) => Pin::new(x).poll_shutdown(cx),
         }
     }
 }
@@ -91,6 +103,9 @@ impl Clone for GhciWriter {
             Kind::Stderr(_) => Self::stderr(),
             Kind::DuplexStream(x) => Self(Kind::DuplexStream(x.clone())),
             Kind::Sink(_) => Self::sink(),
+            // Cloning a Progress writer creates a fresh progress filter around a cloned inner.
+            // Fresh state is correct: the clone is for a new reader (e.g. after restart).
+            Kind::Progress(pw) => Self(Kind::Progress(Box::new(pw.clone_fresh()))),
         }
     }
 }

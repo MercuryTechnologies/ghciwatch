@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
@@ -62,6 +63,8 @@ pub use compilation_log::CompilationLog;
 mod writer;
 use crate::buffers::GHCI_BUFFER_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
+
+mod progress_writer;
 
 mod module_set;
 pub use module_set::ModuleSet;
@@ -149,7 +152,14 @@ impl GhciOpts {
             stderr_writer = tui_writer.clone();
             tui_reader = Some(tui_reader_inner);
         } else {
-            stdout_writer = GhciWriter::stdout();
+            let is_tty = std::io::stdout().is_terminal();
+            let use_progress = !opts.no_progress && is_tty;
+
+            stdout_writer = if use_progress {
+                GhciWriter::stdout().with_progress(is_tty)
+            } else {
+                GhciWriter::stdout()
+            };
             stderr_writer = GhciWriter::stderr();
             tui_reader = None;
         }
