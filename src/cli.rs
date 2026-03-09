@@ -15,54 +15,13 @@ use crate::normal_path::NormalPath;
 
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
 /// when source files change.
-///
-/// ## Examples
-///
-/// Load `cabal v2-repl` and watch for changes in `src`:
-///
-/// ```text
-/// ghciwatch
-/// ```
-///
-/// Load a custom GHCi session and watch for changes in multiple locations:
-///
-/// ```text
-/// ghciwatch --command "cabal v2-repl lib:test-dev" \
-///           --watch src --watch test
-/// ```
-///
-/// Run tests after reloads:
-///
-/// ```text
-/// ghciwatch --test-ghci TestMain.testMain \
-///           --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
-/// ```
-///
-/// Use `hpack` to regenerate `.cabal` files:
-///
-/// ```text
-/// ghciwatch --before-startup-shell hpack \
-///           --restart-glob '**/package.yaml'
-/// ```
-///
-/// Also reload the session when `.persistentmodels` change:
-///
-/// ```text
-/// ghciwatch --watch config/modelsFiles \
-///           --reload-glob '**/*.persistentmodels'
-/// ```
-///
-/// Don't reload for `README.md` files:
-///
-/// ```text
-/// ghciwatch --reload-glob '!src/**/README.md'
-/// ```
 #[derive(Debug, Clone, Parser)]
 #[command(
     version,
     author,
     verbatim_doc_comment,
     max_term_width = 100,
+    long_about = include_str!("cli-about.txt"),
     override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
 )]
 pub struct Opts {
