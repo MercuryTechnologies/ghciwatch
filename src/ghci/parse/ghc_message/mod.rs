@@ -202,7 +202,7 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
 mod tests {
     use super::*;
 
-    use crate::ghci::parse::CompilingModule;
+    use crate::ghci::parse::module_and_files::CompilingModule;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 

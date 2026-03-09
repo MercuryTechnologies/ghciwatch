@@ -19,7 +19,7 @@ pub struct ProgressWriter {
     line_buffer: Vec<u8>,
     pending_output: Vec<u8>,
     progress_active: bool,
-    is_tty: bool,
+    render_progress: bool,
     progress_pattern: Regex,
 }
 
@@ -30,22 +30,22 @@ impl std::fmt::Debug for ProgressWriter {
             .field("line_buffer_len", &self.line_buffer.len())
             .field("pending_output_len", &self.pending_output.len())
             .field("progress_active", &self.progress_active)
-            .field("is_tty", &self.is_tty)
+            .field("render_progress", &self.render_progress)
             .finish()
     }
 }
 
 impl ProgressWriter {
-    pub fn new(inner: GhciWriter, is_tty: bool) -> Self {
+    pub fn new(inner: GhciWriter, render_progress: bool) -> Self {
         Self {
             inner,
             line_buffer: Vec::with_capacity(512),
             pending_output: Vec::new(),
             progress_active: false,
-            is_tty,
+            render_progress,
             // See also: the winnow parser in ghci/parse/ghc_message/compiling.rs
             progress_pattern: Regex::new(
-                r"^\[?[ \t]*([0-9]+)[ \t]+of[ \t]+([0-9]+)\][ \t]+Compiling[ \t]+([^ \t]+)",
+                r"^\[[ \t]*([0-9]+)[ \t]+of[ \t]+([0-9]+)\][ \t]+Compiling[ \t]+([^ \t]+)",
             )
             .expect("progress regex is valid"),
         }
@@ -54,20 +54,15 @@ impl ProgressWriter {
     /// Create a fresh copy with the same configuration but empty buffers.
     /// Used when cloning a `GhciWriter` that wraps a `ProgressWriter` (e.g. on session restart).
     pub fn clone_fresh(&self) -> Self {
-        Self::new(self.inner.clone(), self.is_tty)
+        Self::new(self.inner.clone(), self.render_progress)
     }
 
     /// Process complete lines in the line buffer, routing progress lines to the
     /// terminal and non-progress lines to `pending_output`.
     fn process_complete_lines(&mut self) {
-        loop {
-            let newline_pos = match self.line_buffer.iter().position(|&b| b == b'\n') {
-                Some(pos) => pos,
-                None => break,
-            };
-
+        while let Some(newline_pos) = self.line_buffer.iter().position(|&b| b == b'\n') {
             let stripped = strip_ansi_escapes::strip_str(
-                &String::from_utf8_lossy(&self.line_buffer[..=newline_pos]),
+                String::from_utf8_lossy(&self.line_buffer[..=newline_pos]),
             );
 
             if let Some(caps) = self.progress_pattern.captures(&stripped) {
@@ -96,7 +91,7 @@ impl ProgressWriter {
     }
 
     fn render_progress(&mut self, current: &str, total: &str, module: &str) {
-        if !self.is_tty {
+        if !self.render_progress {
             return;
         }
         let line = format!("[{current}/{total}] Compiling {module}");
@@ -108,7 +103,7 @@ impl ProgressWriter {
             let end = line[..max_len]
                 .char_indices()
                 .next_back()
-                .map_or(0, |(i, _)| i);
+                .map_or(0, |(i, c)| i + c.len_utf8());
             &line[..end]
         } else {
             &line
@@ -120,7 +115,7 @@ impl ProgressWriter {
     }
 
     fn clear_progress(&mut self) {
-        if !self.is_tty || !self.progress_active {
+        if !self.render_progress || !self.progress_active {
             return;
         }
         let _ = io::stdout().write_all(b"\r\x1b[2K");
@@ -166,7 +161,7 @@ impl AsyncWrite for ProgressWriter {
             Poll::Ready(Ok(())) => {}
         }
 
-        if !this.is_tty {
+        if !this.render_progress {
             return Pin::new(&mut this.inner).poll_write(cx, buf);
         }
 
