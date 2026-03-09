@@ -41,9 +41,11 @@
     filter = let
       # Keep test project data, needed for the build.
       testDataFilter = path: _type: lib.hasInfix "tests/data" path;
+      # Keep cli-about.txt, included at compile time for --help text.
+      cliAboutFilter = path: _type: lib.hasSuffix "cli-about.txt" path;
     in
       path: type:
-        (testDataFilter path type) || (craneLib.filterCargoSources path type);
+        (testDataFilter path type) || (cliAboutFilter path type) || (craneLib.filterCargoSources path type);
   };
 
   commonArgs' =
