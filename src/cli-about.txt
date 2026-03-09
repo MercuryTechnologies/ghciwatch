@@ -1,0 +1,32 @@
+Ghciwatch loads a GHCi session for a Haskell project and reloads it
+when source files change.
+
+## Examples
+
+Load `cabal v2-repl` and watch for changes in `src`:
+
+    ghciwatch
+
+Load a custom GHCi session and watch for changes in multiple locations:
+
+    ghciwatch --command "cabal v2-repl lib:test-dev" \
+              --watch src --watch test
+
+Run tests after reloads:
+
+    ghciwatch --test-ghci TestMain.testMain \
+              --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
+
+Use `hpack` to regenerate `.cabal` files:
+
+    ghciwatch --before-startup-shell hpack \
+              --restart-glob '**/package.yaml'
+
+Also reload the session when `.persistentmodels` change:
+
+    ghciwatch --watch config/modelsFiles \
+              --reload-glob '**/*.persistentmodels'
+
+Don't reload for `README.md` files:
+
+    ghciwatch --reload-glob '!src/**/README.md'
