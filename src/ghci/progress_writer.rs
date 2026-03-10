@@ -373,6 +373,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn error_between_progress_lines() {
+        let (reader, writer) = tokio::io::duplex(4096);
+        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+
+        pw.write_all(b"[1 of 3] Compiling A ( A.hs )\n")
+            .await
+            .unwrap();
+        pw.write_all(b"src/A.hs:1:1: warning: Missing signature\n")
+            .await
+            .unwrap();
+        pw.write_all(b"[2 of 3] Compiling B ( B.hs )\n")
+            .await
+            .unwrap();
+        pw.write_all(b"Ok, 3 modules loaded.\n").await.unwrap();
+        pw.flush().await.unwrap();
+        drop(pw);
+
+        let mut buf = vec![0u8; 4096];
+        let mut reader = tokio::io::BufReader::new(reader);
+        let n = reader.read(&mut buf).await.unwrap();
+        let output = std::str::from_utf8(&buf[..n]).unwrap();
+        assert!(
+            output.contains("src/A.hs:1:1: warning: Missing signature"),
+            "Warning should pass through, got: {output}"
+        );
+        assert!(
+            output.contains("Ok, 3 modules loaded."),
+            "Summary should pass through, got: {output}"
+        );
+        assert!(
+            !output.contains("[1 of 3]"),
+            "First progress line should be suppressed, got: {output}"
+        );
+        assert!(
+            !output.contains("[2 of 3]"),
+            "Second progress line should be suppressed after error cleared progress, got: {output}"
+        );
+    }
+
+    #[tokio::test]
     async fn incremental_reader_style_writes() {
         // Simulate how IncrementalReader writes: line content then \n separately
         let (reader, writer) = tokio::io::duplex(4096);
