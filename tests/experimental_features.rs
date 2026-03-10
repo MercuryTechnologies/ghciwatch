@@ -35,9 +35,8 @@ async fn experimental_features_emits_warning() {
         .await
         .expect("can run ghciwatch");
 
-    let log_contents = std::fs::read_to_string(&log_path).unwrap_or_else(|e| {
-        panic!("can read log file at {}: {e}", log_path.display())
-    });
+    let log_contents = std::fs::read_to_string(&log_path)
+        .unwrap_or_else(|e| panic!("can read log file at {}: {e}", log_path.display()));
     assert!(
         log_contents.contains("--experimental-features"),
         "warning about experimental features should appear in JSON log"
