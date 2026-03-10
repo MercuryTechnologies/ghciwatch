@@ -227,8 +227,6 @@ pub async fn run_tui(
 
     let mut event_stream = EventStream::new();
 
-    tracing::warn!("`--experimental-features tui` mode is experimental and may contain bugs or change drastically in future releases.");
-
     while !tui.quit {
         tui.render()?;
 

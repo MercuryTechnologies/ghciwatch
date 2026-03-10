@@ -76,6 +76,11 @@ pub struct Opts {
     #[arg(long = "experimental-features", value_name = "FEATURE", hide = true)]
     pub experimental_features: Vec<ExperimentalFeature>,
 
+    /// Deprecated: use `--experimental-features tui` instead.
+    // TODO: Remove after 2026-06-01.
+    #[arg(long, hide = true)]
+    pub tui: bool,
+
     /// Generate Markdown CLI documentation.
     #[cfg(feature = "clap-markdown")]
     #[arg(long, hide = true)]

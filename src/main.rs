@@ -17,6 +17,7 @@ use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
+use miette::miette;
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -24,7 +25,20 @@ async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let mut opts = cli::Opts::parse();
     opts.init()?;
+
+    if opts.tui {
+        return Err(miette!(
+            "`--tui` has been removed. Please use `--experimental-features tui` instead."
+        ));
+    }
+
     let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
+
+    if !opts.experimental_features.is_empty() {
+        tracing::warn!(
+            "`--experimental-features` may contain bugs or change drastically in future releases."
+        );
+    }
 
     #[cfg(feature = "clap-markdown")]
     if opts.generate_markdown_help {
