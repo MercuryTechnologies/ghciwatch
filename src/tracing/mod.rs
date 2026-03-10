@@ -15,6 +15,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
+use crate::cli::ExperimentalFeature;
 use crate::cli::Opts;
 
 /// Options for initializing the [`tracing`] logging framework. This is like a lower-effort builder
@@ -40,7 +41,7 @@ impl<'opts> TracingOpts<'opts> {
             filter_directives: &opts.logging.log_filter,
             trace_spans: &opts.logging.trace_spans,
             json_log_path: opts.logging.log_json.as_deref(),
-            tui: if opts.tui {
+            tui: if opts.has_experimental_feature(ExperimentalFeature::Tui) {
                 Some(tokio::io::duplex(crate::buffers::TRACING_BUFFER_CAPACITY))
             } else {
                 None

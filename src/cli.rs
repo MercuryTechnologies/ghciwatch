@@ -13,6 +13,13 @@ use crate::clonable_command::ClonableCommand;
 use crate::ignore::GlobMatcher;
 use crate::normal_path::NormalPath;
 
+/// An experimental feature that can be enabled with `--experimental-features`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ExperimentalFeature {
+    /// Enable TUI mode.
+    Tui,
+}
+
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
 /// when source files change.
 #[derive(Debug, Clone, Parser)]
@@ -62,7 +69,15 @@ pub struct Opts {
     #[arg(long)]
     pub no_interrupt_reloads: bool,
 
-    /// Enable TUI mode (experimental).
+    /// Enable experimental features. These features are unsupported and may change or be removed
+    /// without notice.
+    ///
+    /// Can be given multiple times.
+    #[arg(long = "experimental-features", value_name = "FEATURE", hide = true)]
+    pub experimental_features: Vec<ExperimentalFeature>,
+
+    /// Deprecated: use `--experimental-features tui` instead.
+    // TODO: Remove after 2026-06-01.
     #[arg(long, hide = true)]
     pub tui: bool,
 
@@ -211,6 +226,11 @@ pub struct LoggingOpts {
 }
 
 impl Opts {
+    /// Check whether a given experimental feature has been enabled.
+    pub fn has_experimental_feature(&self, feature: ExperimentalFeature) -> bool {
+        self.experimental_features.contains(&feature)
+    }
+
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
     pub fn init(&mut self) -> miette::Result<()> {
