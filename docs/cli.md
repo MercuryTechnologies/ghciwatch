@@ -37,13 +37,12 @@ Don't reload for `README.md` files:
 
     ghciwatch --reload-glob '!src/**/README.md'
 
-
 ## Arguments
 <dl>
 
 <dt><a id="FILE", href="#FILE"><code> &lt;FILE&gt;</code></a></dt><dd>
 
-A Haskell source file to load into a GHCi REPL.
+A Haskell source file to load into a `ghci` REPL.
 
 Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
 
@@ -57,9 +56,9 @@ Shortcut for `--command 'ghci PATH'`. Conflicts with `--command`.
 
 <dt><a id="--command" href="#--command"><code>--command &lt;SHELL_COMMAND&gt;</code></a></dt><dd>
 
-A shell command which starts a GHCi REPL, e.g. `ghci` or `cabal v2-repl` or similar.
+A shell command which starts a `ghci` REPL, e.g. `ghci` or `cabal v2-repl` or similar.
 
-This is used to launch the underlying GHCi session that `ghciwatch` controls.
+This is used to launch the underlying `ghci` session that `ghciwatch` controls.
 
 May contain quoted arguments which will be parsed in a `sh`-like manner.
 
@@ -130,7 +129,7 @@ Can be given multiple times.
 
 Shell commands to run before startup
 
-Startup hooks run when GHCi is started (at `ghciwatch` startup and after GHCi restarts).
+Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
 
 Commands starting with `async:` will be run in the background.
 
@@ -143,7 +142,7 @@ Can be given multiple times.
 
 `ghci` commands to run after startup
 
-Startup hooks run when GHCi is started (at `ghciwatch` startup and after GHCi restarts).
+Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
 
 Use `:set args ...` to set command-line arguments for test hooks.
 
@@ -154,7 +153,7 @@ Can be given multiple times.
 
 Shell commands to run after startup
 
-Startup hooks run when GHCi is started (at `ghciwatch` startup and after GHCi restarts).
+Startup hooks run when `ghci` is started (at `ghciwatch` startup and after `ghci` restarts).
 
 Commands starting with `async:` will be run in the background.
 
@@ -205,7 +204,10 @@ Can be given multiple times.
 
 `ghci` commands to run before restart
 
-The GHCi session must be restarted when `.cabal` or `.ghci` files are modified.
+Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
+are removed or renamed.
+
+[1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
 
 Can be given multiple times.
 
@@ -214,7 +216,10 @@ Can be given multiple times.
 
 Shell commands to run before restart
 
-The GHCi session must be restarted when `.cabal` or `.ghci` files are modified.
+Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
+are removed or renamed.
+
+[1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
 
 Commands starting with `async:` will be run in the background.
 
@@ -225,7 +230,10 @@ Can be given multiple times.
 
 `ghci` commands to run after restart
 
-The GHCi session must be restarted when `.cabal` or `.ghci` files are modified.
+Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
+are removed or renamed.
+
+[1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
 
 Can be given multiple times.
 
@@ -234,7 +242,10 @@ Can be given multiple times.
 
 Shell commands to run after restart
 
-The GHCi session must be restarted when `.cabal` or `.ghci` files are modified.
+Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules
+are removed or renamed.
+
+[1]: https://gitlab.haskell.org/ghc/ghc/-/issues/11596
 
 Commands starting with `async:` will be run in the background.
 
@@ -260,7 +271,7 @@ Debounce file events; wait this duration after receiving an event before attempt
 
 Defaults to 0.5 seconds.
 
-  Default value: `100ms`
+  Default value: `500ms`
 
 </dd>
 <dt><a id="--watch" href="#--watch"><code>--watch &lt;PATH&gt;</code></a></dt><dd>
@@ -272,7 +283,7 @@ Directories are watched recursively. Can be given multiple times.
 </dd>
 <dt><a id="--reload-glob" href="#--reload-glob"><code>--reload-glob &lt;RELOAD_GLOBS&gt;</code></a></dt><dd>
 
-Reload the GHCi session when paths matching this glob change.
+Reload the `ghci` session when paths matching this glob change.
 
 By default, only changes to Haskell source files trigger reloads. If you'd like to exclude some files from that, you can add an ignore glob here, like `!src/my-special-dir/**/*.hs`.
 
@@ -285,9 +296,11 @@ Can be given multiple times.
 </dd>
 <dt><a id="--restart-glob" href="#--restart-glob"><code>--restart-glob &lt;RESTART_GLOBS&gt;</code></a></dt><dd>
 
-Restart the GHCi session when paths matching this glob change.
+Restart the `ghci` session when paths matching this glob change.
 
-By default, only changes to `.cabal` or `.ghci` files will trigger restarts.
+By default, only changes to `.cabal` or `.ghci` files or Haskell source files being moved/removed will trigger restarts.
+
+Due to [a `ghci` bug][1], the `ghci` session must be restarted when Haskell modules are removed or renamed.
 
 See `--reload-globs` for more details.
 
