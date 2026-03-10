@@ -4,10 +4,11 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-use regex::Regex;
 use tokio::io::AsyncWrite;
+use winnow::Parser;
 
 use super::writer::GhciWriter;
+use crate::ghci::parse::compiling;
 
 /// Wraps a [`GhciWriter`] and intercepts `[N of M] Compiling Module ...` lines,
 /// rendering them as a single-line progress indicator instead of passing them through.
@@ -20,7 +21,6 @@ pub struct ProgressWriter {
     pending_output: Vec<u8>,
     progress_active: bool,
     render_progress: bool,
-    progress_pattern: Regex,
 }
 
 impl std::fmt::Debug for ProgressWriter {
@@ -43,11 +43,6 @@ impl ProgressWriter {
             pending_output: Vec::new(),
             progress_active: false,
             render_progress,
-            // See also: the winnow parser in ghci/parse/ghc_message/compiling.rs
-            progress_pattern: Regex::new(
-                r"^\[[ \t]*([0-9]+)[ \t]+of[ \t]+([0-9]+)\][ \t]+Compiling[ \t]+([^ \t]+)",
-            )
-            .expect("progress regex is valid"),
         }
     }
 
@@ -65,19 +60,15 @@ impl ProgressWriter {
                 &self.line_buffer[..=newline_pos],
             ));
 
-            if let Some(caps) = self.progress_pattern.captures(&stripped) {
-                let current = &caps[1];
-                let total = &caps[2];
-                let module = &caps[3];
-
+            if let Ok(progress) = compiling.parse(&stripped) {
                 tracing::debug!(
-                    current = current,
-                    total = total,
-                    module = module,
+                    current = progress.current,
+                    total = progress.total,
+                    module = %progress.module.name,
                     "Compilation progress",
                 );
 
-                self.render_progress(current, total, module);
+                self.render_progress(progress.current, progress.total, &progress.module.name);
             } else {
                 if self.progress_active {
                     self.clear_progress();
@@ -90,7 +81,7 @@ impl ProgressWriter {
         }
     }
 
-    fn render_progress(&mut self, current: &str, total: &str, module: &str) {
+    fn render_progress(&mut self, current: usize, total: usize, module: &str) {
         if !self.render_progress {
             return;
         }

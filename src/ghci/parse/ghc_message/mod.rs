@@ -20,7 +20,7 @@ mod path_colon;
 use path_colon::path_colon;
 
 mod compiling;
-use compiling::compiling;
+pub use compiling::compiling;
 pub use compiling::CompilingProgress;
 
 mod message_body;

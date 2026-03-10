@@ -18,7 +18,6 @@ pub struct CompilingProgress {
 }
 
 /// Parse a `[1 of 3] Compiling Foo ( Foo.hs, Foo.o, interpreted )` message.
-/// See also: the regex in `ghci/progress_writer.rs`.
 pub fn compiling(input: &mut &str) -> PResult<CompilingProgress> {
     let _ = "[".parse_next(input)?;
     let _ = space0.parse_next(input)?;
