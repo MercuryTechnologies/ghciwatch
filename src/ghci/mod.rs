@@ -146,6 +146,15 @@ impl GhciOpts {
         let stderr_writer;
         let tui_reader;
 
+        if opts.has_experimental_feature(ExperimentalFeature::Tui)
+            && opts.has_experimental_feature(ExperimentalFeature::Progress)
+        {
+            tracing::warn!(
+                "`--experimental-features tui` and `--experimental-features progress` \
+                 are mutually exclusive; `progress` will be ignored in TUI mode"
+            );
+        }
+
         if opts.has_experimental_feature(ExperimentalFeature::Tui) {
             let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
             let tui_writer = GhciWriter::duplex_stream(tui_writer);
