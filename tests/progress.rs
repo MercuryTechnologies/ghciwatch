@@ -26,14 +26,14 @@ async fn compilation_emits_progress_fields() {
         .expect("Compiling event with module field emitted");
 }
 
-/// Test that --no-progress flag is accepted and compilation still succeeds.
+/// Test that --experimental-features progress is accepted and compilation still succeeds.
 #[test]
-async fn no_progress_flag_works() {
+async fn experimental_progress_flag_works() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .with_arg("--no-progress")
+        .with_args(["--experimental-features", "progress"])
         .start()
         .await
-        .expect("ghciwatch starts with --no-progress");
+        .expect("ghciwatch starts with --experimental-features progress");
     session
         .wait_until_ready()
         .await
@@ -56,9 +56,9 @@ async fn no_progress_flag_works() {
     session
         .wait_until_reload()
         .await
-        .expect("ghciwatch reloads with --no-progress");
+        .expect("ghciwatch reloads with --experimental-features progress");
     session
         .wait_for_log(BaseMatcher::reload_completes())
         .await
-        .expect("reload completes with --no-progress");
+        .expect("reload completes with --experimental-features progress");
 }

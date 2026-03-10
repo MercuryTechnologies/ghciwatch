@@ -153,7 +153,8 @@ impl GhciOpts {
             stderr_writer = tui_writer.clone();
             tui_reader = Some(tui_reader_inner);
         } else {
-            let use_progress = !opts.no_progress && std::io::stdout().is_terminal();
+            let use_progress = opts.has_experimental_feature(ExperimentalFeature::Progress)
+                && std::io::stdout().is_terminal();
 
             stdout_writer = if use_progress {
                 GhciWriter::stdout().with_progress(true)

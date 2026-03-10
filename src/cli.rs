@@ -18,6 +18,8 @@ use crate::normal_path::NormalPath;
 pub enum ExperimentalFeature {
     /// Enable TUI mode.
     Tui,
+    /// Enable single-line compilation progress indicator.
+    Progress,
 }
 
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
@@ -62,13 +64,6 @@ pub struct Opts {
     /// Clear the screen before reloads and restarts.
     #[arg(long)]
     pub clear: bool,
-
-    /// Disable the single-line compilation progress indicator.
-    ///
-    /// By default, when stdout is a terminal, `ghciwatch` replaces `[N of M] Compiling ...`
-    /// lines with a single updating progress line. This flag disables that behavior.
-    #[arg(long)]
-    pub no_progress: bool,
 
     /// Don't interrupt reloads when files change.
     ///

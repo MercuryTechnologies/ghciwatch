@@ -83,13 +83,6 @@ This parses line commands starting with `-- $>` or multiline commands delimited 
 Clear the screen before reloads and restarts
 
 </dd>
-<dt><a id="--no-progress" href="#--no-progress"><code>--no-progress</code></a></dt><dd>
-
-Disable the single-line compilation progress indicator.
-
-By default, when stdout is a terminal, `ghciwatch` replaces `[N of M] Compiling ...` lines with a single updating progress line. This flag disables that behavior.
-
-</dd>
 <dt><a id="--no-interrupt-reloads" href="#--no-interrupt-reloads"><code>--no-interrupt-reloads</code></a></dt><dd>
 
 Don't interrupt reloads when files change.
