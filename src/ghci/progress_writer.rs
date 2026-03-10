@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compiling_lines_pass_through_on_non_tty() {
+    async fn render_disabled_passes_all_lines_through() {
         let (reader, writer) = tokio::io::duplex(4096);
         let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), false);
 
