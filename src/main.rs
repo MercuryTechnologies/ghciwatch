@@ -9,6 +9,7 @@ use std::time::Duration;
 use clap::CommandFactory;
 use clap::Parser;
 use ghciwatch::cli;
+use ghciwatch::cli::ExperimentalFeature;
 use ghciwatch::run_ghci;
 use ghciwatch::run_tui;
 use ghciwatch::run_watcher;
@@ -16,6 +17,7 @@ use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
+use miette::miette;
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -23,7 +25,20 @@ async fn main() -> miette::Result<()> {
     miette::set_panic_hook();
     let mut opts = cli::Opts::parse();
     opts.init()?;
+
+    if opts.tui {
+        return Err(miette!(
+            "`--tui` has been removed. Please use `--experimental-features tui` instead."
+        ));
+    }
+
     let (maybe_tracing_reader, _tracing_guard) = TracingOpts::from_cli(&opts).install()?;
+
+    if !opts.experimental_features.is_empty() {
+        tracing::warn!(
+            "`--experimental-features` may contain bugs or change drastically in future releases."
+        );
+    }
 
     #[cfg(feature = "clap-markdown")]
     if opts.generate_markdown_help {
@@ -58,7 +73,7 @@ async fn main() -> miette::Result<()> {
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
 
-    if opts.tui {
+    if opts.has_experimental_feature(ExperimentalFeature::Tui) {
         let tracing_reader =
             maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
         let ghci_reader =

@@ -35,9 +35,9 @@ fn test_clap_markdown() {
             #[arg(long, alias = "allow-eval")]
             pub enable_eval: bool,
 
-            /// Enable TUI mode (experimental).
-            #[arg(long, hide = true)]
-            pub tui: bool,
+            /// Enable experimental features.
+            #[arg(long = "experimental-features", value_name = "FEATURE", hide = true)]
+            pub experimental_features: Vec<ExperimentalFeature>,
 
             /// Options to modify file watching.
             #[command(flatten)]
@@ -46,6 +46,11 @@ fn test_clap_markdown() {
             /// Options to modify logging and error-handling behavior.
             #[command(flatten)]
             pub logging: LoggingOpts,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+        pub enum ExperimentalFeature {
+            Tui,
         }
 
         /// Options for watching files.

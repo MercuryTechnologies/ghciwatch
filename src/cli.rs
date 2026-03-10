@@ -13,45 +13,22 @@ use crate::clonable_command::ClonableCommand;
 use crate::ignore::GlobMatcher;
 use crate::normal_path::NormalPath;
 
+/// An experimental feature that can be enabled with `--experimental-features`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ExperimentalFeature {
+    /// Enable TUI mode.
+    Tui,
+}
+
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
 /// when source files change.
-///
-/// ## Examples
-///
-/// Load `cabal v2-repl` and watch for changes in `src`:
-///
-///     ghciwatch
-///
-/// Load a custom GHCi session and watch for changes in multiple locations:
-///
-///     ghciwatch --command "cabal v2-repl lib:test-dev" \
-///               --watch src --watch test
-///
-/// Run tests after reloads:
-///
-///     ghciwatch --test-ghci TestMain.testMain \
-///               --after-startup-ghci ':set args "--match=/OnlyRunSomeTests/"'
-///
-/// Use `hpack` to regenerate `.cabal` files:
-///
-///     ghciwatch --before-startup-shell hpack \
-///               --restart-glob '**/package.yaml'
-///
-/// Also reload the session when `.persistentmodels` change:
-///
-///     ghciwatch --watch config/modelsFiles \
-///               --reload-glob '**/*.persistentmodels'
-///
-/// Don't reload for `README.md` files:
-///
-///     ghciwatch --reload-glob '!src/**/README.md'
-#[allow(rustdoc::invalid_rust_codeblocks)]
 #[derive(Debug, Clone, Parser)]
 #[command(
     version,
     author,
     verbatim_doc_comment,
     max_term_width = 100,
+    long_about = include_str!("cli-about.txt"),
     override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
 )]
 pub struct Opts {
@@ -99,7 +76,15 @@ pub struct Opts {
     #[arg(long)]
     pub no_interrupt_reloads: bool,
 
-    /// Enable TUI mode (experimental).
+    /// Enable experimental features. These features are unsupported and may change or be removed
+    /// without notice.
+    ///
+    /// Can be given multiple times.
+    #[arg(long = "experimental-features", value_name = "FEATURE", hide = true)]
+    pub experimental_features: Vec<ExperimentalFeature>,
+
+    /// Deprecated: use `--experimental-features tui` instead.
+    // TODO: Remove after 2026-06-01.
     #[arg(long, hide = true)]
     pub tui: bool,
 
@@ -248,6 +233,11 @@ pub struct LoggingOpts {
 }
 
 impl Opts {
+    /// Check whether a given experimental feature has been enabled.
+    pub fn has_experimental_feature(&self, feature: ExperimentalFeature) -> bool {
+        self.experimental_features.contains(&feature)
+    }
+
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
     pub fn init(&mut self) -> miette::Result<()> {

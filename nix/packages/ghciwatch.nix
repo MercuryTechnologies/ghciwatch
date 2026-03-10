@@ -36,15 +36,19 @@
 
   GHC_VERSIONS = builtins.map (drv: drv.version) ghcPackages;
 
-  src = lib.cleanSourceWith {
-    src = craneLib.path (inputs.self.outPath);
-    filter = let
-      # Keep test project data, needed for the build.
-      testDataFilter = path: _type: lib.hasInfix "tests/data" path;
-    in
-      path: type:
-        (testDataFilter path type) || (craneLib.filterCargoSources path type);
-  };
+  src = let
+    unfilteredRoot = ../..;
+  in
+    lib.fileset.toSource {
+      root = unfilteredRoot;
+      fileset = lib.fileset.unions [
+        (craneLib.fileset.commonCargoSources unfilteredRoot)
+        # Needed for the build (integration test fixtures).
+        (unfilteredRoot + "/tests/data")
+        # Included at compile time for --help text.
+        (unfilteredRoot + "/src/cli-about.txt")
+      ];
+    };
 
   commonArgs' =
     (craneLib.crateNameFromCargoToml {

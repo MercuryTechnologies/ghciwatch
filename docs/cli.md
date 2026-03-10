@@ -37,6 +37,7 @@ Don't reload for `README.md` files:
 
     ghciwatch --reload-glob '!src/**/README.md'
 
+
 ## Arguments
 <dl>
 

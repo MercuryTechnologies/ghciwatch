@@ -74,6 +74,7 @@ use loaded_module::LoadedModule;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
+use crate::cli::ExperimentalFeature;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
@@ -145,7 +146,7 @@ impl GhciOpts {
         let stderr_writer;
         let tui_reader;
 
-        if opts.tui {
+        if opts.has_experimental_feature(ExperimentalFeature::Tui) {
             let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
             let tui_writer = GhciWriter::duplex_stream(tui_writer);
             stdout_writer = tui_writer.clone();
