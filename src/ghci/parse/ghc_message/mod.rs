@@ -248,6 +248,7 @@ mod tests {
                     },
                     current: 1,
                     total: 4,
+                    reason: None,
                 }),
                 GhcMessage::Compiling(CompilingProgress {
                     module: CompilingModule {
@@ -256,6 +257,7 @@ mod tests {
                     },
                     current: 2,
                     total: 4,
+                    reason: None,
                 }),
                 GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
@@ -311,6 +313,7 @@ mod tests {
                     },
                     current: 2,
                     total: 3,
+                    reason: Some("[Source file changed]".into()),
                 }),
                 GhcMessage::Diagnostic(
                     GhcDiagnostic {

@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
@@ -62,6 +63,8 @@ pub use compilation_log::CompilationLog;
 mod writer;
 use crate::buffers::GHCI_BUFFER_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
+
+mod progress_writer;
 
 mod module_set;
 pub use module_set::ModuleSet;
@@ -139,20 +142,50 @@ impl GhciOpts {
             (Some(_), Some(_)) => unreachable!(),
         };
 
+        enum OutputMode {
+            Tui,
+            Progress,
+            Standard,
+        }
+
+        let mode = if opts.has_experimental_feature(ExperimentalFeature::Tui) {
+            if opts.has_experimental_feature(ExperimentalFeature::Progress) {
+                tracing::warn!(
+                    "`--experimental-features tui` and `--experimental-features progress` \
+                     are mutually exclusive; `progress` will be ignored in TUI mode"
+                );
+            }
+            OutputMode::Tui
+        } else if opts.has_experimental_feature(ExperimentalFeature::Progress)
+            && std::io::stdout().is_terminal()
+        {
+            OutputMode::Progress
+        } else {
+            OutputMode::Standard
+        };
+
         let stdout_writer;
         let stderr_writer;
         let tui_reader;
 
-        if opts.has_experimental_feature(ExperimentalFeature::Tui) {
-            let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
-            let tui_writer = GhciWriter::duplex_stream(tui_writer);
-            stdout_writer = tui_writer.clone();
-            stderr_writer = tui_writer.clone();
-            tui_reader = Some(tui_reader_inner);
-        } else {
-            stdout_writer = GhciWriter::stdout();
-            stderr_writer = GhciWriter::stderr();
-            tui_reader = None;
+        match mode {
+            OutputMode::Tui => {
+                let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
+                let tui_writer = GhciWriter::duplex_stream(tui_writer);
+                stdout_writer = tui_writer.clone();
+                stderr_writer = tui_writer.clone();
+                tui_reader = Some(tui_reader_inner);
+            }
+            OutputMode::Progress => {
+                stdout_writer = GhciWriter::stdout().with_progress(true);
+                stderr_writer = GhciWriter::stderr();
+                tui_reader = None;
+            }
+            OutputMode::Standard => {
+                stdout_writer = GhciWriter::stdout();
+                stderr_writer = GhciWriter::stderr();
+                tui_reader = None;
+            }
         }
 
         Ok((

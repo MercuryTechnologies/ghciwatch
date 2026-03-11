@@ -62,7 +62,6 @@ owo-colors = { version = "3.5.0", features = ["supports-colors"] }
 path-absolutize = "3.1.1"
 pathdiff = { version = "0.2.1", features = ["camino"] }
 ratatui = "=0.26.1" # 0.26.2 needs Rust 1.72.
-regex = { version = "1.9.3", default-features = false, features = ["perf", "std"] }
 saturating = "0.1.0"  # Needed until we have Rust 1.74.
 shell-words = "1.1.0"
 strip-ansi-escapes = "0.2.0"
@@ -83,6 +82,7 @@ winnow = "0.5.15"
 test-harness = { path = "test-harness" }
 expect-test = "1.4.0"
 pretty_assertions = "1.2.1"
+regex = "1.9.3"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 cargo-llvm-cov = "0.6.9"
 
