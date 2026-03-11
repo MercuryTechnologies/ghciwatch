@@ -105,7 +105,10 @@ impl ProgressWriter {
             return;
         }
         let line = match &p.reason {
-            Some(r) => format!("[{}/{}] Compiling {} {r}", p.current, p.total, p.module.name),
+            Some(r) => format!(
+                "[{}/{}] Compiling {} {r}",
+                p.current, p.total, p.module.name
+            ),
             None => format!("[{}/{}] Compiling {}", p.current, p.total, p.module.name),
         };
         let width = crossterm::terminal::size()
