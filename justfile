@@ -20,6 +20,11 @@ docs: _docs_cli_md
 serve-docs: _docs_cli_md
     mdbook serve docs
 
+# Check that docs/cli.md is up to date
+check-docs:
+    cargo run --features clap-markdown -- --generate-markdown-help | diff docs/cli.md - \
+        || (echo "\ndocs/cli.md is out of date! Run 'just docs' to regenerate." && exit 1)
+
 # Generate API documentation with rustdoc (like CI)
 api-docs:
     cargo doc --document-private-items --no-deps --workspace
