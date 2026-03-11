@@ -239,6 +239,11 @@ fn progress_renders_in_tty_real_ghc() {
         }
     };
 
+    if Command::new("script").arg("--version").output().is_err() {
+        eprintln!("skipping: `script` binary not found in PATH");
+        return;
+    }
+
     let test_dir = create_test_dir("tty-progress-real-ghc");
     let log_path = test_dir.join("ghciwatch.json");
     let cwd = setup_real_ghc_project(&test_dir);
