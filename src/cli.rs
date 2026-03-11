@@ -18,7 +18,7 @@ use crate::normal_path::NormalPath;
 pub enum ExperimentalFeature {
     /// Enable TUI mode.
     Tui,
-    /// Enable single-line compilation progress indicator.
+    /// Show a single-line compilation progress indicator on TTY stdout.
     Progress,
 }
 

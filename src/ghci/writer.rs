@@ -53,8 +53,8 @@ impl GhciWriter {
         Self(Kind::Sink(tokio::io::sink()))
     }
 
-    /// Wrap this writer in a progress filter that intercepts `[N of M] Compiling ...` lines
-    /// and renders them as a single-line progress indicator.
+    /// Wrap this writer in a [`ProgressWriter`] that intercepts compilation progress lines
+    /// and renders a single-line progress indicator instead.
     pub fn with_progress(self, render_progress: bool) -> Self {
         Self(Kind::Progress(Box::new(ProgressWriter::new(
             self,
@@ -106,8 +106,6 @@ impl Clone for GhciWriter {
             Kind::Stderr(_) => Self::stderr(),
             Kind::DuplexStream(x) => Self(Kind::DuplexStream(x.clone())),
             Kind::Sink(_) => Self::sink(),
-            // Cloning a Progress writer creates a fresh progress filter around a cloned inner.
-            // Fresh state is correct: the clone is for a new reader (e.g. after restart).
             Kind::Progress(pw) => Self(Kind::Progress(Box::new(pw.clone_fresh()))),
         }
     }
