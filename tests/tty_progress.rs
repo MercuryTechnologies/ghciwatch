@@ -262,7 +262,10 @@ fn progress_renders_in_tty_real_ghc() {
         &ghciwatch_cmdline,
         &test_dir.join("script.out"),
         &cwd,
-        &[("HOME", &test_dir.to_string_lossy()), ("GHC_NO_UNICODE", "1")],
+        &[
+            ("HOME", &test_dir.to_string_lossy()),
+            ("GHC_NO_UNICODE", "1"),
+        ],
     );
 
     // "Compilation progress" is only emitted when ProgressWriter is active (PTY).

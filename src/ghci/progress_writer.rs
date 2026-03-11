@@ -377,9 +377,18 @@ mod tests {
         assert_eq!(&buf[..n], b"Ok, 5 modules loaded.\n");
 
         let ansi = progress_out.contents_str();
-        assert!(ansi.contains("[1/5] Compiling A"), "first progress rendered");
-        assert!(ansi.contains("[2/5] Compiling B"), "second progress rendered");
-        assert!(ansi.contains("[3/5] Compiling C"), "third progress rendered");
+        assert!(
+            ansi.contains("[1/5] Compiling A"),
+            "first progress rendered"
+        );
+        assert!(
+            ansi.contains("[2/5] Compiling B"),
+            "second progress rendered"
+        );
+        assert!(
+            ansi.contains("[3/5] Compiling C"),
+            "third progress rendered"
+        );
     }
 
     #[tokio::test]
