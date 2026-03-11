@@ -11,7 +11,6 @@
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-
 // This is a false lint triggered due to expect_test generated code.
 #![allow(clippy::needless_raw_string_hashes)]
 
