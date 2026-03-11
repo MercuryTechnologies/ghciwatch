@@ -22,8 +22,14 @@ impl Extend<GhcMessage> for CompilationLog {
     fn extend<T: IntoIterator<Item = GhcMessage>>(&mut self, iter: T) {
         for message in iter {
             match message {
-                GhcMessage::Compiling(module) => {
-                    tracing::debug!(module = %module.name, path = %module.path, "Compiling");
+                GhcMessage::Compiling(progress) => {
+                    tracing::debug!(
+                        module = %progress.module.name,
+                        path = %progress.module.path,
+                        current = progress.current,
+                        total = progress.total,
+                        "Compiling",
+                    );
                 }
                 GhcMessage::Diagnostic(diagnostic) => {
                     if let GhcDiagnostic {

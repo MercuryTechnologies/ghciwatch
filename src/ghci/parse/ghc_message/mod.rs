@@ -20,7 +20,8 @@ mod path_colon;
 use path_colon::path_colon;
 
 mod compiling;
-use compiling::compiling;
+pub use compiling::compiling;
+pub use compiling::CompilingProgress;
 
 mod message_body;
 
@@ -45,19 +46,18 @@ mod no_location_info_diagnostic;
 use no_location_info_diagnostic::no_location_info_diagnostic;
 
 use super::rest_of_line;
-use super::CompilingModule;
 
 /// A message printed by GHC or GHCi while compiling.
 ///
 /// These include progress updates on compilation, errors and warnings, or GHCi messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GhcMessage {
-    /// A module being compiled.
+    /// A module being compiled, with progress information.
     ///
     /// ```text
     /// [1 of 2] Compiling Foo ( Foo.hs, interpreted )
     /// ```
-    Compiling(CompilingModule),
+    Compiling(CompilingProgress),
     /// An error or warning diagnostic message.
     ///
     /// ```text
@@ -202,6 +202,7 @@ fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {
 mod tests {
     use super::*;
 
+    use crate::ghci::parse::module_and_files::CompilingModule;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
@@ -240,13 +241,21 @@ mod tests {
                 GhcMessage::LoadConfig {
                     path: "/Users/wiggles/.ghci".into()
                 },
-                GhcMessage::Compiling(CompilingModule {
-                    name: "MyLib".into(),
-                    path: "src/MyLib.hs".into(),
+                GhcMessage::Compiling(CompilingProgress {
+                    module: CompilingModule {
+                        name: "MyLib".into(),
+                        path: "src/MyLib.hs".into(),
+                    },
+                    current: 1,
+                    total: 4,
                 }),
-                GhcMessage::Compiling(CompilingModule {
-                    name: "MyModule".into(),
-                    path: "src/MyModule.hs".into(),
+                GhcMessage::Compiling(CompilingProgress {
+                    module: CompilingModule {
+                        name: "MyModule".into(),
+                        path: "src/MyModule.hs".into(),
+                    },
+                    current: 2,
+                    total: 4,
                 }),
                 GhcMessage::Diagnostic(GhcDiagnostic {
                     severity: Severity::Error,
@@ -295,12 +304,14 @@ mod tests {
             ))
             .unwrap(),
             vec![
-                GhcMessage::Compiling(
-                    CompilingModule {
+                GhcMessage::Compiling(CompilingProgress {
+                    module: CompilingModule {
                         name: "MyModule".into(),
                         path: "src/MyModule.hs".into(),
                     },
-                ),
+                    current: 2,
+                    total: 3,
+                }),
                 GhcMessage::Diagnostic(
                     GhcDiagnostic {
                         severity: Severity::Error,
