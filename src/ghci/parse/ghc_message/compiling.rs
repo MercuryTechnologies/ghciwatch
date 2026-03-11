@@ -31,12 +31,8 @@ pub fn compiling(input: &mut &str) -> PResult<CompilingProgress> {
     let module = module_and_files.parse_next(input)?;
     let remainder = rest_of_line.parse_next(input)?;
     let reason = {
-        let trimmed = remainder.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_owned())
-        }
+        let t = remainder.trim();
+        (!t.is_empty()).then(|| t.to_owned())
     };
 
     Ok(CompilingProgress {

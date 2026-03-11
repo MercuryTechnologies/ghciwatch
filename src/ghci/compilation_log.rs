@@ -28,6 +28,7 @@ impl Extend<GhcMessage> for CompilationLog {
                         path = %progress.module.path,
                         current = progress.current,
                         total = progress.total,
+                        reason = progress.reason.as_deref().unwrap_or(""),
                         "Compiling",
                     );
                 }

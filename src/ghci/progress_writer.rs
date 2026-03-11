@@ -14,6 +14,7 @@ use winnow::Parser;
 
 use super::writer::GhciWriter;
 use crate::ghci::parse::compiling;
+use crate::ghci::parse::CompilingProgress;
 
 /// Equivalent to `s[..s.floor_char_boundary(max_cols)]` (stable in Rust 1.82).
 fn truncate_to_terminal_width(s: &str, max_cols: usize) -> &str {
@@ -86,12 +87,7 @@ impl ProgressWriter {
                     "Compilation progress",
                 );
 
-                self.render_progress(
-                    progress.current,
-                    progress.total,
-                    &progress.module.name,
-                    progress.reason.as_deref(),
-                );
+                self.render_progress(&progress);
             } else {
                 if self.progress_active {
                     self.clear_progress();
@@ -104,19 +100,13 @@ impl ProgressWriter {
         }
     }
 
-    fn render_progress(
-        &mut self,
-        current: usize,
-        total: usize,
-        module: &str,
-        reason: Option<&str>,
-    ) {
+    fn render_progress(&mut self, p: &CompilingProgress) {
         if !self.render_progress {
             return;
         }
-        let line = match reason {
-            Some(r) => format!("[{current}/{total}] Compiling {module} {r}"),
-            None => format!("[{current}/{total}] Compiling {module}"),
+        let line = match &p.reason {
+            Some(r) => format!("[{}/{}] Compiling {} {r}", p.current, p.total, p.module.name),
+            None => format!("[{}/{}] Compiling {}", p.current, p.total, p.module.name),
         };
         let width = crossterm::terminal::size()
             .map(|(w, _)| w as usize)

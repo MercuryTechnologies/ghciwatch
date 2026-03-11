@@ -15,6 +15,7 @@ use module_and_files::module_and_files;
 pub use eval::parse_eval_commands;
 pub use eval::EvalCommand;
 pub use ghc_message::compiling;
+pub use ghc_message::CompilingProgress;
 pub use ghc_message::parse_ghc_messages;
 pub use ghc_message::CompilationResult;
 pub use ghc_message::CompilationSummary;
