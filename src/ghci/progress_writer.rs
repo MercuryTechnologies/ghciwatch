@@ -4,6 +4,10 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
+use crossterm::cursor::MoveToColumn;
+use crossterm::terminal::Clear;
+use crossterm::terminal::ClearType;
+use crossterm::QueueableCommand;
 use tokio::io::AsyncWrite;
 use winnow::Parser;
 
@@ -99,9 +103,11 @@ impl ProgressWriter {
         } else {
             &line
         };
-        let _ = io::stdout().write_all(b"\r\x1b[2K");
-        let _ = io::stdout().write_all(truncated.as_bytes());
-        let _ = io::stdout().flush();
+        let mut stdout = io::stdout();
+        let _ = stdout.queue(MoveToColumn(0));
+        let _ = stdout.queue(Clear(ClearType::CurrentLine));
+        let _ = stdout.write_all(truncated.as_bytes());
+        let _ = stdout.flush();
         self.progress_active = true;
     }
 
@@ -109,8 +115,10 @@ impl ProgressWriter {
         if !self.render_progress || !self.progress_active {
             return;
         }
-        let _ = io::stdout().write_all(b"\r\x1b[2K");
-        let _ = io::stdout().flush();
+        let mut stdout = io::stdout();
+        let _ = stdout.queue(MoveToColumn(0));
+        let _ = stdout.queue(Clear(ClearType::CurrentLine));
+        let _ = stdout.flush();
         self.progress_active = false;
     }
 
@@ -199,6 +207,7 @@ impl AsyncWrite for ProgressWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
 
@@ -356,20 +365,14 @@ mod tests {
         let mut buf = vec![0u8; 4096];
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
-        let output = &buf[..n];
-        let output_str = std::str::from_utf8(output).unwrap();
-        assert!(
-            output_str.contains("src/MyModule.hs:4:11: error:"),
-            "Error line should pass through, got: {output_str}"
-        );
-        assert!(
-            output_str.contains("Failed, one module loaded."),
-            "Summary should pass through, got: {output_str}"
-        );
-        assert!(
-            !output_str.contains("[1 of 2]"),
-            "Progress lines should not pass through, got: {output_str}"
-        );
+        let output = std::str::from_utf8(&buf[..n]).unwrap();
+        expect_test::expect![[r#"
+
+            src/MyModule.hs:4:11: error:
+                Type mismatch
+            Failed, one module loaded.
+        "#]]
+        .assert_eq(output);
     }
 
     #[tokio::test]
@@ -394,22 +397,11 @@ mod tests {
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
         let output = std::str::from_utf8(&buf[..n]).unwrap();
-        assert!(
-            output.contains("src/A.hs:1:1: warning: Missing signature"),
-            "Warning should pass through, got: {output}"
-        );
-        assert!(
-            output.contains("Ok, 3 modules loaded."),
-            "Summary should pass through, got: {output}"
-        );
-        assert!(
-            !output.contains("[1 of 3]"),
-            "First progress line should be suppressed, got: {output}"
-        );
-        assert!(
-            !output.contains("[2 of 3]"),
-            "Second progress line should be suppressed after error cleared progress, got: {output}"
-        );
+        expect_test::expect![[r#"
+            src/A.hs:1:1: warning: Missing signature
+            Ok, 3 modules loaded.
+        "#]]
+        .assert_eq(output);
     }
 
     #[tokio::test]
