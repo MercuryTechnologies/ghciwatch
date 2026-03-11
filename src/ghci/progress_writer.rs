@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io;
 use std::io::Write;
 use std::pin::Pin;
@@ -22,7 +23,7 @@ use crate::ghci::parse::compiling;
 pub struct ProgressWriter {
     inner: GhciWriter,
     line_buffer: Vec<u8>,
-    pending_output: Vec<u8>,
+    pending_output: VecDeque<u8>,
     progress_active: bool,
     render_progress: bool,
 }
@@ -44,7 +45,7 @@ impl ProgressWriter {
         Self {
             inner,
             line_buffer: Vec::with_capacity(512),
-            pending_output: Vec::new(),
+            pending_output: VecDeque::new(),
             progress_active: false,
             render_progress,
         }
@@ -78,7 +79,7 @@ impl ProgressWriter {
                     self.clear_progress();
                 }
                 self.pending_output
-                    .extend_from_slice(&self.line_buffer[..=newline_pos]);
+                    .extend(&self.line_buffer[..=newline_pos]);
             }
 
             self.line_buffer.drain(..=newline_pos);
@@ -127,7 +128,11 @@ impl ProgressWriter {
     /// is not ready, or an error.
     fn flush_pending(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         while !self.pending_output.is_empty() {
-            match Pin::new(&mut self.inner).poll_write(cx, &self.pending_output) {
+            let result = {
+                let (buf, _) = self.pending_output.as_slices();
+                Pin::new(&mut self.inner).poll_write(cx, buf)
+            };
+            match result {
                 Poll::Ready(Ok(0)) => {
                     return Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::WriteZero,
@@ -191,7 +196,7 @@ impl AsyncWrite for ProgressWriter {
 
         // Flush any remaining buffered content as-is (partial lines).
         if !this.line_buffer.is_empty() {
-            this.pending_output.append(&mut this.line_buffer);
+            this.pending_output.extend(this.line_buffer.drain(..));
         }
 
         match this.flush_pending(cx) {
