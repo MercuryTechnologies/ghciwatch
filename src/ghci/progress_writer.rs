@@ -15,6 +15,18 @@ use winnow::Parser;
 use super::writer::GhciWriter;
 use crate::ghci::parse::compiling;
 
+/// Equivalent to `s[..s.floor_char_boundary(max_cols)]` (stable in Rust 1.82).
+fn truncate_to_terminal_width(s: &str, max_cols: usize) -> &str {
+    if s.len() <= max_cols {
+        return s;
+    }
+    let mut end = max_cols;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Wraps a [`GhciWriter`] and intercepts `[N of M] Compiling Module ...` lines,
 /// rendering them as a single-line progress indicator instead of passing them through.
 ///
@@ -94,16 +106,7 @@ impl ProgressWriter {
         let width = crossterm::terminal::size()
             .map(|(w, _)| w as usize)
             .unwrap_or(80);
-        let max_len = width.saturating_sub(1);
-        let truncated = if line.len() > max_len {
-            let end = line[..max_len]
-                .char_indices()
-                .next_back()
-                .map_or(0, |(i, c)| i + c.len_utf8());
-            &line[..end]
-        } else {
-            &line
-        };
+        let truncated = truncate_to_terminal_width(&line, width.saturating_sub(1));
         let mut stdout = io::stdout();
         let _ = stdout.queue(MoveToColumn(0));
         let _ = stdout.queue(Clear(ClearType::CurrentLine));
