@@ -57,4 +57,13 @@ pub use watcher::WatcherOpts;
 #[cfg(test)]
 mod fake_reader;
 
+// TODO: Remove — deliberate test failure for CI color testing
+#[cfg(test)]
+mod ci_color_test {
+    #[test]
+    fn deliberate_failure() {
+        assert_eq!(1, 2, "this fails on purpose to test CI colors");
+    }
+}
+
 pub(crate) use command_ext::CommandExt;

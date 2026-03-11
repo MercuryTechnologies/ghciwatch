@@ -64,9 +64,16 @@ async fn main() -> miette::Result<()> {
         return Ok(());
     }
 
+    // TODO: Remove — deliberate clippy violation for CI color testing
+    let items = vec![1, 2, 3];
+    if items.len() > 0 {
+        tracing::trace!("items present");
+    }
+
     std::env::set_var("IN_GHCIWATCH", "1");
 
-    let (ghci_sender, ghci_receiver) = mpsc::channel(32);
+    // TODO: Remove — deliberate fmt violation for CI color testing
+    let   (ghci_sender,   ghci_receiver)   =   mpsc::channel(32);
 
     let (ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts)?;
     let watcher_opts = WatcherOpts::from_cli(&opts);
