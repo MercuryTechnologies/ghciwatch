@@ -262,6 +262,20 @@
               cargo-nextest
             ];
         });
+    ghciwatch-cli-docs = stdenv.mkDerivation {
+      name = "ghciwatch-cli-docs-check";
+      phases = ["checkPhase" "installPhase"];
+      doCheck = true;
+      checkPhase = ''
+        if ! diff -u ${inputs.self}/docs/cli.md ${cli-markdown}/share/ghciwatch/cli.md; then
+          echo ""
+          echo "docs/cli.md is out of date!"
+          echo "Run 'just docs' to regenerate it."
+          exit 1
+        fi
+      '';
+      installPhase = "touch $out";
+    };
   };
 
   devShell = craneLib.devShell {
