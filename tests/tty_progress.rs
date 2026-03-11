@@ -69,10 +69,25 @@ fn project_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/simple")
 }
 
-fn test_dir(test_name: &str) -> PathBuf {
+fn create_test_dir(test_name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(test_name);
     std::fs::create_dir_all(&dir).expect("can create test dir");
     dir
+}
+
+/// Build a ghciwatch `Command` in progress mode using a fake GHCi script.
+/// Covers the common case; tests that need different args (e.g. `--log-filter warn`,
+/// `stty` wrapper) build their own command.
+fn ghciwatch_cmd(fake_ghci: &Path, log_path: &Path) -> Command {
+    let mut cmd = Command::new(ghciwatch_bin());
+    cmd.args(["--experimental-features", "progress"])
+        .args(["--command", &format!("sh {}", fake_ghci.display())])
+        .args(["--watch", "src"])
+        .arg("--log-json")
+        .arg(log_path)
+        .args(["--log-filter", "ghciwatch=debug"])
+        .current_dir(project_dir());
+    cmd
 }
 
 /// Spawn a command inside a PTY allocated by the `script` utility.
@@ -140,21 +155,12 @@ fn poll_log_for(path: &Path, needle: &str, timeout: Duration) -> bool {
 /// and that the progress indicator text appears on the terminal.
 #[test]
 fn progress_renders_in_tty() {
-    let test_dir = test_dir("tty-progress-renders");
+    let test_dir = create_test_dir("tty-progress-renders");
     let log_path = test_dir.join("ghciwatch.json");
     let fake = write_fake_ghci(&test_dir, MODULES_OK);
-    let fake_ghci_cmd = format!("sh {}", fake.display());
 
-    let mut cmd = Command::new(ghciwatch_bin());
-    cmd.args(["--experimental-features", "progress"])
-        .args(["--command", &fake_ghci_cmd])
-        .args(["--watch", "src"])
-        .arg("--log-json")
-        .arg(&log_path)
-        .args(["--log-filter", "ghciwatch=debug"])
-        .current_dir(project_dir());
-
-    let mut session = Session::spawn(cmd).expect("can spawn ghciwatch in PTY");
+    let mut session =
+        Session::spawn(ghciwatch_cmd(&fake, &log_path)).expect("can spawn ghciwatch in PTY");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
 
     // Regex matches through surrounding ANSI escape sequences (\r\x1b[2K).
@@ -184,19 +190,11 @@ fn progress_renders_in_tty() {
 /// Spawns ghciwatch with piped (non-PTY) stdio and checks the JSON log.
 #[test]
 fn progress_falls_back_without_tty() {
-    let test_dir = test_dir("tty-progress-fallback");
+    let test_dir = create_test_dir("tty-progress-fallback");
     let log_path = test_dir.join("ghciwatch.json");
     let fake = write_fake_ghci(&test_dir, MODULES_OK);
-    let fake_ghci_cmd = format!("sh {}", fake.display());
 
-    let mut child = Command::new(ghciwatch_bin())
-        .args(["--experimental-features", "progress"])
-        .args(["--command", &fake_ghci_cmd])
-        .args(["--watch", "src"])
-        .arg("--log-json")
-        .arg(&log_path)
-        .args(["--log-filter", "ghciwatch=debug"])
-        .current_dir(project_dir())
+    let mut child = ghciwatch_cmd(&fake, &log_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -241,7 +239,7 @@ fn progress_renders_in_tty_real_ghc() {
         }
     };
 
-    let test_dir = test_dir("tty-progress-real-ghc");
+    let test_dir = create_test_dir("tty-progress-real-ghc");
     let log_path = test_dir.join("ghciwatch.json");
     let cwd = setup_real_ghc_project(&test_dir);
     let repl_command = format!("make ghci GHC=ghc-{ghc_version}");
@@ -288,7 +286,7 @@ fn progress_renders_in_tty_real_ghc() {
 /// emits `\r\x1b[2K` to erase the indicator, then forwards the error text.
 #[test]
 fn progress_clears_before_error() {
-    let test_dir = test_dir("tty-progress-clears-error");
+    let test_dir = create_test_dir("tty-progress-clears-error");
     let log_path = test_dir.join("ghciwatch.json");
 
     let fake = write_fake_ghci(
@@ -301,18 +299,9 @@ fn progress_clears_before_error() {
             echo "Failed, one module loaded."
 "#,
     );
-    let fake_ghci_cmd = format!("sh {}", fake.display());
 
-    let mut cmd = Command::new(ghciwatch_bin());
-    cmd.args(["--experimental-features", "progress"])
-        .args(["--command", &fake_ghci_cmd])
-        .args(["--watch", "src"])
-        .arg("--log-json")
-        .arg(&log_path)
-        .args(["--log-filter", "ghciwatch=debug"])
-        .current_dir(project_dir());
-
-    let mut session = Session::spawn(cmd).expect("can spawn ghciwatch in PTY");
+    let mut session =
+        Session::spawn(ghciwatch_cmd(&fake, &log_path)).expect("can spawn ghciwatch in PTY");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
 
     session
@@ -337,7 +326,7 @@ fn progress_clears_before_error() {
 /// checks that a long module name is cut to fit.
 #[test]
 fn progress_truncates_to_terminal_width() {
-    let test_dir = test_dir("tty-progress-truncation");
+    let test_dir = create_test_dir("tty-progress-truncation");
     let log_path = test_dir.join("ghciwatch.json");
 
     let fake = write_fake_ghci(
