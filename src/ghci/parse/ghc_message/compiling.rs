@@ -15,6 +15,8 @@ pub struct CompilingProgress {
     pub current: usize,
     /// Total modules in the compilation batch.
     pub total: usize,
+    /// Optional recompilation reason, e.g. `[Source file changed]`.
+    pub reason: Option<String>,
 }
 
 /// Parse a `[1 of 3] Compiling Foo ( Foo.hs, Foo.o, interpreted )` message.
@@ -27,12 +29,21 @@ pub fn compiling(input: &mut &str) -> PResult<CompilingProgress> {
     let _ = "]".parse_next(input)?;
     let _ = " Compiling ".parse_next(input)?;
     let module = module_and_files.parse_next(input)?;
-    let _ = rest_of_line.parse_next(input)?;
+    let remainder = rest_of_line.parse_next(input)?;
+    let reason = {
+        let trimmed = remainder.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    };
 
     Ok(CompilingProgress {
         module,
         current,
         total,
+        reason,
     })
 }
 
@@ -57,6 +68,7 @@ mod tests {
                 },
                 current: 1,
                 total: 3,
+                reason: None,
             }
         );
 
@@ -75,6 +87,7 @@ mod tests {
                 },
                 current: 1,
                 total: 6508,
+                reason: Some("[Doggy.Lint package changed]".into()),
             }
         );
 
@@ -89,6 +102,7 @@ mod tests {
                 },
                 current: 1,
                 total: 4,
+                reason: None,
             }
         );
 
@@ -104,6 +118,7 @@ mod tests {
                 },
                 current: 1,
                 total: 1,
+                reason: None,
             }
         );
 

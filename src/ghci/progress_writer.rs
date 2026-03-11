@@ -82,10 +82,16 @@ impl ProgressWriter {
                     current = progress.current,
                     total = progress.total,
                     module = %progress.module.name,
+                    reason = progress.reason.as_deref().unwrap_or(""),
                     "Compilation progress",
                 );
 
-                self.render_progress(progress.current, progress.total, &progress.module.name);
+                self.render_progress(
+                    progress.current,
+                    progress.total,
+                    &progress.module.name,
+                    progress.reason.as_deref(),
+                );
             } else {
                 if self.progress_active {
                     self.clear_progress();
@@ -98,11 +104,20 @@ impl ProgressWriter {
         }
     }
 
-    fn render_progress(&mut self, current: usize, total: usize, module: &str) {
+    fn render_progress(
+        &mut self,
+        current: usize,
+        total: usize,
+        module: &str,
+        reason: Option<&str>,
+    ) {
         if !self.render_progress {
             return;
         }
-        let line = format!("[{current}/{total}] Compiling {module}");
+        let line = match reason {
+            Some(r) => format!("[{current}/{total}] Compiling {module} {r}"),
+            None => format!("[{current}/{total}] Compiling {module}"),
+        };
         let width = crossterm::terminal::size()
             .map(|(w, _)| w as usize)
             .unwrap_or(80);
@@ -335,6 +350,25 @@ mod tests {
 
         let output = flush_read_and_strip(pw, reader).await;
         assert_eq!(output, "[1/6508] Compiling A.Foodone\n");
+    }
+
+    #[tokio::test]
+    async fn recompilation_reason_included() {
+        let (reader, writer) = tokio::io::duplex(4096);
+        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+
+        pw.write_all(
+            b"[2 of 3] Compiling MyModule ( src/MyModule.hs, interpreted ) [Source file changed]\n",
+        )
+        .await
+        .unwrap();
+        pw.write_all(b"done\n").await.unwrap();
+
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(
+            output,
+            "[2/3] Compiling MyModule [Source file changed]done\n"
+        );
     }
 
     #[tokio::test]
