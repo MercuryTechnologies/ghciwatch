@@ -7,8 +7,8 @@ use std::task::Poll;
 use tokio::io::AsyncWrite;
 use winnow::Parser;
 
+use super::parse::compiling;
 use super::writer::GhciWriter;
-use crate::ghci::parse::compiling;
 
 /// Wraps a [`GhciWriter`] and intercepts `[N of M] Compiling Module ...` lines,
 /// rendering them as a single-line progress indicator instead of passing them through.
@@ -21,6 +21,9 @@ pub struct ProgressWriter {
     pending_output: Vec<u8>,
     progress_active: bool,
     render_progress: bool,
+    progress_output: Box<dyn Write + Send + Sync>,
+    /// Fixed terminal width override. When `None`, queries `crossterm::terminal::size()`.
+    terminal_width: Option<u16>,
 }
 
 impl std::fmt::Debug for ProgressWriter {
@@ -31,18 +34,31 @@ impl std::fmt::Debug for ProgressWriter {
             .field("pending_output_len", &self.pending_output.len())
             .field("progress_active", &self.progress_active)
             .field("render_progress", &self.render_progress)
+            .field("terminal_width", &self.terminal_width)
             .finish()
     }
 }
 
 impl ProgressWriter {
     pub fn new(inner: GhciWriter, render_progress: bool) -> Self {
+        Self::with_output(inner, render_progress, Box::new(io::stdout()), None)
+    }
+
+    /// Build a `ProgressWriter` with a custom output sink and optional fixed terminal width.
+    pub fn with_output(
+        inner: GhciWriter,
+        render_progress: bool,
+        progress_output: Box<dyn Write + Send + Sync>,
+        terminal_width: Option<u16>,
+    ) -> Self {
         Self {
             inner,
             line_buffer: Vec::with_capacity(512),
             pending_output: Vec::new(),
             progress_active: false,
             render_progress,
+            progress_output,
+            terminal_width,
         }
     }
 
@@ -86,8 +102,10 @@ impl ProgressWriter {
             return;
         }
         let line = format!("[{current}/{total}] Compiling {module}");
-        let width = crossterm::terminal::size()
-            .map(|(w, _)| w as usize)
+        let width = self
+            .terminal_width
+            .map(|w| w as usize)
+            .or_else(|| crossterm::terminal::size().ok().map(|(w, _)| w as usize))
             .unwrap_or(80);
         let max_len = width.saturating_sub(1);
         let truncated = if line.len() > max_len {
@@ -99,9 +117,10 @@ impl ProgressWriter {
         } else {
             &line
         };
-        let _ = io::stdout().write_all(b"\r\x1b[2K");
-        let _ = io::stdout().write_all(truncated.as_bytes());
-        let _ = io::stdout().flush();
+        let out = &mut self.progress_output;
+        let _ = out.write_all(b"\r\x1b[2K");
+        let _ = out.write_all(truncated.as_bytes());
+        let _ = out.flush();
         self.progress_active = true;
     }
 
@@ -109,8 +128,9 @@ impl ProgressWriter {
         if !self.render_progress || !self.progress_active {
             return;
         }
-        let _ = io::stdout().write_all(b"\r\x1b[2K");
-        let _ = io::stdout().flush();
+        let out = &mut self.progress_output;
+        let _ = out.write_all(b"\r\x1b[2K");
+        let _ = out.flush();
         self.progress_active = false;
     }
 
@@ -198,14 +218,57 @@ impl AsyncWrite for ProgressWriter {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
     use super::*;
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
 
+    /// Shared in-memory buffer that implements `Write` for capturing progress output in tests.
+    #[derive(Clone)]
+    struct TestProgressOutput(Arc<Mutex<Vec<u8>>>);
+
+    impl TestProgressOutput {
+        fn new() -> Self {
+            Self(Arc::new(Mutex::new(Vec::new())))
+        }
+
+        fn contents(&self) -> Vec<u8> {
+            self.0.lock().unwrap().clone()
+        }
+
+        fn contents_str(&self) -> String {
+            String::from_utf8(self.contents()).unwrap()
+        }
+    }
+
+    impl Write for TestProgressOutput {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            io::Write::write(&mut *self.0.lock().unwrap(), buf)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            io::Write::flush(&mut *self.0.lock().unwrap())
+        }
+    }
+
+    const TEST_TERM_WIDTH: u16 = 120;
+
+    fn test_pw(writer: GhciWriter, render: bool) -> (ProgressWriter, TestProgressOutput) {
+        let output = TestProgressOutput::new();
+        let pw = ProgressWriter::with_output(
+            writer,
+            render,
+            Box::new(output.clone()),
+            Some(TEST_TERM_WIDTH),
+        );
+        (pw, output)
+    }
+
     #[tokio::test]
     async fn non_compiling_lines_pass_through() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), false);
+        let (mut pw, _) = test_pw(GhciWriter::duplex_stream(writer), false);
 
         pw.write_all(b"some error output\n").await.unwrap();
         pw.flush().await.unwrap();
@@ -220,7 +283,7 @@ mod tests {
     #[tokio::test]
     async fn compiling_lines_suppressed_on_tty() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, progress_out) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[1 of 3] Compiling Foo ( Foo.hs, interpreted )\n")
             .await
@@ -233,12 +296,22 @@ mod tests {
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"some other output\n");
+
+        let ansi = progress_out.contents_str();
+        assert!(
+            ansi.contains("[1/3] Compiling Foo"),
+            "progress output should contain rendered indicator, got: {ansi:?}"
+        );
+        assert!(
+            ansi.contains("\r\x1b[2K"),
+            "progress output should contain line-clear escape, got: {ansi:?}"
+        );
     }
 
     #[tokio::test]
     async fn render_disabled_passes_all_lines_through() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), false);
+        let (mut pw, progress_out) = test_pw(GhciWriter::duplex_stream(writer), false);
 
         pw.write_all(b"[1 of 3] Compiling Foo ( Foo.hs, interpreted )\n")
             .await
@@ -253,12 +326,17 @@ mod tests {
             &buf[..n],
             b"[1 of 3] Compiling Foo ( Foo.hs, interpreted )\n"
         );
+
+        assert!(
+            progress_out.contents().is_empty(),
+            "no progress output when render is disabled"
+        );
     }
 
     #[tokio::test]
     async fn partial_line_buffering() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, _) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         // Line arrives in two chunks
         pw.write_all(b"[1 of 3] Compil").await.unwrap();
@@ -278,7 +356,7 @@ mod tests {
     #[tokio::test]
     async fn multiple_progress_lines_suppressed() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, progress_out) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[1 of 5] Compiling A ( A.hs )\n")
             .await
@@ -297,12 +375,17 @@ mod tests {
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"Ok, 5 modules loaded.\n");
+
+        let ansi = progress_out.contents_str();
+        assert!(ansi.contains("[1/5] Compiling A"), "first progress rendered");
+        assert!(ansi.contains("[2/5] Compiling B"), "second progress rendered");
+        assert!(ansi.contains("[3/5] Compiling C"), "third progress rendered");
     }
 
     #[tokio::test]
     async fn padded_progress_numbers() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, progress_out) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[   1 of 6508] Compiling A.Foo ( src/A/Foo.hs )\n")
             .await
@@ -315,12 +398,18 @@ mod tests {
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"done\n");
+
+        let ansi = progress_out.contents_str();
+        assert!(
+            ansi.contains("[1/6508] Compiling A.Foo"),
+            "padded numbers should render correctly, got: {ansi:?}"
+        );
     }
 
     #[tokio::test]
     async fn ansi_escapes_in_compiling_lines() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, _) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         // GHC may wrap progress lines in ANSI color codes
         pw.write_all(b"\x1b[0m[1 of 3] Compiling Foo ( Foo.hs, interpreted )\x1b[0m\n")
@@ -339,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn error_after_progress_passes_through() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, progress_out) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[1 of 2] Compiling MyLib ( src/MyLib.hs )\n")
             .await
@@ -370,12 +459,18 @@ mod tests {
             !output_str.contains("[1 of 2]"),
             "Progress lines should not pass through, got: {output_str}"
         );
+
+        let ansi = progress_out.contents_str();
+        assert!(
+            ansi.contains("\r\x1b[2K"),
+            "error after progress should clear the progress line"
+        );
     }
 
     #[tokio::test]
     async fn error_between_progress_lines() {
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, _) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[1 of 3] Compiling A ( A.hs )\n")
             .await
@@ -416,7 +511,7 @@ mod tests {
     async fn incremental_reader_style_writes() {
         // Simulate how IncrementalReader writes: line content then \n separately
         let (reader, writer) = tokio::io::duplex(4096);
-        let mut pw = ProgressWriter::new(GhciWriter::duplex_stream(writer), true);
+        let (mut pw, _) = test_pw(GhciWriter::duplex_stream(writer), true);
 
         pw.write_all(b"[1 of 3] Compiling Foo ( Foo.hs )")
             .await
@@ -431,5 +526,39 @@ mod tests {
         let mut reader = tokio::io::BufReader::new(reader);
         let n = reader.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"other output\n");
+    }
+
+    #[tokio::test]
+    async fn progress_truncated_to_terminal_width() {
+        let (reader, writer) = tokio::io::duplex(4096);
+        let output = TestProgressOutput::new();
+        let mut pw = ProgressWriter::with_output(
+            GhciWriter::duplex_stream(writer),
+            true,
+            Box::new(output.clone()),
+            Some(30),
+        );
+
+        pw.write_all(b"[1 of 5] Compiling VeryLongModuleName.That.Exceeds.Width ( src/VeryLongModuleName/That/Exceeds/Width.hs )\n")
+            .await
+            .unwrap();
+        pw.write_all(b"done\n").await.unwrap();
+        pw.flush().await.unwrap();
+        drop(pw);
+
+        let mut buf = vec![0u8; 4096];
+        let mut reader_stream = tokio::io::BufReader::new(reader);
+        let n = reader_stream.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], b"done\n");
+
+        let ansi = output.contents_str();
+        let rendered_lines: Vec<&str> = ansi.split("\r\x1b[2K").filter(|s| !s.is_empty()).collect();
+        for line in &rendered_lines {
+            assert!(
+                line.len() <= 29,
+                "rendered progress should be truncated to width-1 (29), got len={}: {line:?}",
+                line.len()
+            );
+        }
     }
 }
