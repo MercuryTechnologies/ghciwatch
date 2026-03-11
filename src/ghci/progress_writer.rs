@@ -175,7 +175,7 @@ impl AsyncWrite for ProgressWriter {
         this.line_buffer.extend_from_slice(buf);
         this.process_complete_lines();
 
-        // Best-effort flush of any newly generated pending output.
+        // Best-effort: unwritten data stays in pending_output for the next poll_write or poll_flush.
         let _ = this.flush_pending(cx);
 
         Poll::Ready(Ok(buf.len()))
