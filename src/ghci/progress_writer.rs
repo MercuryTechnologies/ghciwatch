@@ -69,8 +69,8 @@ impl ProgressWriter {
         Self::new(self.inner.clone(), self.render_progress)
     }
 
-    /// Process complete lines in the line buffer, routing progress lines to the
-    /// terminal and non-progress lines to `pending_output`.
+    /// Process complete lines in the line buffer. Progress lines are replaced with
+    /// condensed ANSI progress indicators; all output is routed through `pending_output`.
     fn process_complete_lines(&mut self) {
         while let Some(newline_pos) = self.line_buffer.iter().position(|&b| b == b'\n') {
             let stripped = strip_ansi_escapes::strip_str(String::from_utf8_lossy(
@@ -107,11 +107,13 @@ impl ProgressWriter {
             .map(|(w, _)| w as usize)
             .unwrap_or(80);
         let truncated = truncate_to_terminal_width(&line, width.saturating_sub(1));
-        let mut stdout = io::stdout();
-        let _ = stdout.queue(MoveToColumn(0));
-        let _ = stdout.queue(Clear(ClearType::CurrentLine));
-        let _ = stdout.write_all(truncated.as_bytes());
-        let _ = stdout.flush();
+
+        let mut buf = Vec::with_capacity(truncated.len() + 16);
+        let _ = buf.queue(MoveToColumn(0));
+        let _ = buf.queue(Clear(ClearType::CurrentLine));
+        let _ = buf.write_all(truncated.as_bytes());
+        self.pending_output.extend(buf.iter());
+
         self.progress_active = true;
     }
 
@@ -119,10 +121,10 @@ impl ProgressWriter {
         if !self.render_progress || !self.progress_active {
             return;
         }
-        let mut stdout = io::stdout();
-        let _ = stdout.queue(MoveToColumn(0));
-        let _ = stdout.queue(Clear(ClearType::CurrentLine));
-        let _ = stdout.flush();
+        let mut buf = Vec::with_capacity(16);
+        let _ = buf.queue(MoveToColumn(0));
+        let _ = buf.queue(Clear(ClearType::CurrentLine));
+        self.pending_output.extend(buf.iter());
         self.progress_active = false;
     }
 
@@ -220,6 +222,18 @@ mod tests {
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
 
+    async fn flush_read_and_strip(
+        mut pw: ProgressWriter,
+        reader: tokio::io::DuplexStream,
+    ) -> String {
+        pw.flush().await.unwrap();
+        drop(pw);
+        let mut buf = vec![0u8; 8192];
+        let mut reader = tokio::io::BufReader::new(reader);
+        let n = reader.read(&mut buf).await.unwrap();
+        strip_ansi_escapes::strip_str(String::from_utf8_lossy(&buf[..n]))
+    }
+
     #[tokio::test]
     async fn non_compiling_lines_pass_through() {
         let (reader, writer) = tokio::io::duplex(4096);
@@ -244,13 +258,9 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"some other output\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"some other output\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(output, "[1/3] Compiling Foosome other output\n");
     }
 
     #[tokio::test]
@@ -284,13 +294,9 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"error line\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"error line\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(output, "[1/3] Compiling Fooerror line\n");
     }
 
     #[tokio::test]
@@ -308,13 +314,13 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"Ok, 5 modules loaded.\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"Ok, 5 modules loaded.\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        expect_test::expect![[
+            r#"[1/5] Compiling A[2/5] Compiling B[3/5] Compiling COk, 5 modules loaded.
+"#
+        ]]
+        .assert_eq(&output);
     }
 
     #[tokio::test]
@@ -326,13 +332,9 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"done\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"done\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(output, "[1/6508] Compiling A.Foodone\n");
     }
 
     #[tokio::test]
@@ -345,13 +347,9 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"error output\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"error output\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(output, "[1/3] Compiling Fooerror output\n");
     }
 
     #[tokio::test]
@@ -368,20 +366,14 @@ mod tests {
         let error_msg = b"\nsrc/MyModule.hs:4:11: error:\n    Type mismatch\n";
         pw.write_all(error_msg).await.unwrap();
         pw.write_all(b"Failed, one module loaded.\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        let output = std::str::from_utf8(&buf[..n]).unwrap();
-        expect_test::expect![[r#"
-
-            src/MyModule.hs:4:11: error:
-                Type mismatch
-            Failed, one module loaded.
-        "#]]
-        .assert_eq(output);
+        let output = flush_read_and_strip(pw, reader).await;
+        expect_test::expect![[r#"[1/2] Compiling MyLib[2/2] Compiling MyModule
+src/MyModule.hs:4:11: error:
+    Type mismatch
+Failed, one module loaded.
+"#]]
+        .assert_eq(&output);
     }
 
     #[tokio::test]
@@ -399,18 +391,14 @@ mod tests {
             .await
             .unwrap();
         pw.write_all(b"Ok, 3 modules loaded.\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        let output = std::str::from_utf8(&buf[..n]).unwrap();
-        expect_test::expect![[r#"
-            src/A.hs:1:1: warning: Missing signature
-            Ok, 3 modules loaded.
-        "#]]
-        .assert_eq(output);
+        let output = flush_read_and_strip(pw, reader).await;
+        expect_test::expect![
+            [r#"[1/3] Compiling Asrc/A.hs:1:1: warning: Missing signature
+[2/3] Compiling BOk, 3 modules loaded.
+"#]
+        ]
+        .assert_eq(&output);
     }
 
     #[tokio::test]
@@ -425,12 +413,8 @@ mod tests {
         pw.write_all(b"\n").await.unwrap();
         pw.write_all(b"other output").await.unwrap();
         pw.write_all(b"\n").await.unwrap();
-        pw.flush().await.unwrap();
-        drop(pw);
 
-        let mut buf = vec![0u8; 4096];
-        let mut reader = tokio::io::BufReader::new(reader);
-        let n = reader.read(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], b"other output\n");
+        let output = flush_read_and_strip(pw, reader).await;
+        assert_eq!(output, "[1/3] Compiling Fooother output\n");
     }
 }
