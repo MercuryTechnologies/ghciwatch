@@ -62,6 +62,8 @@
         pkgsStatic.libiconv
       ];
 
+      CARGO_TERM_COLOR = "always";
+
       cargoBuildCommand = "cargoWithProfile build --all";
       cargoCheckExtraArgs = "--all";
       cargoTestExtraArgs = "--all";
