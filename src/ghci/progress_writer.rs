@@ -133,6 +133,7 @@ impl ProgressWriter {
         while !self.pending_output.is_empty() {
             let result = {
                 let (buf, _) = self.pending_output.as_slices();
+                debug_assert!(!buf.is_empty());
                 Pin::new(&mut self.inner).poll_write(cx, buf)
             };
             match result {
