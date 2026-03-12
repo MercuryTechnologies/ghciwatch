@@ -205,10 +205,10 @@ impl GhciOpts {
         ))
     }
 
-    #[instrument(skip_all, level = "trace")]
+    #[instrument(skip_all, level = "debug")]
     fn clear(&self) {
         if self.clear {
-            tracing::trace!("Clearing the screen");
+            tracing::debug!("Clearing the screen");
             if let Err(err) = clearscreen::clear() {
                 tracing::debug!("Failed to clear the terminal: {err}");
             }
@@ -308,7 +308,7 @@ impl Ghci {
                 .id()
                 .ok_or_else(|| miette!("ghci process has no process ID"))? as i32,
         );
-        tracing::debug!(
+        tracing::info!(
             pid = process_id.as_raw(),
             pgid = process_group_id.as_raw(),
             "Started ghci"
@@ -400,6 +400,7 @@ impl Ghci {
 
         self.finish_compilation(start_instant, log, events).await?;
 
+        tracing::info!("Initialization completed");
         Ok(())
     }
 
@@ -506,6 +507,7 @@ impl Ghci {
             self.restart().await?;
             // Once we restart, everything is freshly loaded. We don't need to add or
             // reload any other modules.
+            tracing::info!("Reload completed");
             return Ok(());
         }
 
@@ -554,6 +556,7 @@ impl Ghci {
 
         self.prune_command_handles();
 
+        tracing::info!("Reload completed");
         Ok(())
     }
 

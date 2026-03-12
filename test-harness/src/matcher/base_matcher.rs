@@ -49,13 +49,13 @@ impl BaseMatcher {
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// successfully.
     pub fn compilation_succeeded() -> Self {
-        Self::message("^Compilation succeeded$").in_spans(["reload"])
+        Self::message("^Compilation succeeded$")
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` finishes compilation
     /// unsuccessfully.
     pub fn compilation_failed() -> Self {
-        Self::message("^Compilation failed$").in_spans(["reload"])
+        Self::message("^Compilation failed$")
     }
 
     /// Utility for constructing a matcher that waits until the inner `ghci` compiles the given
@@ -64,7 +64,6 @@ impl BaseMatcher {
     /// The module is given by name (`My.Module`), not path (`src/My/Module.hs`).
     pub fn module_compiling(module: &str) -> Self {
         Self::message("^Compiling$")
-            .in_spans(["reload"])
             .with_field("module", &regex::escape(module))
     }
 
@@ -77,9 +76,7 @@ impl BaseMatcher {
     /// responding to changed file events. This may or may not include reloading, restarting, or
     /// adding modules. (E.g., if all the changed files are ignored, a 'reload' may be a no-op.)
     pub fn reload_completes() -> Self {
-        Self::span_close()
-            .in_leaf_spans(["reload"])
-            .in_module("ghciwatch::ghci")
+        Self::message("^Reload completed$").in_module("ghciwatch::ghci")
     }
 
     /// Utility for constructing a matcher that waits until a module is added to the inner `ghci`
@@ -517,7 +514,7 @@ mod tests {
             .unwrap());
 
         // Span exists, but it's not the leaf span.
-        assert!(BaseMatcher::span_close()
+        assert!(!BaseMatcher::span_close()
             .in_leaf_spans(["error_log_write"])
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),

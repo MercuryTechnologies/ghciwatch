@@ -165,7 +165,7 @@ impl Handles {
         }
 
         if failures.is_empty() {
-            tracing::debug!("All tasks completed successfully");
+            tracing::info!("All tasks completed successfully");
             Ok(())
         } else {
             let failures = format_bulleted_list(

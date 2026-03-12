@@ -65,6 +65,7 @@ impl ErrorLog {
         // written!
         writer.shutdown().await.into_diagnostic()?;
 
+        tracing::info!("Error log written");
         Ok(())
     }
 }

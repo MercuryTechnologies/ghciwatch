@@ -15,6 +15,7 @@ async fn can_eval_commands() {
     let cmd = "-- $> example ++ example";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_arg("--enable-eval")
+        .with_log_filter("ghciwatch::incremental_reader=debug,ghciwatch::ghci::stderr=debug")
         .before_start(move |path| async move {
             Fs::new()
                 .append(path.join(module_path), format!("\n{cmd}\n"))
@@ -47,8 +48,7 @@ async fn can_eval_commands() {
         .expect("ghciwatch evals commands");
     session
         .assert_logged_or_wait(
-            BaseMatcher::span_close()
-                .in_leaf_spans(["run_ghci", "initialize"])
+            BaseMatcher::message("^Initialization completed$")
                 .but_not(defined_in_multiple_files.clone()),
         )
         .await
@@ -73,6 +73,7 @@ async fn can_eval_commands() {
 async fn can_load_new_eval_commands_multiline() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_arg("--enable-eval")
+        .with_log_filter("ghciwatch::incremental_reader=debug")
         .start()
         .await
         .expect("ghciwatch starts");
@@ -143,6 +144,7 @@ async fn can_eval_commands_in_non_interpreted_modules() {
     let cmd = "-- $> example ++ example";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_arg("--enable-eval")
+        .with_log_filter("ghciwatch::incremental_reader=debug,ghciwatch::ghci::stderr=debug")
         .with_ghc_arg("-fwrite-if-simplified-core")
         .with_cabal_arg("--repl-no-load")
         .before_start(move |path| async move {
@@ -208,6 +210,7 @@ async fn can_eval_commands_twice() {
     let cmd = "-- $> example ++ example";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_arg("--enable-eval")
+        .with_log_filter("ghciwatch::incremental_reader=debug,ghciwatch::ghci::stderr=debug")
         .before_start(move |path| async move {
             Fs::new()
                 .append(path.join(module_path), format!("\n{cmd}\n"))
