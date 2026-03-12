@@ -69,7 +69,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch loads new modules");
 
     session
-        .wait_for_log(BaseMatcher::span_close().in_leaf_spans(["error_log_write"]))
+        .wait_for_log(BaseMatcher::message("^Error log written$"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 
@@ -123,7 +123,7 @@ async fn can_write_error_log_compilation_errors() {
         .expect("ghciwatch reloads on changes");
 
     session
-        .wait_for_log(BaseMatcher::span_close().in_leaf_spans(["error_log_write"]))
+        .wait_for_log(BaseMatcher::message("^Error log written$"))
         .await
         .expect("ghciwatch writes ghcid.txt");
 

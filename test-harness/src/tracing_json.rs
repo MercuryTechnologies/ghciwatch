@@ -110,6 +110,7 @@ pub struct Span {
 }
 
 impl Span {
+    /// Create a span with the given name and no fields.
     #[cfg(test)]
     pub fn new(name: impl Display) -> Self {
         Self {

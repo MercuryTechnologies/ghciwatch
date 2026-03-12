@@ -50,10 +50,10 @@ impl Extend<GhcMessage> for CompilationLog {
                     self.summary = Some(summary);
                     match summary.result {
                         CompilationResult::Ok => {
-                            tracing::debug!("Compilation succeeded");
+                            tracing::info!("Compilation succeeded");
                         }
                         CompilationResult::Err => {
-                            tracing::debug!("Compilation failed");
+                            tracing::info!("Compilation failed");
                         }
                     }
                 }

@@ -115,7 +115,7 @@ async fn run_debouncer<T: notify::Watcher>(
         }
     }
 
-    tracing::debug!("notify watcher started");
+    tracing::info!("notify watcher started");
 
     // Wait for a shutdown request, either from another subsystem or from an error in the handler.
     let _ = handle.on_shutdown_requested().await;

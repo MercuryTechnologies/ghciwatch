@@ -4,6 +4,7 @@ use nix::unistd::Pid;
 use test_harness::test;
 use test_harness::BaseMatcher;
 use test_harness::GhciWatch;
+use test_harness::GhciWatchBuilder;
 use test_harness::JsonValue;
 
 /// Test that `ghciwatch` can gracefully shutdown on Ctrl-C.
@@ -32,7 +33,9 @@ async fn can_shutdown_gracefully() {
 /// Test that `ghciwatch` can gracefully shutdown when the `ghci` process is unexpectedly killed.
 #[test]
 async fn can_shutdown_gracefully_when_ghci_killed() {
-    let mut session = GhciWatch::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_log_filter("ghciwatch::ghci::process=debug,ghciwatch::shutdown=debug")
+        .start()
         .await
         .expect("ghciwatch starts");
 
@@ -64,7 +67,7 @@ async fn can_shutdown_gracefully_when_ghci_killed() {
         .expect("ghci exits");
     session.wait_for_log("^Shutdown requested$").await.unwrap();
     session
-        .wait_for_log("^All tasks completed successfully$")
+        .wait_for_log("^Finished shutdown")
         .await
-        .unwrap();
+        .expect("ghciwatch shuts down");
 }

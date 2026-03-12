@@ -15,7 +15,7 @@ use syn::Block;
 use syn::Ident;
 use syn::ItemFn;
 
-/// Runs a test asynchronously in the `tokio` current-thread runtime with `tracing` enabled.
+/// Runs a test asynchronously in the `tokio` current-thread runtime.
 ///
 /// One test is generated for each GHC version listed in the `$GHC_VERSIONS` environment variable
 /// at compile-time.
@@ -24,12 +24,10 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse annotated function
     let mut function: ItemFn = parse(item).expect("Could not parse item as function");
 
-    // Add attributes to run the test in the `tokio` current-thread runtime and enable tracing.
     function.attrs.extend(
         parse::<Attributes>(
             quote! {
                 #[tokio::test]
-                #[tracing_test::traced_test]
                 #[allow(non_snake_case)]
             }
             .into(),

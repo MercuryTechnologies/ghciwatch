@@ -15,6 +15,7 @@ use test_harness::SpanMatcher;
 #[test]
 async fn can_run_hooks() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_log_filter("ghciwatch::incremental_reader=debug")
         .with_args([
             "--before-startup-shell",
             "async:touch before-startup-1",
@@ -174,7 +175,7 @@ async fn hooks_can_observe_error_log() {
             "--after-restart-shell",
             &after_restart,
         ])
-        .with_log_filter("ghciwatch::ghci[run_hooks]=trace")
+        .with_log_filter("ghciwatch::ghci[run_hooks]=trace,ghciwatch::maybe_async_command=debug")
         .start()
         .await
         .expect("ghciwatch starts");

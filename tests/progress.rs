@@ -2,13 +2,14 @@ use indoc::indoc;
 
 use test_harness::test;
 use test_harness::BaseMatcher;
-use test_harness::GhciWatch;
 use test_harness::GhciWatchBuilder;
 
 /// Test that compilation progress events include current/total fields.
 #[test]
 async fn compilation_emits_progress_fields() {
-    let mut session = GhciWatch::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_log_filter("ghciwatch::ghci::compilation_log=debug")
+        .start()
         .await
         .expect("ghciwatch starts");
     session

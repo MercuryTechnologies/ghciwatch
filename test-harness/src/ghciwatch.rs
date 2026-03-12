@@ -43,6 +43,7 @@ pub struct GhciWatchBuilder {
     default_timeout: Duration,
     startup_timeout: Duration,
     log_filters: Vec<String>,
+    trace_spans: Option<String>,
 }
 
 impl GhciWatchBuilder {
@@ -58,6 +59,7 @@ impl GhciWatchBuilder {
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
             log_filters: Default::default(),
+            trace_spans: None,
         }
     }
 
@@ -159,6 +161,13 @@ impl GhciWatchBuilder {
     ) -> Self {
         self.log_filters
             .extend(log_filters.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Enable `--trace-spans` for this test. Only needed for tests that assert on span
+    /// lifecycle events (`span_close`, `span_new`).
+    pub fn with_trace_spans(mut self, spans: impl AsRef<str>) -> Self {
+        self.trace_spans = Some(spans.as_ref().to_owned());
         self
     }
 }
@@ -292,12 +301,12 @@ impl GhciWatch {
             .chain(builder.make_args.iter().map(|s| s.as_str())),
         );
 
-        let log_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
+        let log_filters = ["ghciwatch=info"]
             .into_iter()
             .chain(builder.log_filters.iter().map(|s| s.as_ref()))
             .join(",");
 
-        let command = ClonableCommand::new(test_bin::get_test_bin("ghciwatch").get_program())
+        let mut command = ClonableCommand::new(test_bin::get_test_bin("ghciwatch").get_program())
             .arg("--log-json")
             .arg(&log_path)
             .args([
@@ -313,11 +322,15 @@ impl GhciWatch {
                 "hpack --force .",
                 "--log-filter",
                 &log_filters,
-                "--trace-spans",
-                "new,close",
                 "--poll",
                 "1000ms",
-            ])
+            ]);
+
+        if let Some(trace_spans) = &builder.trace_spans {
+            command = command.args(["--trace-spans", trace_spans]);
+        }
+
+        let command = command
             .args(builder.ghciwatch_args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
@@ -326,8 +339,8 @@ impl GhciWatch {
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Utils/Outputable.hs#L728-L740
             .env("GHC_NO_UNICODE", "1")
-            .stderr(clonable_command::Stdio::Inherit)
-            .stdout(clonable_command::Stdio::Inherit);
+            .stderr(clonable_command::Stdio::Null)
+            .stdout(clonable_command::Stdio::Null);
 
         let session = Session::new(&command, builder.default_timeout, &log_path).await?;
 
@@ -470,9 +483,11 @@ impl GhciWatch {
         }
 
         // Otherwise, wait for a log message.
+        let mut events_consumed: usize = 0;
         match tokio::time::timeout(timeout_duration, async {
             loop {
                 let event = self.read_event().await?;
+                events_consumed += 1;
                 if matcher.matches(event)? {
                     return Ok(event.clone());
                 }
@@ -482,10 +497,15 @@ impl GhciWatch {
         {
             Ok(Ok(event)) => Ok(event),
             Ok(Err(err)) => Err(err),
-            Err(_) => Err(miette!(
-                "Waiting for a log message matching {matcher} \
-                 timed out after {timeout_duration:.2?}"
-            )),
+            Err(_) => {
+                let recent_events = self.recent_events_summary(20);
+                Err(miette!(
+                    "Waiting for a log message matching {matcher} \
+                     timed out after {timeout_duration:.2?}\n\
+                     Events consumed while waiting: {events_consumed}\n\
+                     Last events seen:\n{recent_events}"
+                ))
+            }
         }
     }
 
@@ -624,6 +644,20 @@ impl GhciWatch {
     /// Get a path relative to the project root.
     pub fn path(&self, path: impl AsRef<Path>) -> PathBuf {
         self.cwd.join(path)
+    }
+
+    /// Format a summary of the most recent `n` events across all checkpoints for diagnostics.
+    fn recent_events_summary(&self, n: usize) -> String {
+        let all_events: Vec<&Event> = self.events.iter().flat_map(|chunk| chunk.iter()).collect();
+        let start = all_events.len().saturating_sub(n);
+        if all_events.is_empty() {
+            return "  (no events recorded)".to_owned();
+        }
+        all_events[start..]
+            .iter()
+            .map(|e| format!("  {e}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Get the major GHC version this test is running under.
