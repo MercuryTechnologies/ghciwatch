@@ -18,6 +18,7 @@
   treefmt,
   alejandra,
   just,
+  prek,
   # Versions of GHC to include in the environment for integration tests.
   # These should be attributes of `haskell.compiler`.
   ghcVersions ? null,
@@ -294,7 +295,12 @@
       treefmt
       alejandra
       just
+      prek
     ];
+
+    shellHook = ''
+      prek install -f >/dev/null
+    '';
   };
 in
   craneLib.buildPackage (releaseArgs
