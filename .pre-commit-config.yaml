@@ -21,11 +21,11 @@ repos:
       - id: trailing-whitespace
         priority: 14
       - id: end-of-file-fixer
-        priority: 14
+        priority: 15
       - id: fix-byte-order-marker
-        priority: 14
+        priority: 16
       - id: mixed-line-ending
-        priority: 14
+        priority: 17
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0
