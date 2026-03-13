@@ -1,3 +1,2 @@
-- [ ] Labeled the PR with `patch`, `minor`, or `major` to request a version bump when it's merged.
 - [ ] Updated the user manual in `docs/`.
 - [ ] Added integration / regression tests in `tests/`.
