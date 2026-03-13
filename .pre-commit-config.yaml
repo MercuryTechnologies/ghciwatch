@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/j178/prek/refs/heads/master/prek.schema.json
+#
+# Priority groups (lower runs first, same priority runs in parallel):
+#    10: Formatters (file-modifying)
+# 14-17: Builtin formatters (file-modifying)
+#    20: Linters/checks (read-only, run in parallel)
+---
+repos:
+  - repo: local
+    hooks:
+      - id: treefmt
+        name: treefmt
+        entry: treefmt
+        language: system
+        pass_filenames: true
+        files: '\.(rs|nix)$'
+        priority: 10
+
+  - repo: builtin
+    hooks:
+      - id: trailing-whitespace
+        priority: 14
+      - id: end-of-file-fixer
+        priority: 15
+      - id: fix-byte-order-marker
+        priority: 16
+      - id: mixed-line-ending
+        priority: 17
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+      - id: check-merge-conflict
+        priority: 20
