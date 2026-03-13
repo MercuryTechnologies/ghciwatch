@@ -1,5 +1,6 @@
 use crate::ghci::parse::CompilationResult;
 use crate::ghci::parse::CompilationSummary;
+use crate::ghci::parse::CompilingModule;
 use crate::ghci::parse::GhcDiagnostic;
 use crate::ghci::parse::GhcMessage;
 use crate::ghci::parse::Severity;
@@ -9,6 +10,7 @@ use crate::ghci::parse::Severity;
 pub struct CompilationLog {
     pub summary: Option<CompilationSummary>,
     pub diagnostics: Vec<GhcDiagnostic>,
+    pub compiled_modules: Vec<CompilingModule>,
 }
 
 impl CompilationLog {
@@ -31,6 +33,7 @@ impl Extend<GhcMessage> for CompilationLog {
                         reason = progress.reason.as_deref().unwrap_or(""),
                         "Compiling",
                     );
+                    self.compiled_modules.push(progress.module);
                 }
                 GhcMessage::Diagnostic(diagnostic) => {
                     if let GhcDiagnostic {

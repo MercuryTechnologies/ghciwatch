@@ -19,9 +19,12 @@ pub use ghc_message::parse_ghc_messages;
 pub use ghc_message::CompilationResult;
 pub use ghc_message::CompilationSummary;
 pub use ghc_message::CompilingProgress;
+pub use module_and_files::CompilingModule;
 pub use ghc_message::GhcDiagnostic;
 pub use ghc_message::GhcMessage;
 pub use ghc_message::ModulesLoaded;
+#[cfg(test)]
+pub use ghc_message::PositionRange;
 pub use ghc_message::Severity;
 pub use show_paths::parse_show_paths;
 pub use show_paths::ShowPaths;

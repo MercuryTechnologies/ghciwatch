@@ -90,6 +90,13 @@ Don't interrupt reloads when files change.
 Depending on your workflow, `ghciwatch` may feel more responsive with this set.
 
 </dd>
+<dt><a id="--track-warnings" href="#--track-warnings"><code>--track-warnings</code></a></dt><dd>
+
+Track warnings across recompilations.
+
+When enabled, warnings will be preserved in memory even when files are recompiled due to dependency changes, helping prevent "ephemeral warnings" from being missed.
+
+</dd>
 <dt><a id="--completions" href="#--completions"><code>--completions &lt;COMPLETIONS&gt;</code></a></dt><dd>
 
 Generate shell completions for the given shell
