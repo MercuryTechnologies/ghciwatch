@@ -18,6 +18,8 @@ use crate::normal_path::NormalPath;
 pub enum ExperimentalFeature {
     /// Enable TUI mode.
     Tui,
+    /// Enable single-line compilation progress indicator.
+    Progress,
 }
 
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
