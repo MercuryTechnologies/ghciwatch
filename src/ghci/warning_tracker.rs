@@ -6,7 +6,7 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ghci::parse::GhcDiagnostic;
+use crate::ghci::parse::{GhcDiagnostic, Severity};
 use crate::ghci::CompilationLog;
 use crate::normal_path::NormalPath;
 
@@ -54,6 +54,9 @@ impl WarningTracker {
         let mut new_warnings_by_file: BTreeMap<NormalPath, Vec<GhcDiagnostic>> = BTreeMap::new();
 
         for diagnostic in &log.diagnostics {
+            if diagnostic.severity != Severity::Warning {
+                continue;
+            }
             if let Some(path) = &diagnostic.path {
                 // Convert to NormalPath - in a real implementation, this would need proper error handling
                 if let Ok(normal_path) = NormalPath::new(path, std::env::current_dir().unwrap()) {
@@ -298,6 +301,44 @@ mod tests {
 
         assert_eq!(tracker.warning_count(), 1000);
         assert_eq!(tracker.warnings.len(), 100);
+    }
+
+    #[test]
+    fn test_errors_are_not_tracked() {
+        let mut tracker = WarningTracker::new();
+        let base_dir = std::env::current_dir().unwrap();
+        let path = NormalPath::new("src/test.hs", &base_dir).unwrap();
+        tracker.mark_file_changed(path.clone());
+
+        let log = create_test_compilation_log(
+            vec![
+                create_test_diagnostic(Severity::Warning, "src/test.hs", "unused import"),
+                create_test_diagnostic(Severity::Error, "src/test.hs", "type error"),
+            ],
+            vec![CompilingModule {
+                name: "Test".to_string(),
+                path: "src/test.hs".into(),
+            }],
+        );
+
+        tracker.update_warnings_from_log(&log);
+
+        assert_eq!(
+            tracker.warning_count(),
+            1,
+            "Only warnings should be tracked, not errors"
+        );
+        let stored = tracker.get_all_warnings();
+        let file_warnings = stored
+            .values()
+            .next()
+            .expect("should have warnings for one file");
+        assert_eq!(file_warnings.len(), 1);
+        assert_eq!(
+            file_warnings[0].severity,
+            Severity::Warning,
+            "Stored diagnostic should be a warning, not an error"
+        );
     }
 
     #[test]
