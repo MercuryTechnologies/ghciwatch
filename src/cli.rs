@@ -67,6 +67,10 @@ pub struct Opts {
 
     /// Don't interrupt reloads when files change.
     ///
+    /// When set, in-progress reloads run to completion. Any file changes that arrive during
+    /// a reload are batched and applied in a single follow-up reload, rather than interrupting
+    /// the current one.
+    ///
     /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
     #[arg(long)]
     pub no_interrupt_reloads: bool,
