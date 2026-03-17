@@ -56,26 +56,17 @@ async fn edits_during_compile_are_batched() {
     // channel while the slow reload is still in progress.
     session
         .fs()
-        .append(
-            session.path("src/ExtraA.hs"),
-            "\nextraA2 = 1 :: Integer\n",
-        )
+        .append(session.path("src/ExtraA.hs"), "\nextraA2 = 1 :: Integer\n")
         .await
         .unwrap();
     session
         .fs()
-        .append(
-            session.path("src/ExtraB.hs"),
-            "\nextraB2 = 2 :: Integer\n",
-        )
+        .append(session.path("src/ExtraB.hs"), "\nextraB2 = 2 :: Integer\n")
         .await
         .unwrap();
     session
         .fs()
-        .append(
-            session.path("src/ExtraC.hs"),
-            "\nextraC2 = 3 :: Integer\n",
-        )
+        .append(session.path("src/ExtraC.hs"), "\nextraC2 = 3 :: Integer\n")
         .await
         .unwrap();
 
