@@ -43,6 +43,7 @@ pub struct GhciWatchBuilder {
     default_timeout: Duration,
     startup_timeout: Duration,
     log_filters: Vec<String>,
+    poll_interval: String,
 }
 
 impl GhciWatchBuilder {
@@ -58,6 +59,7 @@ impl GhciWatchBuilder {
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
             log_filters: Default::default(),
+            poll_interval: "1000ms".to_owned(),
         }
     }
 
@@ -149,6 +151,14 @@ impl GhciWatchBuilder {
     /// Add a `--log-filter` clause to the `ghciwatch` invocation.
     pub fn with_log_filter(mut self, log_filter: impl AsRef<str>) -> Self {
         self.log_filters.push(log_filter.as_ref().to_owned());
+        self
+    }
+
+    /// Set the `--poll` interval for the file watcher.
+    ///
+    /// The default is `1000ms`.
+    pub fn with_poll_interval(mut self, interval: impl AsRef<str>) -> Self {
+        self.poll_interval = interval.as_ref().to_owned();
         self
     }
 
@@ -316,7 +326,7 @@ impl GhciWatch {
                 "--trace-spans",
                 "new,close",
                 "--poll",
-                "1000ms",
+                &builder.poll_interval,
             ])
             .args(builder.ghciwatch_args)
             .current_dir(&cwd)

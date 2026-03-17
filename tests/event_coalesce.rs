@@ -1,59 +1,29 @@
+use std::time::Duration;
+
 use test_harness::test;
 use test_harness::BaseMatcher;
-use test_harness::GhciWatch;
 use test_harness::GhciWatchBuilder;
+// These tests use `tests/data/slow-compile`, which contains a TemplateHaskell
+// module (`SlowModule`) that sleeps for 500ms at compile time. This makes
+// reloads that touch SlowModule slow enough for file-change events to arrive
+// mid-reload, exercising the event batching code paths.
 
-/// Test that rapid file modifications are handled correctly, either by being
-/// coalesced into a single reload or by being processed sequentially without
-/// losing events.
-#[test]
-async fn rapid_file_changes_are_not_lost() {
-    let mut session = GhciWatch::new("tests/data/simple")
-        .await
-        .expect("ghciwatch starts");
-    session
-        .wait_until_ready()
-        .await
-        .expect("ghciwatch loads ghci");
-
-    // Use `append` which has no load-bearing sleep, so both writes happen
-    // back-to-back. The poll watcher should detect both changes in the same
-    // cycle, causing them to be queued together on the channel and coalesced
-    // by the greedy drain in `run_ghci`.
-    session
-        .fs()
-        .append(
-            session.path("src/MyLib.hs"),
-            "\nhello = 1 :: Integer\n",
-        )
-        .await
-        .unwrap();
-    session
-        .fs()
-        .append(
-            session.path("src/MyModule.hs"),
-            "\nworld = 2 :: Integer\n",
-        )
-        .await
-        .unwrap();
-
-    // Both files' changes should be processed (either as a single coalesced
-    // reload or as sequential reloads) and compilation should succeed.
-    session
-        .wait_for_log(BaseMatcher::compilation_succeeded())
-        .await
-        .expect("compilation succeeds after rapid writes");
-}
-
-/// Test that events are not silently lost when `--no-interrupt-reloads` is set
-/// and a new file change arrives during an in-progress reload.
+/// Test that edits made during an in-progress compile are batched into a single
+/// follow-up compile, rather than triggering one compile per edit.
 ///
-/// Before the fix, the new event was consumed from the channel but never acted
-/// upon, causing the file change to be silently dropped.
+/// Scenario: a compile is running, we make 3 edits before it finishes, and
+/// expect exactly one more compile afterward containing all 3 edits.
+///
+/// Uses `--no-interrupt-reloads` so the in-progress compile runs to completion
+/// while events queue up, exercising the event preservation in the `else`
+/// branch and the greedy drain that merges pending events.
 #[test]
-async fn no_interrupt_reloads_preserves_events() {
-    let mut session = GhciWatchBuilder::new("tests/data/simple")
+async fn edits_during_compile_are_batched() {
+    let mut session = GhciWatchBuilder::new("tests/data/slow-compile")
         .with_arg("--no-interrupt-reloads")
+        .with_poll_interval("100ms")
+        .with_default_timeout(Duration::from_secs(30))
+        .with_startup_timeout(Duration::from_secs(120))
         .start()
         .await
         .expect("ghciwatch starts");
@@ -62,48 +32,71 @@ async fn no_interrupt_reloads_preserves_events() {
         .await
         .expect("ghciwatch loads ghci");
 
-    // Modify first file to trigger a reload.
+    // Modify SlowModule.hs to trigger a slow reload. GHCi only re-runs TH
+    // splices for modules whose source files actually changed, so we must
+    // modify SlowModule.hs itself (not a dependency).
     session
         .fs()
         .append(
-            session.path("src/MyLib.hs"),
-            "\nhello = 1 :: Integer\n",
+            session.path("src/SlowModule.hs"),
+            "\nslowExtra = 99 :: Int\n",
         )
         .await
         .unwrap();
 
-    // Wait for the reload to begin.
+    // Wait for the slow reload to begin.
     session
         .wait_until_reload()
         .await
         .expect("first reload starts");
 
-    // Modify second file. This may arrive while the first reload is still in
-    // progress. With `--no-interrupt-reloads`, the reload won't be interrupted,
-    // but the event must be preserved for the next iteration.
+    // While the reload is running, make 3 edits using `append` (no
+    // load-bearing sleep). All 3 writes land almost simultaneously, so the
+    // watcher detects them in the same poll cycle and they arrive on the
+    // channel while the slow reload is still in progress.
     session
         .fs()
         .append(
-            session.path("src/MyModule.hs"),
-            "\nworld = 2 :: Integer\n",
+            session.path("src/ExtraA.hs"),
+            "\nextraA2 = 1 :: Integer\n",
+        )
+        .await
+        .unwrap();
+    session
+        .fs()
+        .append(
+            session.path("src/ExtraB.hs"),
+            "\nextraB2 = 2 :: Integer\n",
+        )
+        .await
+        .unwrap();
+    session
+        .fs()
+        .append(
+            session.path("src/ExtraC.hs"),
+            "\nextraC2 = 3 :: Integer\n",
         )
         .await
         .unwrap();
 
-    // Wait for the first reload to finish.
+    // Wait for the first (slow) reload to finish.
     session
         .wait_for_log(BaseMatcher::reload_completes())
         .await
         .expect("first reload completes");
 
-    // The second file's changes must eventually trigger another reload.
-    // Before the fix, this event was silently dropped and would time out here.
+    // The follow-up reload should contain ALL 3 edited files in a single
+    // reload (merged). Without the fix, events are silently dropped and each
+    // file triggers its own separate reload.
     session
-        .wait_until_reload()
+        .wait_for_log(BaseMatcher::message(
+            "(?s)Reloading ghci:.*ExtraA.*ExtraB.*ExtraC",
+        ))
         .await
-        .expect("second reload starts for queued event");
+        .expect("second reload includes all 3 edited files in one reload");
+
     session
-        .wait_for_log(BaseMatcher::reload_completes())
+        .wait_for_log(BaseMatcher::compilation_succeeded())
         .await
-        .expect("second reload completes");
+        .expect("second reload compiles successfully");
 }

@@ -1,0 +1,5 @@
+packages: my-slow-package.cabal
+offline: True
+flags: +local-dev
+package *
+  ghc-options: -fdiagnostics-color=always
