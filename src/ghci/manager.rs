@@ -97,6 +97,21 @@ pub async fn run_ghci(
             }
         };
 
+        // Greedily drain any additional pending events and merge them, so that rapid successive
+        // writes produce a single recompile instead of one per event.
+        loop {
+            match receiver.try_recv() {
+                Ok(pending_event) => {
+                    tracing::debug!(?pending_event, "Merging pending event");
+                    event.merge(pending_event);
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(miette!("ghci event channel closed"));
+                }
+            }
+        }
+
         // This channel notifies us what kind of reload is triggered, which we can use to inform
         // our decision to interrupt the reload or not.
         let (reload_sender, reload_receiver) = oneshot::channel();
@@ -129,6 +144,13 @@ pub async fn run_ghci(
                     // Send a SIGINT to interrupt the reload.
                     // NB: This may take a couple seconds to register.
                     ghci.lock().await.send_sigint().await?;
+                } else {
+                    // Don't interrupt, but don't lose the event either.
+                    maybe_event = Some(new_event);
+                    // Wait for the current task to finish before the next iteration.
+                    let ret = task.await;
+                    ret.into_diagnostic()??;
+                    tracing::debug!("Finished dispatching ghci event (new event queued)");
                 }
             }
             ret = &mut task => {
