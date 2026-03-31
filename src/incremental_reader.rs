@@ -97,7 +97,12 @@ where
 
         match self.reader.read(opts.buffer).await {
             Ok(0) => {
-                // EOF
+                // EOF — the process closed its stdout. Yield to allow other tasks
+                // (e.g., GhciProcess reporting the exit) to run before we loop again.
+                // This prevents a busy-loop and ensures that a tokio::select! containing
+                // this future will check its other arms (like exited_receiver.recv()) on
+                // the next poll.
+                tokio::task::yield_now().await;
                 Ok(None)
             }
             Ok(n) => {

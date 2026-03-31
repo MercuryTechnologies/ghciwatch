@@ -246,6 +246,10 @@ pub struct Ghci {
     /// trigger a shutdown of the entire program. This is bad if we're restarting `ghci` on
     /// purpose, so this channel helps us avoid that.
     restart_sender: mpsc::Sender<()>,
+    /// Sender for notifying [`run_ghci`][manager::run_ghci] when `ghci` exits unexpectedly.
+    /// Cloned into each new [`GhciProcess`] on construction; kept alive here so the channel is
+    /// never closed while this session is live.
+    exited_sender: mpsc::Sender<ExitStatus>,
     /// Writer for `ghcid`-compatible output, useful for editor integration for diagnostics.
     error_log: ErrorLog,
     /// Classifies file events into reload actions based on glob patterns.
@@ -280,7 +284,11 @@ impl Ghci {
     /// This starts a number of asynchronous tasks to manage the `ghci` session's input and output
     /// streams.
     #[instrument(skip_all, level = "debug", name = "ghci")]
-    pub async fn new(mut shutdown: ShutdownHandle, opts: GhciOpts) -> miette::Result<Self> {
+    pub async fn new(
+        mut shutdown: ShutdownHandle,
+        opts: GhciOpts,
+        exited_sender: mpsc::Sender<ExitStatus>,
+    ) -> miette::Result<Self> {
         let mut command_handles = Vec::new();
         {
             let span = tracing::debug_span!("before_startup_shell");
@@ -363,6 +371,7 @@ impl Ghci {
                     shutdown,
                     restart_receiver,
                     process_group_id,
+                    exited_sender: exited_sender.clone(),
                 }
                 .run(group)
             })
@@ -379,6 +388,7 @@ impl Ghci {
             stdin,
             stdout,
             restart_sender,
+            exited_sender,
             error_log,
             classifier,
             targets: Default::default(),
@@ -506,7 +516,12 @@ impl Ghci {
         self.run_hooks(LifecycleEvent::Restart(hooks::When::Before), &mut log)
             .await?;
         self.stop().await?;
-        let new = Self::new(self.shutdown.clone(), self.opts.clone()).await?;
+        let new = Self::new(
+            self.shutdown.clone(),
+            self.opts.clone(),
+            self.exited_sender.clone(),
+        )
+        .await?;
         let _ = std::mem::replace(self, new);
         self.initialize(
             &mut log,

@@ -1,11 +1,13 @@
 # Multiple Cabal components
 
-Currently, multiple Cabal components don't work. You can work around this with
-[the Cabal `test-dev` trick][test-dev] as described by the venerable Jade
-Lovelace. This works by defining a new component in our `.cabal` file which
-includes the sources from the library and the tests, which has the added
-benefit of speeding up compile times by allowing the compilation of different
-components to be interleaved.
+Currently, multiple Cabal components don't work nicely with GHCi/ghciwatch
+(note that this is different from [multiple Cabal
+_packages_](multiple-components.md), which _also_ don't work). You can work
+around this with [the Cabal `test-dev` trick][test-dev] as described by the
+venerable Jade Lovelace. This works by defining a new component in our `.cabal`
+file which includes the sources from the library and the tests, which has the
+added benefit of speeding up compile times by allowing the compilation of
+different components to be interleaved.
 
 [test-dev]: https://jade.fyi/blog/cabal-test-dev-trick/
 

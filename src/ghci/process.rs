@@ -20,6 +20,11 @@ pub struct GhciProcess {
     /// This is used for the graceful shutdown implementation and for routine `ghci` session
     /// restarts.
     pub restart_receiver: mpsc::Receiver<()>,
+    /// Notifies [`run_ghci`][crate::ghci::manager::run_ghci] when `ghci` exits unexpectedly so
+    /// it can restart the session. Only sent on the unexpected-exit path; intentional restarts
+    /// go through [`restart_receiver`][GhciProcess::restart_receiver] instead and do not send
+    /// here.
+    pub exited_sender: mpsc::Sender<ExitStatus>,
 }
 
 impl GhciProcess {
@@ -37,8 +42,10 @@ impl GhciProcess {
                 self.stop(wait).await?;
             }
             result = &mut wait => {
-                self.exited(result.into_diagnostic()?).await;
-                let _ = self.shutdown.request_shutdown();
+                tracing::debug!(?result, "ghci exited");
+                let status = result.into_diagnostic()?;
+                self.exited(status).await;
+                let _ = self.exited_sender.send(status).await;
             }
         }
         Ok(())

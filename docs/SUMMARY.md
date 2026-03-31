@@ -13,3 +13,4 @@
 
 - [Tasty](./integration/tasty.md)
 - [Multiple Cabal components](./integration/multiple-components.md)
+- [Multiple Cabal packages](./integration/multiple-packages.md)
