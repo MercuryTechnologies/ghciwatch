@@ -1,5 +1,6 @@
 {
   mkCheck,
+  git,
   prek,
   treefmt,
   alejandra,
@@ -8,6 +9,7 @@
 mkCheck {
   name = "pre-commit";
   nativeBuildInputs = [
+    git
     prek
     treefmt
     alejandra
