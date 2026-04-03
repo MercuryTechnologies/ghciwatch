@@ -122,6 +122,8 @@ pub struct GhciOpts {
     pub stderr_writer: GhciWriter,
     /// Whether to clear the screen before reloads and restarts.
     pub clear: bool,
+    /// Sender for structured TUI events. `None` when TUI is not enabled.
+    pub tui_sender: Option<tokio::sync::broadcast::Sender<crate::tui::events::TuiEvent>>,
 }
 
 impl GhciOpts {
@@ -200,6 +202,7 @@ impl GhciOpts {
                 stdout_writer,
                 stderr_writer,
                 clear: opts.clear,
+                tui_sender: None,
             },
             tui_reader,
         ))
@@ -212,6 +215,12 @@ impl GhciOpts {
             if let Err(err) = clearscreen::clear() {
                 tracing::debug!("Failed to clear the terminal: {err}");
             }
+        }
+    }
+
+    fn send_tui_event(&self, event: crate::tui::events::TuiEvent) {
+        if let Some(sender) = &self.tui_sender {
+            let _ = sender.send(event);
         }
     }
 }
@@ -513,6 +522,16 @@ impl Ghci {
 
         if actions.needs_modify() {
             self.opts.clear();
+            let changed_paths: Vec<String> = actions
+                .needs_reload
+                .iter()
+                .chain(actions.needs_add.iter())
+                .map(|p| p.relative().to_string())
+                .collect();
+            self.opts
+                .send_tui_event(crate::tui::events::TuiEvent::CompilationStarted {
+                    changed_paths,
+                });
             self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
                 .await?;
         }
@@ -909,6 +928,14 @@ impl Ghci {
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
     ) -> miette::Result<()> {
+        if let Some(summary) = log.summary {
+            self.opts
+                .send_tui_event(crate::tui::events::TuiEvent::CompilationFinished {
+                    summary,
+                    diagnostics: log.diagnostics.clone(),
+                });
+        }
+
         // Allow hooks to consume the error log by updating it before running the hooks.
         self.write_error_log(log).await?;
 
@@ -946,6 +973,9 @@ impl Ghci {
         event: LifecycleEvent,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
+        self.opts
+            .send_tui_event(crate::tui::events::TuiEvent::Lifecycle(event));
+
         for hook in self.opts.hooks.select(event) {
             tracing::info!(command = %hook.command, "Running {hook} command");
             match &hook.command {

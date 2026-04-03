@@ -18,6 +18,7 @@ use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
 use miette::miette;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -68,7 +69,7 @@ async fn main() -> miette::Result<()> {
 
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
 
-    let (ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts)?;
+    let (mut ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts)?;
     let watcher_opts = WatcherOpts::from_cli(&opts);
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));
@@ -78,9 +79,13 @@ async fn main() -> miette::Result<()> {
             maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
         let ghci_reader =
             maybe_ghci_reader.expect("`tui_reader` must be present if `tui` is given");
+
+        let (tui_tx, tui_rx) = broadcast::channel(64);
+        ghci_opts.tui_sender = Some(tui_tx);
+
         manager
             .spawn("run_tui", |handle| {
-                run_tui(handle, ghci_reader, tracing_reader)
+                run_tui(handle, ghci_reader, tracing_reader, Some(tui_rx))
             })
             .await;
     }
