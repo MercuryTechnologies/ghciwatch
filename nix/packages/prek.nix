@@ -10,8 +10,7 @@
   pkgsBuildHost,
   versionCheckHook,
   fetchpatch,
-}:
-let
+}: let
   version = "0.3.0";
 
   rustToolchain = pkgsBuildHost.rust-bin.stable."1.92.0".default;
@@ -28,31 +27,31 @@ let
     hash = "sha256-J4onCCHZ6DT2CtZ8q0nrdOI74UGDJhVFG2nWj+p7moE=";
   };
 in
-rustPlatform.buildRustPackage {
-  pname = "prek";
-  inherit version src;
+  rustPlatform.buildRustPackage {
+    pname = "prek";
+    inherit version src;
 
-  cargoHash = "sha256-pR5NibzX5m8DcMxer0W1wowTJCesYaF852wpGiVboVg=";
+    cargoHash = "sha256-pR5NibzX5m8DcMxer0W1wowTJCesYaF852wpGiVboVg=";
 
-  patches = [
-    # Fix underflow when formatting summary output
-    # See: https://github.com/j178/prek/pull/1626
-    (fetchpatch {
-      url = "https://github.com/j178/prek/commit/036ef0d766d02a79ca18076151006221a60a16cd.patch";
-      hash = "sha256-nSMDdECv1nIFI3taRzyLo/g0QHia9+TUwWpz29EMsfo=";
-    })
-  ];
+    patches = [
+      # Fix underflow when formatting summary output
+      # See: https://github.com/j178/prek/pull/1626
+      (fetchpatch {
+        url = "https://github.com/j178/prek/commit/036ef0d766d02a79ca18076151006221a60a16cd.patch";
+        hash = "sha256-nSMDdECv1nIFI3taRzyLo/g0QHia9+TUwWpz29EMsfo=";
+      })
+    ];
 
-  doCheck = false;
+    doCheck = false;
 
-  doInstallCheck = true;
-  nativeInstallCheckInputs = [versionCheckHook];
+    doInstallCheck = true;
+    nativeInstallCheckInputs = [versionCheckHook];
 
-  meta = {
-    homepage = "https://github.com/j178/prek";
-    description = "Better `pre-commit`, re-engineered in Rust";
-    mainProgram = "prek";
-    changelog = "https://github.com/j178/prek/blob/v${version}/CHANGELOG.md";
-    license = [lib.licenses.mit];
-  };
-}
+    meta = {
+      homepage = "https://github.com/j178/prek";
+      description = "Better `pre-commit`, re-engineered in Rust";
+      mainProgram = "prek";
+      changelog = "https://github.com/j178/prek/blob/v${version}/CHANGELOG.md";
+      license = [lib.licenses.mit];
+    };
+  }

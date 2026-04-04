@@ -67,4 +67,4 @@ Executed in   11.41 secs
 Then, you can load modules into the empty GHCi session by `:add`ing them, and
 only the specified modules and their dependencies will be interpreted. If you
 only need to edit a small portion of a library's total modules, this can
-provide a significantly faster workflow than loading every module up-front. 
+provide a significantly faster workflow than loading every module up-front.

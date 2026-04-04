@@ -370,6 +370,3 @@ JSON logs are not yet stable and the format may change on any release.
 </dd>
 
 </dl>
-
-
-
