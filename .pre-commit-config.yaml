@@ -5,6 +5,7 @@
 # 14-17: Builtin formatters (file-modifying)
 #    20: Linters/checks (read-only, run in parallel)
 ---
+exclude: '^docs/cli\.md$'
 repos:
   - repo: local
     hooks:
