@@ -17,6 +17,8 @@ mkCheck {
   ];
 
   checkPhase = ''
+    git init -q
+    git add .
     HOME="$PWD" prek run --all-files
   '';
 
