@@ -13,6 +13,7 @@ repos:
         name: treefmt
         entry: treefmt
         language: system
+        pass_filenames: false
         files: '\.(rs|nix)$'
         priority: 10
 
