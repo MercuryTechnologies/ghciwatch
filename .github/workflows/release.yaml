@@ -1,13 +1,14 @@
 ---
 # This workflow runs when PRs are merged and tags/builds/publishes a release.
 
-# Run when PRs to main are closed.
+# Run when PRs to main are closed or when manually triggered.
 on:
   pull_request:
     types:
       - closed
     branches:
       - main
+  workflow_dispatch:
 
 name: Build and publish a release
 
@@ -16,8 +17,9 @@ jobs:
   # workflow on merged PRs.
   if_merged:
     name: Check that PR was merged and not closed
-    if: github.event.pull_request.merged == true
-      && contains(github.event.pull_request.labels.*.name, 'release')
+    if: github.event_name == 'workflow_dispatch'
+      || (github.event.pull_request.merged == true
+        && contains(github.event.pull_request.labels.*.name, 'release'))
     runs-on: ubuntu-latest
     steps:
       - run: |
@@ -25,6 +27,7 @@ jobs:
           echo "See: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-your-pull_request-workflow-when-a-pull-request-merges"
 
       - name: Comment on PR with link to this action
+        if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@67dcc547d311b736a8e6c5c236542148a47adc3d # v2.1.1
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -66,6 +69,9 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+    environment: release
+    permissions:
+      id-token: write # See: rust-lang/crates-io-auth-action
     steps:
       - name: Checkout code
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -145,10 +151,13 @@ jobs:
             target/ghciwatch-aarch64-linux
             target/ghciwatch-user-manual.tar.xz
 
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
       - name: Publish to crates.io
         if: runner.os == 'Linux'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           nix run .#cargo -- publish --no-verify
 
@@ -159,12 +168,24 @@ jobs:
       - if_merged
       - build
       - version
+    environment: release
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
+      # See: https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#authenticating-with-github-app-generated-tokens
+      - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        id: generate_token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Tag the release
         uses: mathieudutour/github-tag-action@d745f2e74aaf1ee82e747b181f7a0967978abee0 # v6.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          commit_sha: ${{ github.event.pull_request.merge_commit_sha }}
+          github_token: ${{ steps.generate_token.outputs.token }}
+          commit_sha: ${{ github.sha }}
           custom_tag: ${{ needs.version.outputs.version }}
 
       - name: Download artifacts
@@ -185,9 +206,8 @@ jobs:
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          token: ${{ steps.generate_token.outputs.token }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -199,8 +219,10 @@ jobs:
             linux/ghciwatch-user-manual.tar.xz
 
       - name: Comment on PR with link to the release
+        if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@67dcc547d311b736a8e6c5c236542148a47adc3d # v2.1.1
         with:
+          token: ${{ steps.generate_token.outputs.token }}
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             [Release ${{ needs.version.outputs.version }}][release] was built and published successfully!
