@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::io::IsTerminal;
-use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
@@ -69,6 +68,10 @@ mod progress_writer;
 mod module_set;
 pub use module_set::ModuleSet;
 
+mod file_classifier;
+pub use file_classifier::FileClassifier;
+use file_classifier::ReloadActions;
+
 mod loaded_module;
 use loaded_module::LoadedModule;
 
@@ -79,7 +82,6 @@ use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
 use crate::event_filter::FileEvent;
 use crate::format_bulleted_list;
-use crate::haskell_source_file::is_haskell_source_file;
 use crate::hooks;
 use crate::hooks::HookOpts;
 use crate::hooks::LifecycleEvent;
@@ -205,6 +207,14 @@ impl GhciOpts {
         ))
     }
 
+    /// Create a [`FileClassifier`] from these options.
+    ///
+    /// The classifier uses the process's current working directory. Call
+    /// [`FileClassifier::set_cwd`] after GHCi initialization to update it.
+    pub fn file_classifier(&self) -> miette::Result<FileClassifier> {
+        FileClassifier::new(self.restart_globs.clone(), self.reload_globs.clone())
+    }
+
     #[instrument(skip_all, level = "trace")]
     fn clear(&self) {
         if self.clear {
@@ -238,6 +248,8 @@ pub struct Ghci {
     restart_sender: mpsc::Sender<()>,
     /// Writer for `ghcid`-compatible output, useful for editor integration for diagnostics.
     error_log: ErrorLog,
+    /// Classifies file events into reload actions based on glob patterns.
+    classifier: FileClassifier,
     /// The set of targets for this `ghci` session, from `:show targets`.
     ///
     /// Targets that fail to compile don't show up in `:show modules` and aren't, technically
@@ -357,6 +369,8 @@ impl Ghci {
             .await;
 
         let error_log = ErrorLog::new(opts.error_path.clone());
+        let classifier =
+            FileClassifier::new(opts.restart_globs.clone(), opts.reload_globs.clone())?;
 
         Ok(Ghci {
             opts,
@@ -366,6 +380,7 @@ impl Ghci {
             stdout,
             restart_sender,
             error_log,
+            classifier,
             targets: Default::default(),
             eval_commands: Default::default(),
             search_paths: ShowPaths {
@@ -403,82 +418,8 @@ impl Ghci {
         Ok(())
     }
 
-    async fn get_reload_actions(
-        &self,
-        events: BTreeSet<FileEvent>,
-    ) -> miette::Result<ReloadActions> {
-        // Once we know which paths were modified and which paths were removed, we can combine
-        // that with information about this `ghci` session to determine which modules need to be
-        // reloaded, which modules need to be added, and which modules were removed. In the case
-        // of removed modules, the entire `ghci` session must be restarted.
-        let mut needs_restart = Vec::new();
-        let mut needs_reload = Vec::new();
-        let mut needs_add = Vec::new();
-        let mut needs_remove = Vec::new();
-        for event in events {
-            let path = event.as_path();
-            let path = self.relative_path(path)?;
-
-            let restart_match = self.opts.restart_globs.matched(&path);
-            let reload_match = self.opts.reload_globs.matched(&path);
-            let path_is_haskell_source_file = is_haskell_source_file(&path);
-            tracing::trace!(
-                ?event,
-                ?restart_match,
-                ?reload_match,
-                is_haskell_source_file = path_is_haskell_source_file,
-                "Checking path"
-            );
-
-            // Don't restart if we've explicitly ignored this path in a glob.
-            if !restart_match.is_ignore()
-                // Restart on `.cabal` and `.ghci` files.
-                && (path
-                    .extension()
-                    .map(|ext| ext == "cabal")
-                    .unwrap_or(false)
-                || path
-                    .file_name()
-                    .map(|name| name == ".ghci")
-                    .unwrap_or(false)
-                // Restart on explicit restart globs.
-                || restart_match.is_whitelist())
-            {
-                // Restart for this path.
-                tracing::debug!(%path, "Needs restart");
-                needs_restart.push(path);
-            } else if reload_match.is_ignore() {
-                // Ignoring this path, continue.
-            } else if matches!(event, FileEvent::Remove(_))
-                && path_is_haskell_source_file
-                && self.targets.contains_source_path(&path)
-            {
-                tracing::debug!(%path, "Needs remove");
-                needs_remove.push(path);
-            } else if matches!(event, FileEvent::Modify(_)) && path_is_haskell_source_file {
-                // Otherwise, reload when Haskell files are modified.
-                if self.targets.contains_source_path(&path) {
-                    // We can `:reload` paths in the target set.
-                    tracing::debug!(%path, "Needs reload");
-                    needs_reload.push(path);
-                } else {
-                    // Otherwise we need to `:add` the new paths.
-                    tracing::debug!(%path, "Needs add");
-                    needs_add.push(path);
-                }
-            } else if reload_match.is_whitelist() {
-                // Extra extensions are always reloaded, never added.
-                tracing::debug!(%path, "Needs reload");
-                needs_reload.push(path);
-            }
-        }
-
-        Ok(ReloadActions {
-            needs_restart,
-            needs_reload,
-            needs_add,
-            needs_remove,
-        })
+    fn get_reload_actions(&self, events: BTreeSet<FileEvent>) -> miette::Result<ReloadActions> {
+        self.classifier.classify(events, &self.targets)
     }
 
     /// Reload this `ghci` session to include the given modified and removed paths.
@@ -494,7 +435,7 @@ impl Ghci {
         kind_sender: oneshot::Sender<GhciReloadKind>,
     ) -> miette::Result<()> {
         let start_instant = Instant::now();
-        let actions = self.get_reload_actions(events).await?;
+        let actions = self.get_reload_actions(events)?;
         let _ = kind_sender.send(actions.kind());
 
         if actions.needs_restart() {
@@ -636,6 +577,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn refresh_paths(&mut self) -> miette::Result<()> {
         self.search_paths = self.stdin.show_paths(&mut self.stdout).await?;
+        self.classifier.set_cwd(self.search_paths.cwd.clone());
         tracing::debug!(cwd = %self.search_paths.cwd, search_paths = ?self.search_paths.search_paths, "Parsed paths");
         Ok(())
     }
@@ -849,11 +791,6 @@ impl Ghci {
         Ok(())
     }
 
-    /// Make a path relative to the `ghci` session's current working directory.
-    fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
-        self.search_paths.make_relative(path)
-    }
-
     #[instrument(skip_all, level = "debug")]
     async fn send_sigint(&mut self) -> miette::Result<()> {
         let start_instant = Instant::now();
@@ -970,44 +907,6 @@ impl Ghci {
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
         self.error_log.write(log).await
-    }
-}
-
-/// Actions needed to perform a reload.
-///
-/// See [`Ghci::reload`].
-#[derive(Debug)]
-struct ReloadActions {
-    /// Paths to modules which need a full `ghci` restart.
-    needs_restart: Vec<NormalPath>,
-    /// Paths to modules which need a `:reload`.
-    needs_reload: Vec<NormalPath>,
-    /// Paths to modules which need an `:add`.
-    needs_add: Vec<NormalPath>,
-    /// Paths to modules which need an `:unadd`.
-    needs_remove: Vec<NormalPath>,
-}
-
-impl ReloadActions {
-    /// Do any modules need to be added, removed, or reloaded?
-    fn needs_modify(&self) -> bool {
-        !self.needs_add.is_empty() || !self.needs_reload.is_empty() || !self.needs_remove.is_empty()
-    }
-
-    /// Is a session restart needed?
-    fn needs_restart(&self) -> bool {
-        !self.needs_restart.is_empty()
-    }
-
-    /// Get the kind of reload we'll perform.
-    fn kind(&self) -> GhciReloadKind {
-        if self.needs_restart() {
-            GhciReloadKind::Restart
-        } else if self.needs_modify() {
-            GhciReloadKind::Reload
-        } else {
-            GhciReloadKind::None
-        }
     }
 }
 
