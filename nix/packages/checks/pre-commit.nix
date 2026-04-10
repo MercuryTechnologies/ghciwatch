@@ -1,22 +1,28 @@
 {
   mkCheck,
+  git,
+  prek,
   treefmt,
   alejandra,
   craneLib,
 }:
 mkCheck {
-  name = "treefmt";
+  name = "pre-commit";
   nativeBuildInputs = [
+    git
+    prek
     treefmt
     alejandra
     craneLib.rustfmt
   ];
 
   checkPhase = ''
-    HOME="$PWD" treefmt --fail-on-change
+    git init -q
+    git add .
+    HOME="$PWD" prek run --all-files
   '';
 
   meta.description = ''
-    Check that treefmt runs without changes.
+    Check that pre-commit hooks pass on all files.
   '';
 }
