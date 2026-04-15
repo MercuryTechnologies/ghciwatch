@@ -59,6 +59,7 @@ pub async fn run_ghci(
     // is a little different each time, so the `select!`s can't be consolidated.
 
     let no_interrupt_reloads = opts.no_interrupt_reloads;
+    let _classifier = opts.file_classifier()?;
     let mut ghci = Ghci::new(handle.clone(), opts)
         .await
         .wrap_err("Failed to start `ghci`")?;

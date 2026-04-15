@@ -43,6 +43,7 @@ pub(crate) use format_bulleted_list::format_bulleted_list;
 pub(crate) use string_case::StringCase;
 
 pub use ghci::manager::run_ghci;
+pub use ghci::FileClassifier;
 pub use ghci::Ghci;
 pub use ghci::GhciOpts;
 pub use ghci::GhciWriter;
