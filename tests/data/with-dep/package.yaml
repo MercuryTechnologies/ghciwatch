@@ -1,0 +1,16 @@
+---
+spec-version: 0.36.0
+verbatim:
+  cabal-version: 3.0
+name: my-simple-package
+version: 0.1.0.0
+author: Rebecca Turner <rebeccat@mercury.com>
+
+ghc-options: -Wall
+
+dependencies:
+  - base
+  - simple-dep
+
+library:
+  source-dirs: src

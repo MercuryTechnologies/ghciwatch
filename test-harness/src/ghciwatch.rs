@@ -34,6 +34,7 @@ pub(crate) const LOG_FILENAME: &str = "ghciwatch.json";
 /// Builder for [`GhciWatch`].
 pub struct GhciWatchBuilder {
     project_directory: PathBuf,
+    copy_extra: Vec<PathBuf>,
     ghciwatch_args: Vec<OsString>,
     make_args: Vec<String>,
     ghc_args: Vec<String>,
@@ -50,6 +51,8 @@ impl GhciWatchBuilder {
     pub fn new(project_directory: impl AsRef<Path>) -> Self {
         Self {
             project_directory: project_directory.as_ref().to_owned(),
+            // Gonna need this for the `Makefile` in `tests/data/simple`.
+            copy_extra: vec!["tests/data/common".into()],
             ghciwatch_args: Default::default(),
             ghc_args: Default::default(),
             make_args: Default::default(),
@@ -161,6 +164,14 @@ impl GhciWatchBuilder {
             .extend(log_filters.into_iter().map(|s| s.as_ref().to_owned()));
         self
     }
+
+    /// Copy an extra directory or path to the temporary directory where tests are run.
+    ///
+    /// This will be copied as a sibling of the project directory.
+    pub fn copy_extra(mut self, path: impl AsRef<Path>) -> Self {
+        self.copy_extra.push(path.as_ref().to_owned());
+        self
+    }
 }
 
 struct Session {
@@ -258,8 +269,10 @@ impl GhciWatch {
         write_cabal_config(&fs, &tempdir).await?;
         check_ghc_version(&tempdir, &ghc_version).await?;
 
-        tracing::info!("Copying project files");
-        fs_extra::copy_items(&[&builder.project_directory], &tempdir, &Default::default())
+        let mut paths_to_copy = vec![&builder.project_directory];
+        paths_to_copy.extend(builder.copy_extra.iter());
+        tracing::info!(?paths_to_copy, "Copying project files");
+        fs_extra::copy_items(&paths_to_copy, &tempdir, &Default::default())
             .into_diagnostic()
             .wrap_err("Failed to copy project files")?;
 

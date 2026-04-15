@@ -1,0 +1,6 @@
+packages:
+  my-simple-package.cabal
+  simple-dep/simple-dep.cabal
+offline: True
+package *
+  ghc-options: -fdiagnostics-color=always
