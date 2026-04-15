@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::sync::mpsc;
@@ -100,7 +99,12 @@ pub async fn run_ghci(
                     return Ok(());
                 }
                 ret = receiver.recv() => {
-                    let event = ret.ok_or_else(|| miette!("ghci event channel closed"))?;
+                    let Some(event) = ret else {
+                        // Channel closed — `run_watcher` exited, which only happens
+                        // during shutdown. Treat as clean shutdown.
+                        tracing::debug!("Watcher event channel closed; shutting down");
+                        return Ok(());
+                    };
                     let WatcherEvent::Reload { events } = event;
                     let actions = classifier.classify(events, &ModuleSet::default())?;
                     if matches!(actions.kind(), GhciReloadKind::None) {
@@ -142,7 +146,15 @@ pub async fn run_ghci(
                         break;
                     }
                     ret = receiver.recv() => {
-                        ret.ok_or_else(|| miette!("ghci event channel closed"))?
+                        match ret {
+                            Some(event) => event,
+                            None => {
+                                // Channel closed — shutdown in progress.
+                                tracing::debug!("Watcher event channel closed; shutting down");
+                                ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
+                                break;
+                            }
+                        }
                     }
                     Some(status) = exited_receiver.recv() => {
                         match wait_and_restart(&ghci, &mut handle, &mut receiver, &mut exited_receiver, &classifier, status).await? {
@@ -289,17 +301,20 @@ async fn wait_and_restart(
             ?status,
             "ghci exited unexpectedly; waiting for a file change to restart"
         );
-        // Wait for a watcher event to use as a restart trigger. We must also handle shutdown
-        // here; otherwise if shutdown is requested while we're waiting, the watcher exits, its
-        // sender drops, and receiver.recv() would return None and crash instead of shutting
-        // down cleanly.
+        // Wait for a watcher event to use as a restart trigger. We handle both the shutdown
+        // signal and the channel closing (which also indicates shutdown, since the sender is
+        // exclusively owned by `run_watcher` and it only exits on shutdown).
         tokio::select! {
             _ = handle.on_shutdown_requested() => {
                 // ghci is already dead; nothing to stop.
                 return Ok(RetryResult::Shutdown);
             }
             ret = receiver.recv() => {
-                let event = ret.ok_or_else(|| miette!("ghci event channel closed"))?;
+                let Some(event) = ret else {
+                    // Channel closed — shutdown in progress. ghci is already dead.
+                    tracing::debug!("Watcher event channel closed; shutting down");
+                    return Ok(RetryResult::Shutdown);
+                };
                 let WatcherEvent::Reload { events } = event;
                 let actions = classifier.classify(events, &ModuleSet::default())?;
                 if matches!(actions.kind(), GhciReloadKind::None) {
