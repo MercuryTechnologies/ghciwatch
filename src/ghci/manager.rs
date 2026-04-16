@@ -123,7 +123,7 @@ pub async fn run_ghci(
                 Some(new_status) = exited_receiver.recv() => {
                     status = new_status;
                 }
-                result = ghci.restart() => {
+                result = ghci.startup_restart() => {
                     result.wrap_err("Failed to restart ghci after startup failure")?;
                     break;
                 }

@@ -198,9 +198,52 @@ async fn handles_repeated_startup_failures() {
 
     // This restart should succeed.
     session
-        .wait_for_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_log(BaseMatcher::message(
+            r"Finished starting up in \d+\.\d+m?s$",
+        ))
         .await
         .expect("ghciwatch restarts ghci after dependency is fixed");
+}
+
+/// Check that startup failures are handled correctly with `--before-restart-ghci` hooks.
+#[test]
+async fn handles_repeated_startup_failures_before_restart_ghci_hook() {
+    let mut session = GhciWatchBuilder::new("tests/data/with-dep")
+        .before_start(move |path| {
+            // A version of SimpleDep.hs with an unclosed string literal — cabal will refuse to build it.
+            async move {
+                Fs::new()
+                    .replace(
+                        path.join("simple-dep/src/SimpleDep.hs"),
+                        "\"depFunc\"",
+                        "\"depFunc",
+                    )
+                    .await
+            }
+        })
+        .with_args(["--before-restart-ghci", "putStrLn \"hello\""])
+        .start()
+        .await
+        .expect("ghciwatch starts");
+
+    // First startup fails because simple-dep won't compile.
+    session
+        .wait_for_log("ghci exited during startup")
+        .await
+        .expect("ghciwatch detects first startup failure");
+
+    // Touching a source file triggers the first restart attempt, which also fails.
+    session
+        .fs()
+        .touch(session.path("src/MyLib.hs"))
+        .await
+        .expect("can touch source file");
+
+    // The second failure confirms the retry loop re-enters rather than crashing.
+    session
+        .wait_for_log("ghci exited during startup")
+        .await
+        .expect("ghciwatch detects second startup failure");
 }
 
 /// Test that when ghci exits unexpectedly during a dispatched reload/restart (not during startup),
