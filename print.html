@@ -709,12 +709,14 @@ main = protectStdoutBuffering $ defaultMain $ mytestgroup
 <a href="https://github.com/MercuryTechnologies/ghciwatch/pull/321/files?short_path=c86caa3#diff-c86caa33ad4639b624ef8db59e739295f362bf4c211bed24c8ba484c79af9bdb"><code>tasty-autocollect</code></a> relies on a compiler plugin and seems
 to avoid this problem.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="multiple-cabal-components"><a class="header" href="#multiple-cabal-components">Multiple Cabal components</a></h1>
-<p>Currently, multiple Cabal components don’t work. You can work around this with
-<a href="https://jade.fyi/blog/cabal-test-dev-trick/">the Cabal <code>test-dev</code> trick</a> as described by the venerable Jade
-Lovelace. This works by defining a new component in our <code>.cabal</code> file which
-includes the sources from the library and the tests, which has the added
-benefit of speeding up compile times by allowing the compilation of different
-components to be interleaved.</p>
+<p>Currently, multiple Cabal components don’t work nicely with GHCi/ghciwatch
+(note that this is different from <a href="integration/multiple-components.html">multiple Cabal
+<em>packages</em></a>, which <em>also</em> don’t work). You can work
+around this with <a href="https://jade.fyi/blog/cabal-test-dev-trick/">the Cabal <code>test-dev</code> trick</a> as described by the
+venerable Jade Lovelace. This works by defining a new component in our <code>.cabal</code>
+file which includes the sources from the library and the tests, which has the
+added benefit of speeding up compile times by allowing the compilation of
+different components to be interleaved.</p>
 <p>You can <a href="https://github.com/MercuryTechnologies/ghciwatch/blob/93fbb67fba6abd3903596876394acf234cb9bdb2/tests/data/simple/package.yaml">see this demonstrated in the ghciwatch test sources
 here</a>. We define four components:</p>
 <ul>
@@ -785,6 +787,26 @@ this by writing <a href="https://haskell-language-server.readthedocs.io/en/stabl
   cabal:
     component: test-dev
 </code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="multiple-cabal-packages--startup-failures"><a class="header" href="#multiple-cabal-packages--startup-failures">Multiple Cabal packages / startup failures</a></h1>
+<p>If you have a workspace with multiple Cabal packages, you might want to restart
+GHCi when those packages change.</p>
+<p>If you have something like this in your <code>cabal.project</code>:</p>
+<pre><code>packages:
+  my-package.cabal
+  my-dependency/my-dependency.cabal
+</code></pre>
+<p>Then, to trigger restarts when <code>my-dependency</code> changes, add something like this
+to your ghciwatch command:</p>
+<pre><code>ghciwatch \
+    --watch my-dependency \
+    --restart-glob 'my-dependency/src/**/*.hs' \
+    --restart-glob 'my-dependency/my-dependency.cabal'
+</code></pre>
+<p>Note that you’ll need to specify each dependency manually; Cabal doesn’t expose
+this information nicely for us to use automatically.</p>
+<p>Ghciwatch will wait for a glob match to change if the GHCi session fails to
+start. If you find it hanging around when you want it to be restarting, try
+adding to your <code>--restart-glob</code> or <code>--reload-glob</code> arguments.</p>
 
                     </main>
 

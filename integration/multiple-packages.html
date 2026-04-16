@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Multiple Cabal components - ghciwatch</title>
+        <title>Multiple Cabal packages - ghciwatch</title>
 
 
         <!-- Custom HTML head -->
@@ -147,7 +147,7 @@
                         <a href="https://github.com/MercuryTechnologies/ghciwatch" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./integration/multiple-components.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/MercuryTechnologies/ghciwatch/edit/main/docs/./integration/multiple-packages.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -181,97 +181,35 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="multiple-cabal-components"><a class="header" href="#multiple-cabal-components">Multiple Cabal components</a></h1>
-<p>Currently, multiple Cabal components don’t work nicely with GHCi/ghciwatch
-(note that this is different from <a href="multiple-components.html">multiple Cabal
-<em>packages</em></a>, which <em>also</em> don’t work). You can work
-around this with <a href="https://jade.fyi/blog/cabal-test-dev-trick/">the Cabal <code>test-dev</code> trick</a> as described by the
-venerable Jade Lovelace. This works by defining a new component in our <code>.cabal</code>
-file which includes the sources from the library and the tests, which has the
-added benefit of speeding up compile times by allowing the compilation of
-different components to be interleaved.</p>
-<p>You can <a href="https://github.com/MercuryTechnologies/ghciwatch/blob/93fbb67fba6abd3903596876394acf234cb9bdb2/tests/data/simple/package.yaml">see this demonstrated in the ghciwatch test sources
-here</a>. We define four components:</p>
-<ul>
-<li><code>library</code></li>
-<li><code>tests</code></li>
-<li>An internal <code>test-lib</code> library</li>
-<li>An internal <code>test-dev</code> library</li>
-</ul>
-<p>Then, we can use a command like <code>cabal v2-repl test-dev</code> to run a GHCi session
-containing both the library and test sources.</p>
-<p>The <code>package.yaml</code> should look something like this:</p>
-<pre><code class="language-yaml">---
-spec-version: 0.36.0
-name: my-simple-package
-version: 0.1.0.0
-
-flags:
-  local-dev:
-    description: Turn on development settings, like auto-reload templates.
-    manual: true
-    default: false
-
-library:
-  source-dirs: src
-
-tests:
-  test:
-    main: Main.hs
-    source-dirs:
-      - test-main
-    ghc-options: -threaded -rtsopts -with-rtsopts=-N
-    when:
-    - condition: flag(local-dev)
-      then:
-        dependencies:
-        - test-dev
-      else:
-        dependencies:
-        - my-simple-package
-        - test-lib
-
-internal-libraries:
-  test-lib:
-    source-dirs:
-      - test
-
-  test-dev:
-    source-dirs:
-      - test
-      - src
-    when:
-    - condition: flag(local-dev)
-      then:
-        buildable: true
-      else:
-        buildable: false
+                        <h1 id="multiple-cabal-packages--startup-failures"><a class="header" href="#multiple-cabal-packages--startup-failures">Multiple Cabal packages / startup failures</a></h1>
+<p>If you have a workspace with multiple Cabal packages, you might want to restart
+GHCi when those packages change.</p>
+<p>If you have something like this in your <code>cabal.project</code>:</p>
+<pre><code>packages:
+  my-package.cabal
+  my-dependency/my-dependency.cabal
 </code></pre>
-<p>Then, we can set the <code>local-dev</code> flag in our <code>cabal.project.local</code>, so that we
-use the <code>test-dev</code> target locally:</p>
-<pre><code class="language-cabal">package my-simple-package
-  flags: +local-dev
+<p>Then, to trigger restarts when <code>my-dependency</code> changes, add something like this
+to your ghciwatch command:</p>
+<pre><code>ghciwatch \
+    --watch my-dependency \
+    --restart-glob 'my-dependency/src/**/*.hs' \
+    --restart-glob 'my-dependency/my-dependency.cabal'
 </code></pre>
-<h2 id="haskell-language-server"><a class="header" href="#haskell-language-server">haskell-language-server</a></h2>
-<p>Defining the <code>test-dev</code> component does tend to confuse
-<code>haskell-language-server</code>, as a single file is now in multiple components. Fix
-this by writing <a href="https://haskell-language-server.readthedocs.io/en/stable/configuration.html#configuring-your-project-build">an <code>hie.yaml</code></a> like this:</p>
-<pre><code class="language-yaml">cradle:
-  cabal:
-    component: test-dev
-</code></pre>
+<p>Note that you’ll need to specify each dependency manually; Cabal doesn’t expose
+this information nicely for us to use automatically.</p>
+<p>Ghciwatch will wait for a glob match to change if the GHCi session fails to
+start. If you find it hanging around when you want it to be restarting, try
+adding to your <code>--restart-glob</code> or <code>--reload-glob</code> arguments.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../integration/tasty.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../integration/multiple-components.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../integration/multiple-packages.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -279,13 +217,10 @@ this by writing <a href="https://haskell-language-server.readthedocs.io/en/stabl
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../integration/tasty.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../integration/multiple-components.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../integration/multiple-packages.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
             </nav>
 
         </div>
