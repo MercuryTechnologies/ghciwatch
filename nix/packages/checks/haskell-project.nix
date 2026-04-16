@@ -15,7 +15,7 @@ mkCheck {
     export HOME="$TMPDIR"
 
     for VERSION in $GHC_VERSIONS; do
-      make test GHC="ghc-$VERSION"
+      cabal build --with-compiler="ghc-$VERSION"
     done
   '';
 

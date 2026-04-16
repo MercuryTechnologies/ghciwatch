@@ -96,10 +96,10 @@ async fn can_run_hooks() {
     ghci_hook(&mut session, "after-reload", "1").await;
     ghci_hook(&mut session, "after-reload", "2").await;
 
-    // Modify the `package.yaml` to trigger a restart.
+    // Modify the `.cabal` file to trigger a restart.
     session
         .fs()
-        .append(session.path("package.yaml"), "\n")
+        .append(session.path("my-simple-package.cabal"), "\n")
         .await
         .unwrap();
 
@@ -153,9 +153,9 @@ async fn shell_hook(session: &mut GhciWatch, hook: &str, index: &str) {
 /// That is, the error log is updated before `--after-startup-shell` and `--after-reload-shell`.
 #[test]
 async fn hooks_can_observe_error_log() {
-    let module_path = "src/MyModule.hs";
-    let after_startup = shell_requote("grep -q '^src/MyModule.hs:4:11' ghcid.txt");
-    let after_reload = shell_requote("grep -q '^src/MyModule.hs:5:11' ghcid.txt");
+    let module_path = "src/MyLib.hs";
+    let after_startup = shell_requote("grep -q '^src/MyLib.hs:4:11' ghcid.txt");
+    let after_reload = shell_requote("grep -q '^src/MyLib.hs:5:11' ghcid.txt");
     let after_restart = shell_requote("grep -q '^src/MyCoolModule.hs:1:8' ghcid.txt");
 
     let mut session = GhciWatchBuilder::new("tests/data/simple")
@@ -228,10 +228,14 @@ async fn hooks_can_observe_error_log() {
         let new_path = session.path("src/MyCoolModule.hs");
         session.fs().rename(module_path, new_path).await.unwrap();
 
-        // Modify the `package.yaml` to trigger a restart.
+        // Modify the `.cabal` file to trigger a restart.
         session
             .fs()
-            .append(session.path("package.yaml"), "\n")
+            .replace(
+                session.path("my-simple-package.cabal"),
+                "exposed-modules: MyLib",
+                "exposed-modules: MyCoolModule",
+            )
             .await
             .unwrap();
 

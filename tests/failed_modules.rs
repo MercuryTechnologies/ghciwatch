@@ -7,7 +7,7 @@ use test_harness::GhciWatchBuilder;
 /// This is a regression test for [#43](https://github.com/MercuryTechnologies/ghciwatch/issues/43).
 #[test]
 async fn can_start_with_failed_modules() {
-    let module_path = "src/MyModule.hs";
+    let module_path = "src/MyLib.hs";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .before_start(move |path| async move {
             Fs::new()

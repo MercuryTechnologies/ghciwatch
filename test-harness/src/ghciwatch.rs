@@ -34,11 +34,10 @@ pub(crate) const LOG_FILENAME: &str = "ghciwatch.json";
 /// Builder for [`GhciWatch`].
 pub struct GhciWatchBuilder {
     project_directory: PathBuf,
-    copy_extra: Vec<PathBuf>,
     ghciwatch_args: Vec<OsString>,
-    make_args: Vec<String>,
     ghc_args: Vec<String>,
     cabal_args: Vec<String>,
+    cabal_target: String,
     #[allow(clippy::type_complexity)]
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
     default_timeout: Duration,
@@ -51,12 +50,10 @@ impl GhciWatchBuilder {
     pub fn new(project_directory: impl AsRef<Path>) -> Self {
         Self {
             project_directory: project_directory.as_ref().to_owned(),
-            // Gonna need this for the `Makefile` in `tests/data/simple`.
-            copy_extra: vec!["tests/data/common".into()],
             ghciwatch_args: Default::default(),
             ghc_args: Default::default(),
-            make_args: Default::default(),
             cabal_args: Default::default(),
+            cabal_target: "my-simple-package".into(),
             before_start: None,
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
@@ -90,19 +87,6 @@ impl GhciWatchBuilder {
         self
     }
 
-    /// Add an argument to the `make` invocations.
-    pub fn with_make_arg(mut self, arg: impl AsRef<str>) -> Self {
-        self.make_args.push(arg.as_ref().to_owned());
-        self
-    }
-
-    /// Add multiple arguments to the `make` invocations.
-    pub fn with_make_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        self.make_args
-            .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
-        self
-    }
-
     /// Add an argument to the `cabal` invocations.
     pub fn with_cabal_arg(mut self, arg: impl AsRef<str>) -> Self {
         self.cabal_args.push(arg.as_ref().to_owned());
@@ -113,6 +97,12 @@ impl GhciWatchBuilder {
     pub fn with_cabal_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         self.cabal_args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Set the Cabal target to open a `cabal v2-repl` for.
+    pub fn with_cabal_target(mut self, target: impl AsRef<str>) -> Self {
+        self.cabal_target = target.as_ref().to_owned();
         self
     }
 
@@ -162,14 +152,6 @@ impl GhciWatchBuilder {
     ) -> Self {
         self.log_filters
             .extend(log_filters.into_iter().map(|s| s.as_ref().to_owned()));
-        self
-    }
-
-    /// Copy an extra directory or path to the temporary directory where tests are run.
-    ///
-    /// This will be copied as a sibling of the project directory.
-    pub fn copy_extra(mut self, path: impl AsRef<Path>) -> Self {
-        self.copy_extra.push(path.as_ref().to_owned());
         self
     }
 }
@@ -269,8 +251,10 @@ impl GhciWatch {
         write_cabal_config(&fs, &tempdir).await?;
         check_ghc_version(&tempdir, &ghc_version).await?;
 
-        let mut paths_to_copy = vec![&builder.project_directory];
-        paths_to_copy.extend(builder.copy_extra.iter());
+        let inner_tempdir = tempdir.join("tmp");
+        fs.create_dir(&inner_tempdir).await?;
+
+        let paths_to_copy = vec![&builder.project_directory];
         tracing::info!(?paths_to_copy, "Copying project files");
         fs_extra::copy_items(&paths_to_copy, &tempdir, &Default::default())
             .into_diagnostic()
@@ -293,17 +277,16 @@ impl GhciWatch {
         let log_path = tempdir.join(LOG_FILENAME);
 
         tracing::info!("Starting ghciwatch");
-        let repl_command = shell_words::join(
-            [
-                "make",
-                "ghci",
-                &format!("GHC=ghc-{ghc_version}"),
-                &format!("EXTRA_GHC_OPTS={}", shell_words::join(builder.ghc_args)),
-                &format!("CABAL_OPTS={}", shell_words::join(builder.cabal_args)),
-            ]
-            .into_iter()
-            .chain(builder.make_args.iter().map(|s| s.as_str())),
-        );
+        let mut repl_command = vec!["cabal".into(), format!("--with-compiler=ghc-{ghc_version}")];
+        repl_command.extend(builder.cabal_args.iter().cloned());
+        repl_command.push(format!(
+            "--repl-options={}",
+            shell_words::join(&builder.ghc_args)
+        ));
+        repl_command.push("v2-repl".into());
+        repl_command.push(builder.cabal_target.clone());
+
+        let repl_command = shell_words::join(repl_command);
 
         let log_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
             .into_iter()
@@ -319,11 +302,7 @@ impl GhciWatch {
                 "--watch",
                 "src",
                 "--watch",
-                "package.yaml",
-                "--restart-glob",
-                "**/package.yaml",
-                "--before-startup-shell",
-                "hpack --force .",
+                "my-simple-package.cabal", // This is going to get me in trouble.
                 "--log-filter",
                 &log_filters,
                 "--trace-spans",
@@ -334,6 +313,8 @@ impl GhciWatch {
             .args(builder.ghciwatch_args)
             .current_dir(&cwd)
             .env("HOME", &tempdir)
+            .env("CABAL_DIR", tempdir.join(".cabal"))
+            .env("TMPDIR", &inner_tempdir)
             // GHC will quote things with Unicode quotes unless we set this variable.
             // Very cute.
             // https://gitlab.haskell.org/ghc/ghc/-/blob/288235bbe5a59b8a1bda80aaacd59e5717417726/compiler/GHC/Driver/Session.hs#L1084-L1085

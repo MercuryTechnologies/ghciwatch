@@ -1,0 +1,13 @@
+cabal-version: 3.0
+
+name: my-simple-package
+version: 0.1.0.0
+author: Rebecca Turner <rebeccat@mercury.com>
+build-type: Simple
+
+library
+  exposed-modules: MyLib
+  hs-source-dirs: src
+  ghc-options: -Wall
+  build-depends: base, simple-dep
+  default-language: Haskell2010

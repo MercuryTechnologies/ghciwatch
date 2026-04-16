@@ -60,6 +60,7 @@ async fn can_skip_reload_for_ignore_glob() {
 async fn can_restart_on_custom_file_change() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--restart-glob", "package.yaml", "--watch", "package.yaml"])
+        .before_start(|path| async move { Fs::new().touch(path.join("package.yaml")).await })
         .start()
         .await
         .expect("ghciwatch starts");

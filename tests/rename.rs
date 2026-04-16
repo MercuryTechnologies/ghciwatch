@@ -15,7 +15,7 @@ async fn can_compile_renamed_module() {
         .await
         .expect("ghciwatch loads ghci");
 
-    let module_path = session.path("src/MyModule.hs");
+    let module_path = session.path("src/MyLib.hs");
     let new_module_path = session.path("src/MyCoolModule.hs");
     session
         .fs()
@@ -37,7 +37,7 @@ async fn can_compile_renamed_module() {
 
     session
         .fs()
-        .replace(new_module_path, "module MyModule", "module MyCoolModule")
+        .replace(new_module_path, "module MyLib", "module MyCoolModule")
         .await
         .unwrap();
 
