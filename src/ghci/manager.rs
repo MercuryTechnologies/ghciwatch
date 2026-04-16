@@ -99,12 +99,16 @@ pub async fn run_ghci(
                     return Ok(());
                 }
                 ret = receiver.recv() => {
-                    let Some(event) = ret else {
+                    let Some(mut event) = ret else {
                         // Channel closed — `run_watcher` exited, which only happens
                         // during shutdown. Treat as clean shutdown.
                         tracing::debug!("Watcher event channel closed; shutting down");
                         return Ok(());
                     };
+                    // Merge as many events as possible from the queue.
+                    while let Ok(new_event) = receiver.try_recv() {
+                        event.merge(new_event);
+                    }
                     let WatcherEvent::Reload { events } = event;
                     let actions = classifier.classify(events, &ModuleSet::default())?;
                     if matches!(actions.kind(), GhciReloadKind::None) {
@@ -314,11 +318,15 @@ async fn wait_and_restart(
                 return Ok(RetryResult::Shutdown);
             }
             ret = receiver.recv() => {
-                let Some(event) = ret else {
+                let Some(mut event) = ret else {
                     // Channel closed — shutdown in progress. ghci is already dead.
                     tracing::debug!("Watcher event channel closed; shutting down");
                     return Ok(RetryResult::Shutdown);
                 };
+                // Merge as many events as possible from the queue.
+                while let Ok(new_event) = receiver.try_recv() {
+                    event.merge(new_event);
+                }
                 let WatcherEvent::Reload { events } = event;
                 let actions = classifier.classify(events, &ModuleSet::default())?;
                 if matches!(actions.kind(), GhciReloadKind::None) {
