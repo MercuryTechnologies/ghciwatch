@@ -12,8 +12,6 @@
   rustPlatform,
   rust-analyzer,
   mdbook,
-  cargo-nextest,
-  cargo-llvm-cov,
   installShellFiles,
   treefmt,
   alejandra,
@@ -250,19 +248,6 @@
       // {
         inherit (inputs) advisory-db;
       });
-    ghciwatch-coverage =
-      (craneLib.cargoLlvmCov.override {
-        inherit cargo-llvm-cov;
-      })
-      (testArgs
-        // {
-          cargoLlvmCovCommand = "nextest";
-          nativeBuildInputs =
-            (testArgs.nativeBuildInputs or [])
-            ++ [
-              cargo-nextest
-            ];
-        });
     ghciwatch-cli-docs = stdenv.mkDerivation {
       name = "ghciwatch-cli-docs-check";
       phases = ["checkPhase" "installPhase"];
