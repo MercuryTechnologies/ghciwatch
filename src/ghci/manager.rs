@@ -212,9 +212,21 @@ pub async fn run_ghci(
                     // Cancel the in-progress reload. This releases the `ghci` lock to prevent a deadlock.
                     task.abort();
 
-                    // Send a SIGINT to interrupt the reload.
-                    // NB: This may take a couple seconds to register.
-                    ghci.lock().await.send_sigint().await?;
+                    {
+                        let mut ghci_guard = ghci.lock().await;
+
+                        // Send a SIGINT to interrupt the reload.
+                        // NB: This may take a couple seconds to register.
+                        ghci_guard.send_sigint().await?;
+
+                        // The abort may have interrupted `reload()` between a GHCi
+                        // command (`:add`/`:unadd`) and the corresponding update to
+                        // `self.targets` or `self.eval_commands`, leaving in-memory
+                        // state out of sync with GHCi. Re-sync from ground truth.
+                        ghci_guard.refresh_targets().await?;
+                        ghci_guard.refresh_eval_commands().await?;
+                        ghci_guard.prune_command_handles();
+                    }
                 }
             }
             ret = &mut task => {
