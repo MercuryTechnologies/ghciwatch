@@ -88,11 +88,11 @@ pub async fn run_ghci(
         }
     };
     if let Some(mut status) = startup_exit {
+        tracing::warn!(
+            %status,
+            "ghci exited during startup; waiting for a file change to restart"
+        );
         loop {
-            tracing::warn!(
-                ?status,
-                "ghci exited during startup; waiting for a file change to restart"
-            );
             tokio::select! {
                 _ = handle.on_shutdown_requested() => {
                     tracing::debug!("ghci is already dead; nothing to stop");
@@ -122,6 +122,10 @@ pub async fn run_ghci(
                 biased;
                 Some(new_status) = exited_receiver.recv() => {
                     status = new_status;
+                    tracing::warn!(
+                        %status,
+                        "ghci exited during startup; waiting for a file change to restart"
+                    );
                 }
                 result = ghci.startup_restart() => {
                     result.wrap_err("Failed to restart ghci after startup failure")?;
@@ -296,11 +300,11 @@ async fn wait_and_restart(
     classifier: &FileClassifier,
     mut status: ExitStatus,
 ) -> miette::Result<RetryResult> {
+    tracing::warn!(
+        %status,
+        "ghci exited unexpectedly; waiting for a file change to restart"
+    );
     loop {
-        tracing::warn!(
-            ?status,
-            "ghci exited unexpectedly; waiting for a file change to restart"
-        );
         // Wait for a watcher event to use as a restart trigger. We handle both the shutdown
         // signal and the channel closing (which also indicates shutdown, since the sender is
         // exclusively owned by `run_watcher` and it only exits on shutdown).
@@ -331,6 +335,10 @@ async fn wait_and_restart(
             biased;
             Some(new_status) = exited_receiver.recv() => {
                 status = new_status;
+                tracing::warn!(
+                    %status,
+                    "ghci exited unexpectedly; waiting for a file change to restart"
+                );
             }
             result = async { ghci.lock().await.restart().await } => {
                 result.wrap_err("Failed to restart ghci after unexpected exit")?;
