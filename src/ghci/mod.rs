@@ -508,6 +508,22 @@ impl Ghci {
         Ok(())
     }
 
+    /// Restart the `ghci` session without triggering restart hooks.
+    ///
+    /// This is meant to be used when starting the `ghci` session itself fails; in this case, we
+    /// don't have a prompt to write (e.g.) before-restart GHCi command hooks into, and we aren't
+    /// really "restarting" a session so much as starting it again. That is, this method avoids
+    /// "broken pipe" errors with `--before-restart-ghci` hooks.
+    #[instrument(skip_all, level = "debug")]
+    async fn startup_restart(&mut self) -> miette::Result<()> {
+        let mut log = CompilationLog::default();
+
+        self.restart_inner(&mut log, [LifecycleEvent::Startup(hooks::When::After)])
+            .await?;
+
+        Ok(())
+    }
+
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
     async fn restart(&mut self) -> miette::Result<()> {
@@ -515,6 +531,24 @@ impl Ghci {
 
         self.run_hooks(LifecycleEvent::Restart(hooks::When::Before), &mut log)
             .await?;
+        self.restart_inner(
+            &mut log,
+            [
+                LifecycleEvent::Startup(hooks::When::After),
+                LifecycleEvent::Restart(hooks::When::After),
+            ],
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    async fn restart_inner<const N: usize>(
+        &mut self,
+        log: &mut CompilationLog,
+        events: [LifecycleEvent; N],
+    ) -> miette::Result<()> {
         self.stop().await?;
         let new = Self::new(
             self.shutdown.clone(),
@@ -523,14 +557,7 @@ impl Ghci {
         )
         .await?;
         let _ = std::mem::replace(self, new);
-        self.initialize(
-            &mut log,
-            [
-                LifecycleEvent::Startup(hooks::When::After),
-                LifecycleEvent::Restart(hooks::When::After),
-            ],
-        )
-        .await?;
+        self.initialize(log, events).await?;
 
         Ok(())
     }
