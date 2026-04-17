@@ -22,6 +22,8 @@ use path_colon::path_colon;
 mod compiling;
 pub use compiling::compiling;
 pub use compiling::CompilingProgress;
+#[cfg(test)]
+pub use super::module_and_files::CompilingModule;
 
 mod message_body;
 

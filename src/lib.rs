@@ -34,7 +34,7 @@ mod normal_path;
 mod shutdown;
 mod string_case;
 mod tracing;
-mod tui;
+pub(crate) mod tui;
 mod watcher;
 
 pub(crate) use cwd::current_dir;
