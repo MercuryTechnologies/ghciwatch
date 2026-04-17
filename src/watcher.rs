@@ -139,7 +139,6 @@ impl EventHandler {
         }
     }
 
-    #[instrument(skip_all, level = "debug")]
     async fn handle_event_inner(&self, event: DebounceEventResult) -> miette::Result<()> {
         let events = match event {
             Ok(events) => events,
@@ -171,7 +170,7 @@ impl EventHandler {
         if events.is_empty() {
             tracing::debug!("No relevant file events");
         } else {
-            tracing::trace!(?events, "Processed events");
+            tracing::debug!(?events, "Processed events");
             self.ghci_sender
                 .send(WatcherEvent::Reload { events })
                 .await
