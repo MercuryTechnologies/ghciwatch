@@ -17,7 +17,9 @@ fail-fast = false
 # `notify`. Even with sleeps before writing and poll-based notifications,
 # sometimes `notify` misses events (this is rare, maybe 1 in 50 test runs).
 # Retry tests if they fail in CI to mitigate this.
-retries = 3
+#
+# See also the `$TIMEOUT_MULT` environment variable.
+retries = 1
 
 [[profile.ci.overrides]]
 # `kind(test)` means integration tests in the `../tests/` directory.

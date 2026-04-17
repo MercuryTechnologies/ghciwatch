@@ -45,3 +45,19 @@ Note that this only applies to _failing_ tests. If we're willing to wait 10
 seconds for a log message, but the message appears after 1 second, we'll
 consume that log message and move on. Longer timeouts only make _failing_ tests
 slower.
+
+
+### `$TIMEOUT_MULT`
+
+The `$TIMEOUT_MULT` environment variable is a way to adjust the timeouts
+dynamically; our CI runners tend to be slower than our developer workstations,
+for example.
+
+The more tests you'd like to run at once, the slower they get. The default
+timeouts are fine when I'm running tests at `-j 16`, but at `-j 64` they fail
+frequently, just because all the underlying operations have a harder time
+contending for resources.
+
+Therefore, you can run something like `TIMEOUT_MULT=2 cargo nextest run
+--test-threads 64` to give your tests a little more wiggle room without
+changing hard-coded defaults or resorting to retries.
