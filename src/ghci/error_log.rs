@@ -1,4 +1,5 @@
 use camino::Utf8PathBuf;
+use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -8,6 +9,13 @@ use tracing::instrument;
 use super::parse::CompilationResult;
 use super::parse::ModulesLoaded;
 use super::CompilationLog;
+
+/// Message we write to the error log to indicate that ghciwatch is currently reloading or
+/// restarting.
+///
+/// This helps LLM Agents figure out that the reason they're not seeing any errors is because
+/// compilation hasn't finished yet.
+const STILL_COMPILING: &str = "[ghciwatch is still compiling]";
 
 /// Error log writer.
 ///
@@ -21,6 +29,24 @@ impl ErrorLog {
     /// Construct a new error log writer for the given path.
     pub fn new(path: Option<Utf8PathBuf>) -> Self {
         Self { path }
+    }
+
+    /// Write the "still compiling" message to the error log before a reload or restart.
+    pub async fn write_still_compiling(&self) -> miette::Result<()> {
+        let path = match &self.path {
+            Some(path) => path,
+            None => {
+                tracing::debug!("No error log path, not writing");
+                return Ok(());
+            }
+        };
+
+        tokio::fs::write(path, STILL_COMPILING)
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| "Failed to write error log: {path}")?;
+
+        Ok(())
     }
 
     /// Write the error log, if any, with the given compilation summary and diagnostic messages.
