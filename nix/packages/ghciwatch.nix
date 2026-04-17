@@ -224,6 +224,8 @@
     commonArgs
     // {
       nativeBuildInputs = (commonArgs.nativeBuildInputs or []) ++ haskellInputs;
+
+      # See `../../.config/nextest.toml`.
       NEXTEST_PROFILE = "ci";
       NEXTEST_HIDE_PROGRESS_BAR = "true";
 
