@@ -412,6 +412,8 @@ impl Ghci {
     ) -> miette::Result<()> {
         let start_instant = Instant::now();
 
+        self.error_log.write_still_compiling().await?;
+
         // Wait for the stdout job to start up.
         self.stdout.initialize(log).await?;
 
@@ -450,6 +452,7 @@ impl Ghci {
 
         if actions.needs_restart() {
             self.opts.clear();
+            self.error_log.write_still_compiling().await?;
             tracing::info!(
                 "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
@@ -464,6 +467,7 @@ impl Ghci {
 
         if actions.needs_modify() {
             self.opts.clear();
+            self.error_log.write_still_compiling().await?;
             self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
                 .await?;
         }
