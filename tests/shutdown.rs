@@ -42,6 +42,31 @@ fn extract_pid(event: &test_harness::Event) -> i32 {
     .expect("pid is i32")
 }
 
+/// Test that sending SIGHUP to `ghciwatch` triggers a `ghci` restart.
+#[test]
+async fn sighup_restarts_ghci() {
+    let mut session = GhciWatch::new("tests/data/simple")
+        .await
+        .expect("ghciwatch starts");
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch loads ghci");
+
+    signal::kill(Pid::from_raw(session.pid() as i32), Signal::SIGHUP)
+        .expect("Failed to send SIGHUP to ghciwatch");
+
+    session
+        .wait_for_log("Received SIGHUP; restarting ghci")
+        .await
+        .expect("ghciwatch receives SIGHUP");
+
+    session
+        .wait_for_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .await
+        .expect("ghciwatch restarts ghci after SIGHUP");
+}
+
 /// Test that when the `ghci` process is unexpectedly killed, `ghciwatch` waits for a file change
 /// and then restarts the session rather than shutting down.
 #[test]

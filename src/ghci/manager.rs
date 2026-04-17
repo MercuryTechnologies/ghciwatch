@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use miette::Context;
 use miette::IntoDiagnostic;
+use tokio::signal::unix::Signal;
+use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -62,6 +64,7 @@ pub async fn run_ghci(
 
     let no_interrupt_reloads = opts.no_interrupt_reloads;
     let classifier = opts.file_classifier()?;
+    let mut sighup = tokio::signal::unix::signal(SignalKind::hangup()).into_diagnostic()?;
     let (exited_sender, mut exited_receiver) = mpsc::channel::<ExitStatus>(1);
     let mut ghci = Ghci::new(handle.clone(), opts, exited_sender)
         .await
@@ -97,6 +100,9 @@ pub async fn run_ghci(
                 _ = handle.on_shutdown_requested() => {
                     tracing::debug!("ghci is already dead; nothing to stop");
                     return Ok(());
+                }
+                _ = sighup.recv() => {
+                    tracing::debug!("Received SIGHUP; restarting ghci");
                 }
                 ret = receiver.recv() => {
                     let Some(mut event) = ret else {
@@ -153,6 +159,22 @@ pub async fn run_ghci(
                         ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
                         break;
                     }
+                    _ = sighup.recv() => {
+                        tracing::debug!("Received SIGHUP; restarting ghci");
+                        tokio::select! {
+                            biased;
+                            Some(status) = exited_receiver.recv() => {
+                                match wait_and_restart(&ghci, &mut handle, &mut receiver, &mut exited_receiver, &classifier, &mut sighup, status).await? {
+                                    RetryResult::Restarted => {},
+                                    RetryResult::Shutdown => break 'main,
+                                }
+                            }
+                            result = async { ghci.lock().await.restart().await } => {
+                                result.wrap_err("Failed to restart ghci after SIGHUP")?;
+                            }
+                        }
+                        continue 'main;
+                    }
                     ret = receiver.recv() => {
                         match ret {
                             Some(event) => event,
@@ -165,7 +187,7 @@ pub async fn run_ghci(
                         }
                     }
                     Some(status) = exited_receiver.recv() => {
-                        match wait_and_restart(&ghci, &mut handle, &mut receiver, &mut exited_receiver, &classifier, status).await? {
+                        match wait_and_restart(&ghci, &mut handle, &mut receiver, &mut exited_receiver, &classifier, &mut sighup, status).await? {
                             RetryResult::Restarted => {},
                             RetryResult::Shutdown => break 'main,
                         }
@@ -194,6 +216,19 @@ pub async fn run_ghci(
                 task.abort();
                 ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
                 break;
+            }
+            _ = sighup.recv() => {
+                tracing::debug!("Received SIGHUP during reload; restarting ghci");
+                task.abort();
+                tokio::select! {
+                    biased;
+                    Some(status) = exited_receiver.recv() => {
+                        dispatch_exit = Some(status);
+                    }
+                    result = async { ghci.lock().await.restart().await } => {
+                        result.wrap_err("Failed to restart ghci after SIGHUP")?;
+                    }
+                }
             }
             Some(status) = exited_receiver.recv() => {
                 // ghci died during the dispatch. Abort the stuck task to release the Mutex.
@@ -231,6 +266,7 @@ pub async fn run_ghci(
                 &mut receiver,
                 &mut exited_receiver,
                 &classifier,
+                &mut sighup,
                 status,
             )
             .await?
@@ -302,6 +338,7 @@ async fn wait_and_restart(
     receiver: &mut mpsc::Receiver<WatcherEvent>,
     exited_receiver: &mut mpsc::Receiver<ExitStatus>,
     classifier: &FileClassifier,
+    sighup: &mut Signal,
     mut status: ExitStatus,
 ) -> miette::Result<RetryResult> {
     tracing::warn!(
@@ -316,6 +353,9 @@ async fn wait_and_restart(
             _ = handle.on_shutdown_requested() => {
                 // ghci is already dead; nothing to stop.
                 return Ok(RetryResult::Shutdown);
+            }
+            _ = sighup.recv() => {
+                tracing::debug!("Received SIGHUP; restarting ghci");
             }
             ret = receiver.recv() => {
                 let Some(mut event) = ret else {
