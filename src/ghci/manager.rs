@@ -256,7 +256,14 @@ impl GhciManager {
             reload_sender,
         )));
 
-        let ghci_exited = {
+        // `should_interrupt` consumes the oneshot receiver, so we wrap it in an Option
+        // to track whether it's been used.
+        let mut reload_receiver = Some(reload_receiver);
+        // Events that arrive while we're waiting for a non-interruptible dispatch
+        // (e.g. a restart) to complete. Returned as `Interrupted` for retry.
+        let mut pending_event: Option<WatcherEvent> = None;
+
+        let ghci_exited = loop {
             let GhciManager {
                 ref ghci,
                 ref mut handle,
@@ -265,7 +272,7 @@ impl GhciManager {
                 interrupt_reloads,
                 ..
             } = *self;
-            tokio::select! {
+            break tokio::select! {
                 _ = handle.on_shutdown_requested() => {
                     // Cancel any in-progress reloads. This releases the lock so we don't
                     // block here.
@@ -285,30 +292,50 @@ impl GhciManager {
                         ?new_event,
                         "Received ghci event from watcher while reloading"
                     );
-                    if interrupt_reloads
-                        && should_interrupt(reload_receiver).await
-                    {
-                        // Merge the events together so we don't lose progress.
-                        event.merge(new_event);
 
-                        // Cancel the in-progress reload. This releases the `ghci` lock to
-                        // prevent a deadlock.
-                        task.abort();
+                    // Check if we should interrupt the in-progress reload. We can only
+                    // check once (the oneshot is consumed), and only for interruptible
+                    // reloads.
+                    if interrupt_reloads {
+                        if let Some(reload_receiver) = reload_receiver.take() {
+                            if should_interrupt(reload_receiver).await {
+                                // Merge everything: any previously accumulated events
+                                // plus the newest event.
+                                if let Some(pending_event) = pending_event.take() {
+                                    event.merge(pending_event);
+                                }
+                                event.merge(new_event);
 
-                        // Send a SIGINT to interrupt the reload.
-                        // NB: This may take a couple seconds to register.
-                        ghci.lock().await.send_sigint().await?;
+                                // Cancel the in-progress reload. This releases the
+                                // `ghci` lock to prevent a deadlock.
+                                task.abort();
 
-                        return Ok(HandleResult::Interrupted(event));
+                                // Send a SIGINT to interrupt the reload.
+                                // NB: This may take a couple seconds to register.
+                                ghci.lock().await.send_sigint().await?;
+
+                                return Ok(HandleResult::Interrupted(event));
+                            }
+                        }
                     }
-                    None
+
+                    // Either `interrupt_reloads` is `false`, the `reload_receiver` was already
+                    // consumed, or `should_interrupt` returned false. Accumulate the event
+                    // and keep waiting for the dispatch task to finish.
+                    match pending_event {
+                        Some(ref mut pending_event) => pending_event.merge(new_event),
+                        None => pending_event = Some(new_event),
+                    }
+
+                    // Loop around to make sure we keep waiting for the `task`.
+                    continue;
                 }
                 ret = &mut task => {
                     ret.into_diagnostic()??;
                     tracing::debug!("Finished dispatching ghci event");
                     None
                 }
-            }
+            };
         };
 
         // If ghci died during the dispatch, wait for a file change and restart.
@@ -318,6 +345,13 @@ impl GhciManager {
                 RetryResult::Shutdown => return Ok(HandleResult::Shutdown),
             }
         }
+
+        // If events arrived while the dispatch was running (but we chose not to
+        // interrupt), return them for retry on the next iteration.
+        if let Some(pending_event) = pending_event {
+            return Ok(HandleResult::Interrupted(pending_event));
+        }
+
         Ok(HandleResult::Done)
     }
 
