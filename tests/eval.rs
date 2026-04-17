@@ -236,14 +236,14 @@ async fn can_eval_commands_twice() {
         .await
         .expect("ghciwatch didn't start in time");
 
-    session.checkpoint();
+    session.clear_events();
     session.fs().touch(&module_path).await.unwrap();
     session
         .assert_logged_or_wait(ok_reload.clone())
         .await
         .expect("ghciwatch evals commands");
 
-    session.checkpoint();
+    session.clear_events();
     session.fs().touch(&module_path).await.unwrap();
     session
         .assert_logged_or_wait(ok_reload)

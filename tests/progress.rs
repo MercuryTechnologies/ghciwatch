@@ -17,7 +17,7 @@ async fn compilation_emits_progress_fields() {
         .expect("ghciwatch loads ghci");
 
     // CompilationLog::extend() emits: tracing::debug!(module, path, current, total, "Compiling")
-    // The initial load emitted these during startup. They are already in the first checkpoint.
+    // The initial load emitted these during startup.
     // Note: current/total are numeric fields (not strings), so field matchers can't regex-match
     // them. We verify the event exists with the module field instead.
     session

@@ -37,10 +37,6 @@ mod ghc_version;
 pub use ghc_version::FullGhcVersion;
 pub use ghc_version::GhcVersion;
 
-mod checkpoint;
-pub use checkpoint::Checkpoint;
-pub use checkpoint::CheckpointIndex;
-
 mod timeout_mult;
 pub use timeout_mult::get_timeout_mult;
 pub use timeout_mult::timeout_mult;
