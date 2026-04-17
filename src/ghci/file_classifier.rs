@@ -108,7 +108,14 @@ impl FileClassifier {
             {
                 tracing::debug!(%path, "Needs remove");
                 needs_remove.push(path);
-            } else if matches!(event, FileEvent::Modify(_)) && path_is_haskell_source_file {
+            } else if matches!(event, FileEvent::Modify(_))
+                && path_is_haskell_source_file
+                // Unless a user explicitly asks for it (e.g. `--reload-glob '**/.*.hs`), ignore
+                // dotfiles when reloading.
+                && !path
+                    .file_name()
+                    .is_some_and(|name| name.starts_with('.'))
+            {
                 // Otherwise, reload when Haskell files are modified.
                 if targets.contains_source_path(&path) {
                     // We can `:reload` paths in the target set.
