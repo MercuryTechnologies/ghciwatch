@@ -87,161 +87,31 @@ pub async fn run_ghci(
             None
         }
     };
-    if let Some(mut status) = startup_exit {
-        tracing::warn!(
-            %status,
-            "ghci exited during startup; waiting for a file change to restart"
-        );
-        loop {
-            tokio::select! {
-                _ = handle.on_shutdown_requested() => {
-                    tracing::debug!("ghci is already dead; nothing to stop");
-                    return Ok(());
-                }
-                ret = receiver.recv() => {
-                    let Some(mut event) = ret else {
-                        // Channel closed — `run_watcher` exited, which only happens
-                        // during shutdown. Treat as clean shutdown.
-                        tracing::debug!("Watcher event channel closed; shutting down");
-                        return Ok(());
-                    };
-                    // Merge as many events as possible from the queue.
-                    while let Ok(new_event) = receiver.try_recv() {
-                        event.merge(new_event);
-                    }
-                    let WatcherEvent::Reload { events } = event;
-                    let actions = classifier.classify(events, &ModuleSet::default())?;
-                    if matches!(actions.kind(), GhciReloadKind::None) {
-                        tracing::debug!("File change not relevant to ghci; continuing to wait");
-                        continue;
-                    }
-                }
-            }
-            tracing::debug!("Restarting ghci");
-            // Race restart() against exited_receiver. When ghci dies during restart's
-            // initialize(), read_until loops with yields rather than erroring (to avoid a
-            // race with exited_receiver). So restart() will never return on its own when
-            // ghci dies — exited_receiver fires first, and with biased polling it wins.
-            tokio::select! {
-                biased;
-                Some(new_status) = exited_receiver.recv() => {
-                    status = new_status;
-                    tracing::warn!(
-                        %status,
-                        "ghci exited during startup; waiting for a file change to restart"
-                    );
-                }
-                result = ghci.startup_restart() => {
-                    result.wrap_err("Failed to restart ghci after startup failure")?;
-                    break;
-                }
-            }
+    if let Some(status) = startup_exit {
+        match wait_and_restart(
+            &mut handle,
+            &mut receiver,
+            &mut exited_receiver,
+            &classifier,
+            status,
+            &mut RestartStrategy::Startup(&mut ghci),
+        )
+        .await?
+        {
+            RetryResult::Restarted => {}
+            RetryResult::Shutdown => return Ok(()),
         }
     }
 
-    let ghci = Arc::new(Mutex::new(ghci));
-    // The event to respond to. If we interrupt a reload, we may begin the loop with `Some(_)` in
-    // here.
-    let mut maybe_event = None;
-    'main: loop {
-        let mut event = match maybe_event.take() {
-            Some(event) => event,
-            None => {
-                // If we don't already have an event to respond to, wait for filesystem events.
-                let event = tokio::select! {
-                    _ = handle.on_shutdown_requested() => {
-                        ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
-                        break;
-                    }
-                    ret = receiver.recv() => {
-                        match ret {
-                            Some(event) => event,
-                            None => {
-                                // Channel closed — shutdown in progress.
-                                tracing::debug!("Watcher event channel closed; shutting down");
-                                ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
-                                break;
-                            }
-                        }
-                    }
-                    Some(status) = exited_receiver.recv() => {
-                        match wait_and_restart(&ghci, &mut handle, &mut receiver, &mut exited_receiver, &classifier, status).await? {
-                            RetryResult::Restarted => {},
-                            RetryResult::Shutdown => break 'main,
-                        }
-                        continue 'main;
-                    }
-                };
-                tracing::debug!(?event, "Received ghci event from watcher");
-                event
-            }
-        };
-
-        // This channel notifies us what kind of reload is triggered, which we can use to inform
-        // our decision to interrupt the reload or not.
-        let (reload_sender, reload_receiver) = oneshot::channel();
-        // Dispatch the event. We spawn it into a new task so it can run in parallel to any
-        // shutdown requests.
-        let mut task = Box::pin(tokio::task::spawn(dispatch(
-            ghci.clone(),
-            event.clone(),
-            reload_sender,
-        )));
-        let mut dispatch_exit = None;
-        tokio::select! {
-            _ = handle.on_shutdown_requested() => {
-                // Cancel any in-progress reloads. This releases the lock so we don't block here.
-                task.abort();
-                ghci.lock().await.stop().await.wrap_err("Failed to quit ghci")?;
-                break;
-            }
-            Some(status) = exited_receiver.recv() => {
-                // ghci died during the dispatch. Abort the stuck task to release the Mutex.
-                task.abort();
-                dispatch_exit = Some(status);
-            }
-            Some(new_event) = receiver.recv() => {
-                tracing::debug!(?new_event, "Received ghci event from watcher while reloading");
-                if !no_interrupt_reloads && should_interrupt(reload_receiver).await {
-                    // Merge the events together so we don't lose progress.
-                    // Then, the next iteration of the loop will pick up the `maybe_event` value
-                    // and respond immediately.
-                    event.merge(new_event);
-                    maybe_event = Some(event);
-
-                    // Cancel the in-progress reload. This releases the `ghci` lock to prevent a deadlock.
-                    task.abort();
-
-                    // Send a SIGINT to interrupt the reload.
-                    // NB: This may take a couple seconds to register.
-                    ghci.lock().await.send_sigint().await?;
-                }
-            }
-            ret = &mut task => {
-                ret.into_diagnostic()??;
-                tracing::debug!("Finished dispatching ghci event");
-            }
-        }
-
-        // If ghci died during the dispatch, wait for a file change and restart.
-        if let Some(status) = dispatch_exit {
-            match wait_and_restart(
-                &ghci,
-                &mut handle,
-                &mut receiver,
-                &mut exited_receiver,
-                &classifier,
-                status,
-            )
-            .await?
-            {
-                RetryResult::Restarted => {}
-                RetryResult::Shutdown => break,
-            }
-        }
-    }
-
-    Ok(())
+    let manager = GhciManager {
+        ghci: Arc::new(Mutex::new(ghci)),
+        handle,
+        receiver,
+        exited_receiver,
+        classifier,
+        no_interrupt_reloads,
+    };
+    manager.run().await
 }
 
 #[instrument(level = "debug", skip(ghci, reload_sender))]
@@ -282,6 +152,213 @@ async fn should_interrupt(reload_receiver: oneshot::Receiver<GhciReloadKind>) ->
     }
 }
 
+/// Manages the main event loop for a running ghci session.
+struct GhciManager {
+    ghci: Arc<Mutex<Ghci>>,
+    handle: ShutdownHandle,
+    receiver: mpsc::Receiver<WatcherEvent>,
+    exited_receiver: mpsc::Receiver<ExitStatus>,
+    classifier: FileClassifier,
+    no_interrupt_reloads: bool,
+}
+
+/// Result of [`GhciManager::wait_for_event`].
+enum WaitResult {
+    /// A watcher event was received.
+    Event(WatcherEvent),
+    /// A shutdown was requested (or the watcher channel closed).
+    Shutdown,
+    /// ghci died and was successfully restarted; caller should continue the loop.
+    Restarted,
+}
+
+/// Result of [`GhciManager::handle_event`].
+enum HandleResult {
+    /// The event was dispatched (or ghci died during dispatch but was restarted).
+    Done,
+    /// The reload was interrupted; the merged event should be retried next iteration.
+    Interrupted(WatcherEvent),
+    /// A shutdown was requested.
+    Shutdown,
+}
+
+impl GhciManager {
+    async fn run(mut self) -> miette::Result<()> {
+        let mut maybe_event: Option<WatcherEvent> = None;
+        loop {
+            let event = match maybe_event.take() {
+                Some(event) => event,
+                None => match self.wait_for_event().await? {
+                    WaitResult::Event(event) => event,
+                    WaitResult::Shutdown => break,
+                    WaitResult::Restarted => continue,
+                },
+            };
+            match self.handle_event(event).await? {
+                HandleResult::Done => {}
+                HandleResult::Interrupted(event) => maybe_event = Some(event),
+                HandleResult::Shutdown => break,
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Wait for the next watcher event, handling shutdown and ghci death along the way.
+    async fn wait_for_event(&mut self) -> miette::Result<WaitResult> {
+        let ghci_exited = {
+            let GhciManager {
+                ref ghci,
+                ref mut handle,
+                ref mut receiver,
+                ref mut exited_receiver,
+                ..
+            } = *self;
+            tokio::select! {
+                _ = handle.on_shutdown_requested() => {
+                    ghci.lock().await.stop().await
+                        .wrap_err("Failed to quit ghci")?;
+                    return Ok(WaitResult::Shutdown);
+                }
+                ret = receiver.recv() => {
+                    match ret {
+                        Some(event) => {
+                            tracing::debug!(?event, "Received ghci event from watcher");
+                            return Ok(WaitResult::Event(event));
+                        }
+                        None => {
+                            // Channel closed — shutdown in progress.
+                            tracing::debug!(
+                                "Watcher event channel closed; shutting down"
+                            );
+                            ghci.lock().await.stop().await
+                                .wrap_err("Failed to quit ghci")?;
+                            return Ok(WaitResult::Shutdown);
+                        }
+                    }
+                }
+                Some(status) = exited_receiver.recv() => status,
+            }
+        };
+        // self is no longer partially borrowed, so we can call methods.
+        match self.wait_and_restart_runtime(ghci_exited).await? {
+            RetryResult::Restarted => Ok(WaitResult::Restarted),
+            RetryResult::Shutdown => Ok(WaitResult::Shutdown),
+        }
+    }
+
+    /// Dispatch a watcher event, handling shutdown, interruption, and ghci death.
+    async fn handle_event(&mut self, mut event: WatcherEvent) -> miette::Result<HandleResult> {
+        let (reload_sender, reload_receiver) = oneshot::channel();
+        let mut task = Box::pin(tokio::task::spawn(dispatch(
+            self.ghci.clone(),
+            event.clone(),
+            reload_sender,
+        )));
+
+        let ghci_exited = {
+            let GhciManager {
+                ref ghci,
+                ref mut handle,
+                ref mut receiver,
+                ref mut exited_receiver,
+                no_interrupt_reloads,
+                ..
+            } = *self;
+            tokio::select! {
+                _ = handle.on_shutdown_requested() => {
+                    // Cancel any in-progress reloads. This releases the lock so we don't
+                    // block here.
+                    task.abort();
+                    ghci.lock().await.stop().await
+                        .wrap_err("Failed to quit ghci")?;
+                    return Ok(HandleResult::Shutdown);
+                }
+                Some(status) = exited_receiver.recv() => {
+                    // ghci died during the dispatch. Abort the stuck task to release the
+                    // Mutex.
+                    task.abort();
+                    Some(status)
+                }
+                Some(new_event) = receiver.recv() => {
+                    tracing::debug!(
+                        ?new_event,
+                        "Received ghci event from watcher while reloading"
+                    );
+                    if !no_interrupt_reloads
+                        && should_interrupt(reload_receiver).await
+                    {
+                        // Merge the events together so we don't lose progress.
+                        event.merge(new_event);
+
+                        // Cancel the in-progress reload. This releases the `ghci` lock to
+                        // prevent a deadlock.
+                        task.abort();
+
+                        // Send a SIGINT to interrupt the reload.
+                        // NB: This may take a couple seconds to register.
+                        ghci.lock().await.send_sigint().await?;
+
+                        return Ok(HandleResult::Interrupted(event));
+                    }
+                    None
+                }
+                ret = &mut task => {
+                    ret.into_diagnostic()??;
+                    tracing::debug!("Finished dispatching ghci event");
+                    None
+                }
+            }
+        };
+
+        // If ghci died during the dispatch, wait for a file change and restart.
+        if let Some(status) = ghci_exited {
+            match self.wait_and_restart_runtime(status).await? {
+                RetryResult::Restarted => {}
+                RetryResult::Shutdown => return Ok(HandleResult::Shutdown),
+            }
+        }
+        Ok(HandleResult::Done)
+    }
+
+    /// Wait for a relevant file change, then attempt to restart ghci.
+    #[instrument(level = "debug", skip_all)]
+    async fn wait_and_restart_runtime(
+        &mut self,
+        status: ExitStatus,
+    ) -> miette::Result<RetryResult> {
+        wait_and_restart(
+            &mut self.handle,
+            &mut self.receiver,
+            &mut self.exited_receiver,
+            &self.classifier,
+            status,
+            &mut RestartStrategy::Runtime(self.ghci.clone()),
+        )
+        .await
+    }
+}
+
+/// Drain all pending events from the receiver, merge them, classify, and return the kind.
+/// Returns `None` when the combined events are irrelevant ([`GhciReloadKind::None`]).
+fn drain_and_classify(
+    initial: WatcherEvent,
+    receiver: &mut mpsc::Receiver<WatcherEvent>,
+    classifier: &FileClassifier,
+) -> miette::Result<Option<GhciReloadKind>> {
+    let mut event = initial;
+    while let Ok(new_event) = receiver.try_recv() {
+        event.merge(new_event);
+    }
+    let WatcherEvent::Reload { events } = event;
+    let kind = classifier.classify(events, &ModuleSet::default())?.kind();
+    if matches!(kind, GhciReloadKind::None) {
+        Ok(None)
+    } else {
+        Ok(Some(kind))
+    }
+}
+
 /// Outcome of [`wait_and_restart`].
 enum RetryResult {
     /// ghci was successfully restarted.
@@ -290,23 +367,55 @@ enum RetryResult {
     Shutdown,
 }
 
+/// How to restart ghci — differs between initial startup and runtime.
+enum RestartStrategy<'a> {
+    /// ghci failed during first startup; use [`Ghci::startup_restart`].
+    Startup(&'a mut Ghci),
+    /// ghci died at runtime; lock the [`Arc`] and call [`Ghci::restart`].
+    Runtime(Arc<Mutex<Ghci>>),
+}
+
+impl RestartStrategy<'_> {
+    fn context(&self) -> &'static str {
+        match self {
+            Self::Startup(_) => "during startup",
+            Self::Runtime(_) => "unexpectedly",
+        }
+    }
+
+    async fn restart(&mut self) -> miette::Result<()> {
+        match self {
+            Self::Startup(ghci) => ghci
+                .startup_restart()
+                .await
+                .wrap_err("Failed to restart ghci after startup failure"),
+            Self::Runtime(ghci) => ghci
+                .lock()
+                .await
+                .restart()
+                .await
+                .wrap_err("Failed to restart ghci after unexpected exit"),
+        }
+    }
+}
+
 /// Wait for a relevant file change, then attempt to restart ghci.
 ///
 /// If ghci also dies during the restart attempt, keeps waiting for file changes and retrying
 /// rather than crashing. Returns [`RetryResult::Shutdown`] if a shutdown is requested while
 /// waiting.
-#[instrument(level = "debug", skip_all)]
 async fn wait_and_restart(
-    ghci: &Arc<Mutex<Ghci>>,
     handle: &mut ShutdownHandle,
     receiver: &mut mpsc::Receiver<WatcherEvent>,
     exited_receiver: &mut mpsc::Receiver<ExitStatus>,
     classifier: &FileClassifier,
     mut status: ExitStatus,
+    strategy: &mut RestartStrategy<'_>,
 ) -> miette::Result<RetryResult> {
+    let context = strategy.context();
     tracing::warn!(
         %status,
-        "ghci exited unexpectedly; waiting for a file change to restart"
+        "ghci exited {context}; waiting for a file change to restart",
     );
     loop {
         // Wait for a watcher event to use as a restart trigger. We handle both the shutdown
@@ -318,26 +427,21 @@ async fn wait_and_restart(
                 return Ok(RetryResult::Shutdown);
             }
             ret = receiver.recv() => {
-                let Some(mut event) = ret else {
+                let Some(event) = ret else {
                     // Channel closed — shutdown in progress. ghci is already dead.
                     tracing::debug!("Watcher event channel closed; shutting down");
                     return Ok(RetryResult::Shutdown);
                 };
-                // Merge as many events as possible from the queue.
-                while let Ok(new_event) = receiver.try_recv() {
-                    event.merge(new_event);
-                }
-                let WatcherEvent::Reload { events } = event;
-                let actions = classifier.classify(events, &ModuleSet::default())?;
-                if matches!(actions.kind(), GhciReloadKind::None) {
+                if drain_and_classify(event, receiver, classifier)?.is_none() {
                     tracing::debug!("File change not relevant to ghci; continuing to wait");
                     continue;
                 }
             }
         }
-        // Race restart() against exited_receiver. When ghci dies during restart's
+        tracing::debug!("Restarting ghci");
+        // Race restart against exited_receiver. When ghci dies during restart's
         // initialize(), read_until loops with yields (rather than erroring on EOF), so
-        // restart() never completes on its own. exited_receiver fires when GhciProcess
+        // restart never completes on its own. exited_receiver fires when GhciProcess
         // detects the exit, and with biased polling it wins first so we can retry.
         tokio::select! {
             biased;
@@ -345,11 +449,11 @@ async fn wait_and_restart(
                 status = new_status;
                 tracing::warn!(
                     %status,
-                    "ghci exited unexpectedly; waiting for a file change to restart"
+                    "ghci exited {context}; waiting for a file change to restart",
                 );
             }
-            result = async { ghci.lock().await.restart().await } => {
-                result.wrap_err("Failed to restart ghci after unexpected exit")?;
+            result = strategy.restart() => {
+                result?;
                 return Ok(RetryResult::Restarted);
             }
         }
