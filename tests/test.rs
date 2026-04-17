@@ -7,7 +7,8 @@ use test_harness::GhciWatchBuilder;
 #[test]
 async fn can_run_test_suite_on_reload() {
     let error_path = "ghcid.txt";
-    let mut session = GhciWatchBuilder::new("tests/data/simple")
+    let mut session = GhciWatchBuilder::new("tests/data/with-test-suite")
+        .with_cabal_target("lib:test-dev")
         .with_args(["--test-ghci", "TestMain.testMain", "--errors", error_path])
         .start()
         .await
@@ -39,7 +40,7 @@ async fn can_run_test_suite_on_reload() {
         .await
         .expect("ghciwatch writes ghcid.txt");
     expect![[r#"
-        All good (3 modules)
+        All good (2 modules)
     "#]]
     .assert_eq(&error_contents);
 }

@@ -34,7 +34,7 @@ mod tests {
     #[test]
     fn test_parse_show_targets() {
         let show_paths = ShowPaths {
-            cwd: NormalPath::from_cwd("tests/data/simple")
+            cwd: NormalPath::from_cwd("tests/data/with-test-suite")
                 .unwrap()
                 .absolute()
                 .to_owned(),
@@ -51,7 +51,6 @@ mod tests {
                     src/MyLib.hs
                     TestMain
                     MyLib
-                    MyModule
                     "
                 )
             )
@@ -62,7 +61,6 @@ mod tests {
                 LoadedModule::new(normal_path("src/MyLib.hs")),
                 LoadedModule::with_name(normal_path("test/TestMain.hs"), "TestMain".to_owned()),
                 LoadedModule::with_name(normal_path("src/MyLib.hs"), "MyLib".to_owned()),
-                LoadedModule::with_name(normal_path("src/MyModule.hs"), "MyModule".to_owned()),
             ]
             .into_iter()
             .collect()

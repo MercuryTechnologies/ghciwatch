@@ -8,7 +8,7 @@ use test_harness::GhciWatchBuilder;
 #[test]
 async fn clears_on_reload_and_restart() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
-        .with_arg("--clear")
+        .with_args(["--clear", "--restart-glob", "**/*.cabal"])
         .with_log_filter("ghciwatch::ghci[clear]=trace")
         .start()
         .await
@@ -43,10 +43,10 @@ async fn clears_on_reload_and_restart() {
         .await
         .unwrap();
 
-    // Modify the `package.yaml` to trigger a restart.
+    // Modify the `.cabal` file to trigger a restart.
     session
         .fs()
-        .append(session.path("package.yaml"), "\n")
+        .append(session.path("my-simple-package.cabal"), "\n")
         .await
         .unwrap();
 

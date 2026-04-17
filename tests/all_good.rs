@@ -12,7 +12,7 @@ async fn can_detect_compilation_failure() {
         .start()
         .await
         .expect("ghciwatch starts");
-    let module_path = session.path("src/MyModule.hs");
+    let module_path = session.path("src/MyLib.hs");
 
     session.wait_until_ready().await.expect("ghciwatch loads");
 
