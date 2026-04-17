@@ -116,34 +116,46 @@ async fn can_run_hooks() {
     ghci_hook(&mut session, "after-restart", "2").await;
 }
 
+fn hook_timeout(session: &GhciWatch, hook: &str) -> Duration {
+    if hook.ends_with("-startup") || hook.ends_with("-restart") {
+        session.startup_timeout
+    } else {
+        Duration::from_secs(10)
+    }
+}
+
 async fn ghci_hook(session: &mut GhciWatch, hook: &str, index: &str) {
+    let timeout = hook_timeout(session, hook);
     session
-        .wait_for_log(
+        .wait_for_log_with_timeout(
             BaseMatcher::message(&format!("Running {hook} command"))
                 .with_field("command", &format!("putStrLn \"{hook}-{index}\"")),
+            timeout,
         )
         .await
         .unwrap();
     session
-        .wait_for_log(
+        .wait_for_log_with_timeout(
             BaseMatcher::message("Read line").with_field("line", &format!("^{hook}-{index}$")),
+            timeout,
         )
         .await
         .unwrap();
 }
 
 async fn shell_hook(session: &mut GhciWatch, hook: &str, index: &str) {
-    let wait_duration = Duration::from_secs(10);
+    let timeout = hook_timeout(session, hook);
     session
-        .wait_for_log(
+        .wait_for_log_with_timeout(
             BaseMatcher::message(&format!("Running {hook} command"))
                 .with_field("command", &format!("touch {hook}-{index}")),
+            timeout,
         )
         .await
         .unwrap();
     session
         .fs()
-        .wait_for_path(wait_duration, &session.path(format!("{hook}-{index}")))
+        .wait_for_path(timeout, &session.path(format!("{hook}-{index}")))
         .await
         .unwrap();
 }
@@ -180,16 +192,18 @@ async fn hooks_can_observe_error_log() {
         .expect("ghciwatch starts");
 
     session
-        .wait_for_log(
+        .wait_for_log_with_timeout(
             BaseMatcher::message("Running after-startup command")
                 .with_field("command", &regex::escape(&after_startup)),
+            session.startup_timeout,
         )
         .await
         .unwrap();
     session
-        .wait_for_log(
+        .wait_for_log_with_timeout(
             BaseMatcher::message("grep finished successfully")
                 .in_spans([SpanMatcher::new("run_hooks").with_field("event", "after-startup")]),
+            session.startup_timeout,
         )
         .await
         .unwrap();
