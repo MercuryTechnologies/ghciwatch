@@ -23,7 +23,7 @@ async fn can_start_with_failed_modules() {
     // `session.startup_timeout`), so this assert will fail more frequently unless we take care to
     // use a custom timeout.
     session
-        .wait_for_log_with_timeout("Compilation failed", session.startup_timeout)
+        .wait_for_startup_log("Compilation failed")
         .await
         .expect("ghciwatch fails to load with errors");
 

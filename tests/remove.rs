@@ -39,7 +39,7 @@ async fn can_remove_multiple_modules_at_once() {
         .expect("ghciwatch starts");
 
     session
-        .wait_for_log_with_timeout(
+        .wait_for_startup_log(
             BaseMatcher::message("Read line")
                 .in_spans(["refresh_targets"])
                 .with_field("line", "MyLib")
@@ -48,7 +48,6 @@ async fn can_remove_multiple_modules_at_once() {
                         .in_spans(["refresh_targets"])
                         .with_field("line", "MyModule"),
                 ),
-            session.startup_timeout,
         )
         .await
         .expect("2 modules are loaded");

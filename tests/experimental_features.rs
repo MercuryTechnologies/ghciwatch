@@ -25,9 +25,8 @@ async fn experimental_features_emits_warning() {
         .expect("ghciwatch starts");
 
     session
-        .wait_for_log_with_timeout(
+        .wait_for_startup_log(
             "`--experimental-features` may contain bugs or change drastically in future releases.",
-            session.startup_timeout,
         )
         .await
         .unwrap();

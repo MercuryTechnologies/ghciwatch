@@ -20,8 +20,6 @@ use crate::matcher::Matcher;
 use crate::timeout_mult::timeout_mult;
 use crate::tracing_reader::TracingReader;
 use crate::BaseMatcher;
-use crate::Checkpoint;
-use crate::CheckpointIndex;
 use crate::Event;
 use crate::Fs;
 use crate::FullGhcVersion;
@@ -231,7 +229,7 @@ pub struct GhciWatch {
     /// The current working directory of the `ghciwatch` session.
     cwd: PathBuf,
     /// All logged events read so far.
-    events: Vec<Vec<Event>>,
+    events: Vec<Event>,
     /// The version of GHC this test is running under.
     ghc_version: FullGhcVersion,
     /// The default timeout for waiting for log messages.
@@ -327,10 +325,7 @@ impl GhciWatch {
 
         let session = Session::new(&command, builder.default_timeout, &log_path).await?;
 
-        // Most tests won't use checkpoints, so we'll only have a couple checkpoint slots
-        // and many event slots in the first checkpoint chunk.
-        let mut events = Vec::with_capacity(8);
-        events.push(Vec::with_capacity(1024));
+        let events = Vec::with_capacity(1024);
 
         Ok(Self {
             command,
@@ -350,124 +345,62 @@ impl GhciWatch {
         GhciWatchBuilder::new(project_directory).start().await
     }
 
-    /// Get the first [`Checkpoint`].
+    /// Clear all previously-read events.
     ///
-    /// There is always an initial checkpoint which events are logged into before other
-    /// checkpoints are created.
-    ///
-    /// Note that `first_checkpoint()..=current_checkpoint()` is equivalent to `..`.
-    pub fn first_checkpoint(&self) -> Checkpoint {
-        Checkpoint(0)
-    }
-
-    /// Get the current [`Checkpoint`].
-    ///
-    /// Events read by [`GhciWatch::wait_for_log`] and friends will add events to
-    /// this checkpoint.
-    pub fn current_checkpoint(&self) -> Checkpoint {
-        Checkpoint(self.events.len() - 1)
-    }
-
-    /// Create and return a new [`Checkpoint`].
-    ///
-    /// New log events will be stored in this checkpoint.
-    ///
-    /// Later, you can check for log events in checkpoints with
-    /// [`Self::assert_logged_in_checkpoint`] and friends.
-    pub fn checkpoint(&mut self) -> Checkpoint {
-        self.events.push(Vec::with_capacity(512));
-        self.current_checkpoint()
-    }
-
-    /// Get the `Vec` of events since the last checkpoint.
-    fn current_chunk_mut(&mut self) -> &mut Vec<Event> {
-        self.events
-            .last_mut()
-            .expect("There is always an initial checkpoint")
-    }
-
-    /// Get an iterator over the events in the given checkpoints.
-    ///
-    /// The `index` can be an individual [`Checkpoint`] or any [`std::ops::Range`] of checkpoints.
-    fn events_in_checkpoints(&self, index: impl CheckpointIndex) -> impl Iterator<Item = &Event> {
-        self.events[index.as_index()].iter().flatten()
+    /// This makes previously-read events invisible to [`GhciWatch::assert_logged_or_wait`] and
+    /// similar methods.
+    pub fn clear_events(&mut self) {
+        self.events.clear();
     }
 
     /// Read an event from the `ghciwatch` session.
     async fn read_event(&mut self) -> miette::Result<&Event> {
         let event = self.ghciwatch.tracing_reader.next_event().await?;
-        let chunk = self.current_chunk_mut();
-        chunk.push(event);
-        Ok(chunk.last().expect("We just inserted this event"))
+        self.events.push(event);
+        Ok(self.events.last().expect("We just inserted this event"))
     }
 
-    /// Find a matching event logged in one of the given `checkpoints`.
+    /// Find a matching event in previously-read events.
     ///
     /// Returns the first matching event, or `None` if no matching events were found.
-    pub fn find_logged_in_checkpoint(
-        &self,
-        checkpoints: impl CheckpointIndex,
-        matcher: impl IntoMatcher,
-    ) -> miette::Result<Option<&Event>> {
-        let mut ret = None;
-        let mut matcher = matcher.into_matcher()?;
-        for event in self.events_in_checkpoints(checkpoints) {
-            if matcher.matches(event)? && ret.is_none() {
-                ret = Some(event)
+    fn find_logged(&self, matcher: &mut dyn Matcher) -> miette::Result<Option<&Event>> {
+        for event in &self.events {
+            if matcher.matches(event)? {
+                return Ok(Some(event));
             }
         }
-
-        Ok(ret)
+        Ok(None)
     }
 
-    /// Assert that a matching event was logged in one of the given `checkpoints`.
-    ///
-    /// Returns the first matching event.
-    pub fn assert_logged_in_checkpoint(
-        &self,
-        checkpoints: impl CheckpointIndex,
-        matcher: impl IntoMatcher,
-    ) -> miette::Result<&Event> {
-        let mut matcher = matcher.into_matcher()?;
-        self.find_logged_in_checkpoint(&checkpoints, &mut matcher)?
-            .ok_or_else(|| {
-                miette!(
-                    "No log message matching {matcher} found in checkpoint {:?}",
-                    checkpoints.as_index()
-                )
-            })
-    }
-
-    /// Assert that a matching event was logged since the last [`Checkpoint`].
+    /// Assert that a matching event was logged.
     pub fn assert_logged(&self, matcher: impl IntoMatcher) -> miette::Result<&Event> {
-        self.assert_logged_in_checkpoint(self.current_checkpoint(), matcher)
+        let mut matcher = matcher.into_matcher()?;
+        self.find_logged(&mut matcher)?
+            .ok_or_else(|| miette!("No log message matching {matcher} found"))
     }
 
-    /// Match a log message in the given checkpoints or wait until a matching log event is
-    /// found.
+    /// Wait until a matching log event is found, with the given timeout.
     ///
-    /// If `checkpoints` is `None`, do not check the `matcher` against any previously logged
-    /// events.
+    /// If `check_existing` is true, first check previously-read events before waiting for
+    /// new ones.
     ///
     /// Errors if waiting for the event takes longer than the given `timeout`.
-    pub async fn wait_for_log_with_checkpoint_and_timeout<M: IntoMatcher, C: CheckpointIndex>(
+    async fn wait_for_log_with_timeout_inner(
         &mut self,
-        matcher: M,
-        checkpoints: Option<C>,
+        matcher: impl IntoMatcher,
+        check_existing: bool,
         timeout_duration: Duration,
     ) -> miette::Result<Event> {
         let timeout_duration = timeout_mult(timeout_duration)?;
 
         let mut matcher = matcher.into_matcher()?;
 
-        // First check if it was logged in `checkpoints`.
-        if let Some(checkpoints) = checkpoints {
-            if let Some(event) = self.find_logged_in_checkpoint(checkpoints, &mut matcher)? {
+        if check_existing {
+            if let Some(event) = self.find_logged(&mut matcher)? {
                 return Ok(event.clone());
             }
         }
 
-        // Otherwise, wait for a log message.
         match tokio::time::timeout(timeout_duration, async {
             loop {
                 let event = self.read_event().await?;
@@ -487,59 +420,51 @@ impl GhciWatch {
         }
     }
 
-    /// Wait until a matching log event is found with the given `timeout_duration`.
-    pub async fn wait_for_log_with_timeout<M: IntoMatcher>(
+    /// Wait until a matching log event is found, with the given timeout.
+    ///
+    /// Errors if waiting for the event takes longer than the given `timeout`.
+    pub async fn wait_for_log_with_timeout(
         &mut self,
-        matcher: M,
+        matcher: impl IntoMatcher,
         timeout_duration: Duration,
     ) -> miette::Result<Event> {
-        self.wait_for_log_with_checkpoint_and_timeout(matcher, None::<Checkpoint>, timeout_duration)
+        self.wait_for_log_with_timeout_inner(matcher, false, timeout_duration)
             .await
     }
 
-    /// Assert that a message matching `matcher` has been logged in the given [`Checkpoint`]s or
-    /// wait for the `default_timeout` for a matching message to be logged.
-    pub async fn assert_logged_in_checkpoint_or_wait(
-        &mut self,
-        checkpoints: impl CheckpointIndex,
-        matcher: impl IntoMatcher,
-    ) -> miette::Result<Event> {
-        self.wait_for_log_with_checkpoint_and_timeout(
-            matcher,
-            Some(checkpoints),
-            self.default_timeout,
-        )
-        .await
-    }
-
-    /// Assert that a message matching `matcher` has been logged in the most recent [`Checkpoint`]
-    /// or wait for the `default_timeout` for a matching message to be logged.
+    /// Assert that a message matching `matcher` has been logged or wait for the
+    /// `default_timeout` for a matching message to be logged.
     pub async fn assert_logged_or_wait(
         &mut self,
         matcher: impl IntoMatcher,
     ) -> miette::Result<Event> {
-        self.wait_for_log_with_checkpoint_and_timeout(
-            matcher,
-            Some(self.current_checkpoint()),
-            self.default_timeout,
-        )
-        .await
+        self.wait_for_log_with_timeout_inner(matcher, true, self.default_timeout)
+            .await
     }
 
     /// Wait until a matching log event is found with the `default_timeout`.
     pub async fn wait_for_log(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
-        self.wait_for_log_with_timeout(matcher, self.default_timeout)
+        self.wait_for_log_with_timeout_inner(matcher, false, self.default_timeout)
+            .await
+    }
+
+    /// Wait for a matching log event with the `startup_timeout`, checking previously-read
+    /// events first.
+    pub async fn wait_for_startup_log(
+        &mut self,
+        matcher: impl IntoMatcher,
+    ) -> miette::Result<Event> {
+        self.wait_for_log_with_timeout_inner(matcher, true, self.startup_timeout)
             .await
     }
 
     /// Wait until `ghciwatch` completes its initial load.
     ///
-    /// Returns immediately if `ghciwatch` has already completed its initial load in the current
-    /// checkpoint.
+    /// Returns immediately if `ghciwatch` has already completed its initial load.
     pub async fn wait_until_started(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_checkpoint_and_timeout(
+        self.wait_for_log_with_timeout_inner(
             BaseMatcher::ghci_started(),
-            Some(self.current_checkpoint()),
+            true,
             self.startup_timeout,
         )
         .await
@@ -549,12 +474,11 @@ impl GhciWatch {
 
     /// Wait until `ghciwatch` is ready to receive file events.
     ///
-    /// Returns immediately if `ghciwatch` has already become ready to receive file events in the
-    /// current checkpoint.
+    /// Returns immediately if `ghciwatch` has already become ready to receive file events.
     pub async fn wait_until_watcher_started(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_checkpoint_and_timeout(
+        self.wait_for_log_with_timeout_inner(
             BaseMatcher::watcher_started(),
-            Some(self.current_checkpoint()),
+            true,
             self.default_timeout,
         )
         .await
@@ -564,12 +488,12 @@ impl GhciWatch {
 
     /// Wait until `ghciwatch` completes its initial load and is ready to receive file events.
     ///
-    /// Returns immediately if `ghciwatch` has already completed its inital load and become ready to
-    /// receive file events in the current checkpoint.
+    /// Returns immediately if `ghciwatch` has already completed its initial load and become ready
+    /// to receive file events.
     pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_checkpoint_and_timeout(
+        self.wait_for_log_with_timeout_inner(
             BaseMatcher::ghci_started().and(BaseMatcher::watcher_started()),
-            Some(self.current_checkpoint()),
+            true,
             self.startup_timeout,
         )
         .await
@@ -615,9 +539,7 @@ impl GhciWatch {
     }
 
     /// Restart the `ghciwatch` session.
-    ///
-    /// This creates and returns a new [`Checkpoint`].
-    pub async fn restart_ghciwatch(&mut self) -> miette::Result<Checkpoint> {
+    pub async fn restart_ghciwatch(&mut self) -> miette::Result<()> {
         let child = crate::internal::take_ghciwatch_process()?;
         crate::internal::send_signal(&child, nix::sys::signal::Signal::SIGINT)?;
         // Put it back.
@@ -630,7 +552,8 @@ impl GhciWatch {
 
         self.ghciwatch = Session::new(&self.command, self.default_timeout, &self.log_path).await?;
 
-        Ok(self.checkpoint())
+        self.clear_events();
+        Ok(())
     }
 
     /// Get a path relative to the project root.

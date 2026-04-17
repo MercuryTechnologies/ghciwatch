@@ -192,18 +192,16 @@ async fn hooks_can_observe_error_log() {
         .expect("ghciwatch starts");
 
     session
-        .wait_for_log_with_timeout(
+        .wait_for_startup_log(
             BaseMatcher::message("Running after-startup command")
                 .with_field("command", &regex::escape(&after_startup)),
-            session.startup_timeout,
         )
         .await
         .unwrap();
     session
-        .wait_for_log_with_timeout(
+        .wait_for_startup_log(
             BaseMatcher::message("grep finished successfully")
                 .in_spans([SpanMatcher::new("run_hooks").with_field("event", "after-startup")]),
-            session.startup_timeout,
         )
         .await
         .unwrap();
@@ -257,7 +255,7 @@ async fn hooks_can_observe_error_log() {
     }
 
     session
-        .wait_for_log(
+        .wait_for_startup_log(
             BaseMatcher::message("Running after-restart command")
                 .with_field("command", &regex::escape(&after_restart)),
         )
