@@ -371,7 +371,7 @@ enum RetryResult {
 enum RestartStrategy<'a> {
     /// ghci failed during first startup; use [`Ghci::startup_restart`].
     Startup(&'a mut Ghci),
-    /// ghci died at runtime; lock the [`Arc`] and call [`Ghci::restart`].
+    /// ghci died at runtime; lock the [`Arc`] and call [`Ghci::startup_restart`].
     Runtime(Arc<Mutex<Ghci>>),
 }
 
@@ -392,7 +392,7 @@ impl RestartStrategy<'_> {
             Self::Runtime(ghci) => ghci
                 .lock()
                 .await
-                .restart()
+                .startup_restart()
                 .await
                 .wrap_err("Failed to restart ghci after unexpected exit"),
         }
