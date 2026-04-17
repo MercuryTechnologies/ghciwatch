@@ -69,7 +69,7 @@ pub struct Opts {
     ///
     /// Depending on your workflow, `ghciwatch` may feel more responsive with this set.
     #[arg(long)]
-    pub no_interrupt_reloads: bool,
+    no_interrupt_reloads: bool,
 
     /// Enable experimental features. These features are unsupported and may change or be removed
     /// without notice.
@@ -228,6 +228,11 @@ pub struct LoggingOpts {
 }
 
 impl Opts {
+    /// Should reloads be interrupted with Ctrl-C when files change?
+    pub fn interrupt_reloads(&self) -> bool {
+        !self.no_interrupt_reloads
+    }
+
     /// Check whether a given experimental feature has been enabled.
     pub fn has_experimental_feature(&self, feature: ExperimentalFeature) -> bool {
         self.experimental_features.contains(&feature)
