@@ -237,7 +237,7 @@ pub struct GhciWatch {
     /// The default timeout for waiting for log messages.
     default_timeout: Duration,
     /// The timeout for waiting for `ghci to finish starting up.
-    startup_timeout: Duration,
+    pub startup_timeout: Duration,
     /// Filesystem helpers.
     fs: Fs,
     /// Data for this particular `ghciwatch` run. This changes when
@@ -362,7 +362,7 @@ impl GhciWatch {
 
     /// Get the current [`Checkpoint`].
     ///
-    /// Events read by [`GhciWatch::wait_for_log_with_timeout`] and friends will add events to
+    /// Events read by [`GhciWatch::wait_for_log`] and friends will add events to
     /// this checkpoint.
     pub fn current_checkpoint(&self) -> Checkpoint {
         Checkpoint(self.events.len() - 1)
@@ -450,7 +450,7 @@ impl GhciWatch {
     /// events.
     ///
     /// Errors if waiting for the event takes longer than the given `timeout`.
-    pub async fn wait_for_log_with_timeout<M: IntoMatcher, C: CheckpointIndex>(
+    pub async fn wait_for_log_with_checkpoint_and_timeout<M: IntoMatcher, C: CheckpointIndex>(
         &mut self,
         matcher: M,
         checkpoints: Option<C>,
@@ -487,6 +487,16 @@ impl GhciWatch {
         }
     }
 
+    /// Wait until a matching log event is found with the given `timeout_duration`.
+    pub async fn wait_for_log_with_timeout<M: IntoMatcher>(
+        &mut self,
+        matcher: M,
+        timeout_duration: Duration,
+    ) -> miette::Result<Event> {
+        self.wait_for_log_with_checkpoint_and_timeout(matcher, None::<Checkpoint>, timeout_duration)
+            .await
+    }
+
     /// Assert that a message matching `matcher` has been logged in the given [`Checkpoint`]s or
     /// wait for the `default_timeout` for a matching message to be logged.
     pub async fn assert_logged_in_checkpoint_or_wait(
@@ -494,8 +504,12 @@ impl GhciWatch {
         checkpoints: impl CheckpointIndex,
         matcher: impl IntoMatcher,
     ) -> miette::Result<Event> {
-        self.wait_for_log_with_timeout(matcher, Some(checkpoints), self.default_timeout)
-            .await
+        self.wait_for_log_with_checkpoint_and_timeout(
+            matcher,
+            Some(checkpoints),
+            self.default_timeout,
+        )
+        .await
     }
 
     /// Assert that a message matching `matcher` has been logged in the most recent [`Checkpoint`]
@@ -504,7 +518,7 @@ impl GhciWatch {
         &mut self,
         matcher: impl IntoMatcher,
     ) -> miette::Result<Event> {
-        self.wait_for_log_with_timeout(
+        self.wait_for_log_with_checkpoint_and_timeout(
             matcher,
             Some(self.current_checkpoint()),
             self.default_timeout,
@@ -514,7 +528,7 @@ impl GhciWatch {
 
     /// Wait until a matching log event is found with the `default_timeout`.
     pub async fn wait_for_log(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
-        self.wait_for_log_with_timeout(matcher, None::<Checkpoint>, self.default_timeout)
+        self.wait_for_log_with_timeout(matcher, self.default_timeout)
             .await
     }
 
@@ -523,7 +537,7 @@ impl GhciWatch {
     /// Returns immediately if `ghciwatch` has already completed its initial load in the current
     /// checkpoint.
     pub async fn wait_until_started(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_timeout(
+        self.wait_for_log_with_checkpoint_and_timeout(
             BaseMatcher::ghci_started(),
             Some(self.current_checkpoint()),
             self.startup_timeout,
@@ -538,7 +552,7 @@ impl GhciWatch {
     /// Returns immediately if `ghciwatch` has already become ready to receive file events in the
     /// current checkpoint.
     pub async fn wait_until_watcher_started(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_timeout(
+        self.wait_for_log_with_checkpoint_and_timeout(
             BaseMatcher::watcher_started(),
             Some(self.current_checkpoint()),
             self.default_timeout,
@@ -553,7 +567,7 @@ impl GhciWatch {
     /// Returns immediately if `ghciwatch` has already completed its inital load and become ready to
     /// receive file events in the current checkpoint.
     pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
-        self.wait_for_log_with_timeout(
+        self.wait_for_log_with_checkpoint_and_timeout(
             BaseMatcher::ghci_started().and(BaseMatcher::watcher_started()),
             Some(self.current_checkpoint()),
             self.startup_timeout,

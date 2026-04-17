@@ -19,8 +19,11 @@ async fn can_start_with_failed_modules() {
         .expect("ghciwatch starts");
     let module_path = session.path(module_path);
 
+    // Note: `session.wait_until_ready()` has a longer timeout than the default (the
+    // `session.startup_timeout`), so this assert will fail more frequently unless we take care to
+    // use a custom timeout.
     session
-        .wait_for_log("Compilation failed")
+        .wait_for_log_with_timeout("Compilation failed", session.startup_timeout)
         .await
         .expect("ghciwatch fails to load with errors");
 

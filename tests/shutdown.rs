@@ -52,7 +52,10 @@ async fn restarts_after_ghci_killed() {
         .expect("ghciwatch starts");
 
     let event = session
-        .wait_for_log(BaseMatcher::message("^Started ghci$"))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message("^Started ghci$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch starts ghci");
     let pid = extract_pid(&event);
@@ -81,7 +84,10 @@ async fn restarts_after_ghci_killed() {
     // "Finished restarting in X.Xs" (not "Finished starting up"), so we match on the common
     // suffix rather than ghci_started() which only matches "starting up".
     session
-        .wait_for_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch restarts ghci after unexpected exit");
 }
@@ -96,7 +102,10 @@ async fn does_not_restart_on_irrelevant_file_change() {
         .expect("ghciwatch starts");
 
     let event = session
-        .wait_for_log(BaseMatcher::message("^Started ghci$"))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message("^Started ghci$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch starts ghci");
     let pid = extract_pid(&event);
@@ -135,7 +144,10 @@ async fn does_not_restart_on_irrelevant_file_change() {
         .expect("can touch source file");
 
     session
-        .wait_for_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch restarts ghci after relevant file change");
 }
@@ -163,7 +175,7 @@ async fn handles_repeated_startup_failures() {
 
     // First startup fails because simple-dep won't compile.
     session
-        .wait_for_log("ghci exited during startup")
+        .wait_for_log_with_timeout("ghci exited during startup", session.startup_timeout)
         .await
         .expect("ghciwatch detects first startup failure");
 
@@ -176,7 +188,7 @@ async fn handles_repeated_startup_failures() {
 
     // The second failure confirms the retry loop re-enters rather than crashing.
     session
-        .wait_for_log("ghci exited during startup")
+        .wait_for_log_with_timeout("ghci exited during startup", session.startup_timeout)
         .await
         .expect("ghciwatch detects second startup failure");
 
@@ -198,9 +210,10 @@ async fn handles_repeated_startup_failures() {
 
     // This restart should succeed.
     session
-        .wait_for_log(BaseMatcher::message(
-            r"Finished starting up in \d+\.\d+m?s$",
-        ))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message(r"Finished starting up in \d+\.\d+m?s$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch restarts ghci after dependency is fixed");
 }
@@ -228,7 +241,7 @@ async fn handles_repeated_startup_failures_before_restart_ghci_hook() {
 
     // First startup fails because simple-dep won't compile.
     session
-        .wait_for_log("ghci exited during startup")
+        .wait_for_log_with_timeout("ghci exited during startup", session.startup_timeout)
         .await
         .expect("ghciwatch detects first startup failure");
 
@@ -241,7 +254,7 @@ async fn handles_repeated_startup_failures_before_restart_ghci_hook() {
 
     // The second failure confirms the retry loop re-enters rather than crashing.
     session
-        .wait_for_log("ghci exited during startup")
+        .wait_for_log_with_timeout("ghci exited during startup", session.startup_timeout)
         .await
         .expect("ghciwatch detects second startup failure");
 }
@@ -302,7 +315,10 @@ async fn handles_unexpected_exit_during_dispatch() {
 
     // ghciwatch should restart successfully.
     session
-        .wait_for_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_log_with_timeout(
+            BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"),
+            session.startup_timeout,
+        )
         .await
         .expect("ghciwatch restarts ghci after fixing the dependency");
 }
