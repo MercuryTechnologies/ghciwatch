@@ -17,6 +17,7 @@ use tap::Conv;
 use tokio::process::Command;
 
 use crate::matcher::Matcher;
+use crate::timeout_mult::timeout_mult;
 use crate::tracing_reader::TracingReader;
 use crate::BaseMatcher;
 use crate::Checkpoint;
@@ -55,8 +56,9 @@ impl GhciWatchBuilder {
             cabal_args: Default::default(),
             cabal_target: "my-simple-package".into(),
             before_start: None,
-            default_timeout: Duration::from_secs(10),
-            startup_timeout: Duration::from_secs(60),
+            // Note: These will be scaled by `timeout_mult` later.
+            default_timeout: Duration::from_secs(7),
+            startup_timeout: Duration::from_secs(10),
             log_filters: Default::default(),
         }
     }
@@ -119,7 +121,7 @@ impl GhciWatchBuilder {
     /// Set the default timeout to wait for log messages in [`GhciWatch::wait_for_log`],
     /// [`GhciWatch::assert_logged_or_wait`], and similar.
     ///
-    /// The timeout defaults to 10 seconds.
+    /// This is multiplied with [`timeout_mult`].
     pub fn with_default_timeout(mut self, default_timeout: Duration) -> Self {
         self.default_timeout = default_timeout;
         self
@@ -128,7 +130,7 @@ impl GhciWatchBuilder {
     /// Set the default timeout to wait for `ghci` to start up in
     /// [`GhciWatch::wait_until_started`] and [`GhciWatch::wait_until_ready`].
     ///
-    /// The timeout defaults to 60 seconds.
+    /// This is multiplied with [`timeout_mult`].
     pub fn with_startup_timeout(mut self, startup_timeout: Duration) -> Self {
         self.startup_timeout = startup_timeout;
         self
@@ -454,6 +456,8 @@ impl GhciWatch {
         checkpoints: Option<C>,
         timeout_duration: Duration,
     ) -> miette::Result<Event> {
+        let timeout_duration = timeout_mult(timeout_duration)?;
+
         let mut matcher = matcher.into_matcher()?;
 
         // First check if it was logged in `checkpoints`.

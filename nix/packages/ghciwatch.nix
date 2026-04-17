@@ -229,6 +229,9 @@
       NEXTEST_PROFILE = "ci";
       NEXTEST_HIDE_PROGRESS_BAR = "true";
 
+      # See `../../tests/README.md`.
+      TIMEOUT_MULT = "12";
+
       # Provide GHC versions to use to the integration test suite.
       inherit GHC_VERSIONS;
     };
