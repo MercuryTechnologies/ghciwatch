@@ -71,6 +71,7 @@ async fn restarts_after_ghci_killed() {
         .expect("ghciwatch detects unexpected ghci exit");
 
     // A file change triggers the restart.
+    session.clear_events();
     session
         .fs()
         .touch(session.path("src/MyLib.hs"))
@@ -81,7 +82,7 @@ async fn restarts_after_ghci_killed() {
     // "Finished restarting in X.Xs" (not "Finished starting up"), so we match on the common
     // suffix rather than ghci_started() which only matches "starting up".
     session
-        .wait_for_startup_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_startup_log(BaseMatcher::ghci_started())
         .await
         .expect("ghciwatch restarts ghci after unexpected exit");
 }
@@ -128,6 +129,7 @@ async fn does_not_restart_on_irrelevant_file_change() {
         .expect("ghciwatch skips irrelevant file change");
 
     // Now touch a relevant Haskell file to trigger the actual restart.
+    session.clear_events();
     session
         .fs()
         .touch(session.path("src/MyLib.hs"))
@@ -135,7 +137,7 @@ async fn does_not_restart_on_irrelevant_file_change() {
         .expect("can touch source file");
 
     session
-        .wait_for_startup_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_startup_log(BaseMatcher::ghci_started())
         .await
         .expect("ghciwatch restarts ghci after relevant file change");
 }
@@ -308,7 +310,7 @@ async fn handles_unexpected_exit_during_dispatch() {
 
     // ghciwatch should restart successfully.
     session
-        .wait_for_startup_log(BaseMatcher::message(r"Finished restarting in \d+\.\d+m?s$"))
+        .wait_for_startup_log(BaseMatcher::ghci_started())
         .await
         .expect("ghciwatch restarts ghci after fixing the dependency");
 }
