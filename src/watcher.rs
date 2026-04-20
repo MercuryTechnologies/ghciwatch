@@ -144,10 +144,21 @@ impl EventHandler {
         let events = match event {
             Ok(events) => events,
             Err(errors) => {
+                let mut fatal_error = false;
                 for err in errors {
-                    tracing::error!("{err}");
+                    if notify_error_is_fatal(&err) {
+                        fatal_error = true;
+                        tracing::error!("{err}");
+                    } else {
+                        tracing::debug!("{err}");
+                    }
                 }
-                return Err(miette!("Watching files failed"));
+
+                return if fatal_error {
+                    Err(miette!("Watching files failed"))
+                } else {
+                    Ok(())
+                };
             }
         };
 
@@ -174,5 +185,16 @@ impl EventHandler {
 impl DebounceEventHandler for EventHandler {
     fn handle_event(&mut self, event: DebounceEventResult) {
         self.handle.block_on(self.handle_event_async(event))
+    }
+}
+
+fn notify_error_is_fatal(err: &notify::Error) -> bool {
+    match &err.kind {
+        notify::ErrorKind::Io(error) => {
+            // "File not found" isn't fatal, everything else is.
+            error.kind() != std::io::ErrorKind::NotFound
+        }
+        notify::ErrorKind::PathNotFound | notify::ErrorKind::WatchNotFound => false,
+        _ => true,
     }
 }
