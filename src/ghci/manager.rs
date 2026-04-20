@@ -60,7 +60,7 @@ pub async fn run_ghci(
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
 
-    let no_interrupt_reloads = opts.no_interrupt_reloads;
+    let interrupt_reloads = opts.interrupt_reloads;
     let classifier = opts.file_classifier()?;
     let (exited_sender, mut exited_receiver) = mpsc::channel::<ExitStatus>(1);
     let mut ghci = Ghci::new(handle.clone(), opts, exited_sender)
@@ -109,7 +109,7 @@ pub async fn run_ghci(
         receiver,
         exited_receiver,
         classifier,
-        no_interrupt_reloads,
+        interrupt_reloads,
     };
     manager.run().await
 }
@@ -159,7 +159,7 @@ struct GhciManager {
     receiver: mpsc::Receiver<WatcherEvent>,
     exited_receiver: mpsc::Receiver<ExitStatus>,
     classifier: FileClassifier,
-    no_interrupt_reloads: bool,
+    interrupt_reloads: bool,
 }
 
 /// Result of [`GhciManager::wait_for_event`].
@@ -262,7 +262,7 @@ impl GhciManager {
                 ref mut handle,
                 ref mut receiver,
                 ref mut exited_receiver,
-                no_interrupt_reloads,
+                interrupt_reloads,
                 ..
             } = *self;
             tokio::select! {
@@ -285,7 +285,7 @@ impl GhciManager {
                         ?new_event,
                         "Received ghci event from watcher while reloading"
                     );
-                    if !no_interrupt_reloads
+                    if interrupt_reloads
                         && should_interrupt(reload_receiver).await
                     {
                         // Merge the events together so we don't lose progress.
