@@ -21,12 +21,14 @@ use crate::cli::Opts;
 /// Options for initializing the [`tracing`] logging framework. This is like a lower-effort builder
 /// interface, mostly provided because Rust tragically lacks named arguments.
 pub struct TracingOpts<'opts> {
-    /// Filter directives to control which events are logged.
+    /// Filter directives to control which events are logged to the terminal.
     pub filter_directives: &'opts str,
     /// Control which span events are logged.
     pub trace_spans: &'opts [FmtSpan],
     /// If given, log as JSON to the given path.
     pub json_log_path: Option<&'opts Utf8Path>,
+    /// Filter directives for JSON logs. Falls back to `filter_directives` if `None`.
+    pub json_filter_directives: Option<&'opts str>,
     /// Are we running in TUI mode?
     ///
     /// A `(reader, writer)` pair to write to the TUI.
@@ -41,6 +43,7 @@ impl<'opts> TracingOpts<'opts> {
             filter_directives: &opts.logging.log_filter,
             trace_spans: &opts.logging.trace_spans,
             json_log_path: opts.logging.log_json.as_deref(),
+            json_filter_directives: opts.logging.log_filter_json.as_deref(),
             tui: if opts.has_experimental_feature(ExperimentalFeature::Tui) {
                 Some(tokio::io::duplex(crate::buffers::TRACING_BUFFER_CAPACITY))
             } else {
@@ -84,7 +87,10 @@ impl<'opts> TracingOpts<'opts> {
 
         match &self.json_log_path {
             Some(path) => {
-                let json_layer = tracing_json_layer(self.filter_directives, path, fmt_span)?;
+                let json_filter = self
+                    .json_filter_directives
+                    .unwrap_or(self.filter_directives);
+                let json_layer = tracing_json_layer(json_filter, path, fmt_span)?;
                 registry.with(json_layer).init();
             }
             None => {
