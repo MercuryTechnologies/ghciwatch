@@ -463,6 +463,11 @@ Log all span events</li>
 <p>Path to write JSON logs to.</p>
 <p>JSON logs are not yet stable and the format may change on any release.</p>
 </dd>
+<dt><a id="--log-filter-json" href="cli.html#--log-filter-json"><code>--log-filter-json &lt;FILTER&gt;</code></a></dt><dd>
+<p>Log message filter for JSON logs.</p>
+<p>Defaults to the value of <code>--log-filter</code> if not provided. This allows you to log at a more verbose level to the JSON log file without cluttering the terminal output.</p>
+<p>See <code>--log-filter</code> for the filter syntax.</p>
+</dd>
 </dl>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="lifecycle-hooks-1"><a class="header" href="#lifecycle-hooks-1">Lifecycle hooks</a></h1>
 <p>Ghciwatch supports a number of <a href="cli.html#lifecycle-hooks">lifecycle hook options</a>
