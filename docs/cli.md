@@ -368,6 +368,15 @@ Path to write JSON logs to.
 JSON logs are not yet stable and the format may change on any release.
 
 </dd>
+<dt><a id="--log-filter-json" href="#--log-filter-json"><code>--log-filter-json &lt;FILTER&gt;</code></a></dt><dd>
+
+Log message filter for JSON logs.
+
+Defaults to the value of `--log-filter` if not provided. This allows you to log at a more verbose level to the JSON log file without cluttering the terminal output.
+
+See `--log-filter` for the filter syntax.
+
+</dd>
 
 </dl>
 

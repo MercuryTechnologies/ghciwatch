@@ -225,6 +225,15 @@ pub struct LoggingOpts {
     /// JSON logs are not yet stable and the format may change on any release.
     #[arg(long, value_name = "PATH")]
     pub log_json: Option<Utf8PathBuf>,
+
+    /// Log message filter for JSON logs.
+    ///
+    /// Defaults to the value of `--log-filter` if not provided. This allows you to log at a more
+    /// verbose level to the JSON log file without cluttering the terminal output.
+    ///
+    /// See `--log-filter` for the filter syntax.
+    #[arg(long, env = "GHCIWATCH_LOG_JSON", value_name = "FILTER")]
+    pub log_filter_json: Option<String>,
 }
 
 impl Opts {
