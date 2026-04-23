@@ -42,6 +42,7 @@ pub struct GhciWatchBuilder {
     default_timeout: Duration,
     startup_timeout: Duration,
     log_filters: Vec<String>,
+    log_filters_json: Vec<String>,
 }
 
 impl GhciWatchBuilder {
@@ -58,6 +59,7 @@ impl GhciWatchBuilder {
             default_timeout: Duration::from_secs(7),
             startup_timeout: Duration::from_secs(10),
             log_filters: Default::default(),
+            log_filters_json: Default::default(),
         }
     }
 
@@ -153,6 +155,61 @@ impl GhciWatchBuilder {
         self.log_filters
             .extend(log_filters.into_iter().map(|s| s.as_ref().to_owned()));
         self
+    }
+
+    /// Add a `--log-filter-json` clause to the `ghciwatch` invocation.
+    pub fn with_log_filter_json(mut self, log_filter_json: impl AsRef<str>) -> Self {
+        self.log_filters_json
+            .push(log_filter_json.as_ref().to_owned());
+        self
+    }
+
+    /// Add multiple `--log-filter-json` clauses to the `ghciwatch` invocation.
+    pub fn with_log_filters_json(
+        mut self,
+        log_filter_jsons: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Self {
+        self.log_filters_json
+            .extend(log_filter_jsons.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    fn get_log_filters_inner<const N: usize>(
+        env_var: &str,
+        default_filters: [&str; N],
+        builder_filters: &[String],
+    ) -> String {
+        let env_var_filters = match std::env::var(env_var) {
+            Ok(var) => {
+                vec![var]
+            }
+            Err(std::env::VarError::NotPresent) => {
+                vec![]
+            }
+            Err(err @ std::env::VarError::NotUnicode(_)) => {
+                tracing::warn!("${env_var} isn't UTF-8: {err}");
+                vec![]
+            }
+        };
+
+        let mut filters = default_filters
+            .into_iter()
+            .chain(builder_filters.iter().map(|s| s.as_ref()))
+            .chain(env_var_filters.iter().map(|s| s.as_ref()));
+
+        filters.join(",")
+    }
+
+    fn get_log_filters(&self) -> String {
+        Self::get_log_filters_inner("GHCIWATCH_LOG", ["info"], &self.log_filters)
+    }
+
+    fn get_json_log_filters(&self) -> String {
+        Self::get_log_filters_inner(
+            "GHCIWATCH_LOG_JSON",
+            ["ghciwatch=debug"],
+            &self.log_filters_json,
+        )
     }
 }
 
@@ -288,11 +345,6 @@ impl GhciWatch {
 
         let repl_command = shell_words::join(repl_command);
 
-        let log_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
-            .into_iter()
-            .chain(builder.log_filters.iter().map(|s| s.as_ref()))
-            .join(",");
-
         let command = ClonableCommand::new(test_bin::get_test_bin("ghciwatch").get_program())
             .arg("--log-json")
             .arg(&log_path)
@@ -304,7 +356,9 @@ impl GhciWatch {
                 "--watch",
                 "my-simple-package.cabal", // This is going to get me in trouble.
                 "--log-filter",
-                &log_filters,
+                &builder.get_log_filters(),
+                "--log-filter-json",
+                &builder.get_json_log_filters(),
                 "--trace-spans",
                 "new,close",
                 "--poll",

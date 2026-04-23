@@ -9,7 +9,7 @@ use test_harness::GhciWatchBuilder;
 async fn clears_on_reload_and_restart() {
     let mut session = GhciWatchBuilder::new("tests/data/simple")
         .with_args(["--clear", "--restart-glob", "**/*.cabal"])
-        .with_log_filter("ghciwatch::ghci[clear]=trace")
+        .with_log_filter_json("ghciwatch::ghci[clear]=trace")
         .start()
         .await
         .expect("ghciwatch starts");
