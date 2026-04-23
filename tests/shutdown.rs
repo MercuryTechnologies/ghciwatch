@@ -314,3 +314,61 @@ async fn handles_unexpected_exit_during_dispatch() {
         .await
         .expect("ghciwatch restarts ghci after fixing the dependency");
 }
+
+/// Regression test: after a successful startup, a dependency change triggers a restart that fails
+/// due to a compilation error, then fixing the error should trigger another restart.
+#[test]
+async fn restart_after_failed_restart_on_dep_fix() {
+    let mut session = GhciWatchBuilder::new("tests/data/with-dep")
+        .with_args([
+            "--watch",
+            "simple-dep",
+            "--restart-glob",
+            "simple-dep/src/*.hs",
+        ])
+        .start()
+        .await
+        .expect("ghciwatch starts");
+
+    // Wait for successful initial startup.
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch loads ghci");
+
+    // Introduce a syntax error in the dependency. Since it matches --restart-glob,
+    // this triggers a restart. The restart fails because cabal can't build the broken
+    // dependency, causing ghci to exit unexpectedly.
+    session
+        .fs()
+        .replace(
+            session.path("simple-dep/src/SimpleDep.hs"),
+            "\"depFunc\"",
+            "\"depFunc",
+        )
+        .await
+        .expect("can break simple-dep");
+
+    // ghciwatch should detect the unexpected exit.
+    session
+        .wait_for_log("ghci exited unexpectedly")
+        .await
+        .expect("ghciwatch detects unexpected exit during restart");
+
+    // Fix the syntax error. This also matches --restart-glob, so it should trigger a restart.
+    session.clear_events();
+    session
+        .fs()
+        .replace(
+            session.path("simple-dep/src/SimpleDep.hs"),
+            "\"depFunc",
+            "\"depFunc\"",
+        )
+        .await
+        .expect("can fix simple-dep");
+
+    session
+        .wait_for_log(BaseMatcher::ghci_started())
+        .await
+        .expect("ghciwatch restarts ghci after fixing the dependency");
+}
