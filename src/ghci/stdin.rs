@@ -71,6 +71,32 @@ impl GhciStdin {
         Ok(())
     }
 
+    /// Write `:set prompt "{prompt}"\n` to stdin without reading any response.
+    ///
+    /// Callers that need to wait for GHCi to acknowledge the new prompt should use
+    /// [`Self::set_prompt`] instead.
+    pub async fn write_set_prompt(&mut self, prompt: &str) -> miette::Result<()> {
+        self.stdin
+            .write_all(format!(":set prompt \"{prompt}\"\n").as_bytes())
+            .await
+            .into_diagnostic()
+    }
+
+    /// Set the GHCi prompt to the given string.
+    ///
+    /// This writes `:set prompt` and waits for GHCi to show the new prompt.
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn set_prompt(
+        &mut self,
+        stdout: &mut GhciStdout,
+        prompt: &str,
+        find: FindAt,
+        log: &mut CompilationLog,
+    ) -> miette::Result<()> {
+        self.write_set_prompt(prompt).await?;
+        stdout.prompt(find, log).await
+    }
+
     #[instrument(skip(self, stdout), name = "stdin_initialize", level = "debug")]
     pub async fn initialize(
         &mut self,
@@ -79,13 +105,8 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
-        self.write_line_with_prompt_at(
-            stdout,
-            &format!(":set prompt {PROMPT}\n"),
-            FindAt::Anywhere,
-            log,
-        )
-        .await?;
+        self.set_prompt(stdout, PROMPT, FindAt::Anywhere, log)
+            .await?;
         self.write_line(stdout, &format!(":set prompt-cont {PROMPT}\n"), log)
             .await?;
         Ok(())

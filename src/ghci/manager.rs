@@ -333,9 +333,30 @@ impl GhciManager {
 
                                 // Send a SIGINT to interrupt the reload.
                                 // NB: This may take a couple seconds to register.
-                                ghci.lock().await.send_sigint().await?;
-
-                                return Ok(HandleResult::Interrupted(event));
+                                match ghci.lock().await.send_sigint().await {
+                                    Ok(()) => return Ok(HandleResult::Interrupted(event)),
+                                    Err(e) => {
+                                        // `send_sigint` may kill the session if it
+                                        // cannot leave ghci in a usable state (e.g.
+                                        // sync barrier failure). Wait for the exit
+                                        // and route through the standard restart
+                                        // path with the merged event preserved.
+                                        tracing::warn!(
+                                            error = ?e,
+                                            "Failed to interrupt ghci; session was killed for restart",
+                                        );
+                                        pending_event = Some(event);
+                                        let status = exited_receiver
+                                            .recv()
+                                            .await
+                                            .ok_or_else(|| {
+                                                miette::miette!(
+                                                    "ghci exit channel closed after kill"
+                                                )
+                                            })?;
+                                        break Some(status);
+                                    }
+                                }
                             }
                         }
                     }
