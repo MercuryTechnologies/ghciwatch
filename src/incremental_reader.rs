@@ -177,7 +177,6 @@ where
     /// This method is cancel-safe: decoded data is stored in `self.pending` (synchronously,
     /// before any `.await`) so it survives if the future is dropped. Any un-forwarded data in
     /// `pending` is drained on the next operation via [`Self::drain_pending`].
-    #[expect(unused)]
     pub async fn buffer_available(
         &mut self,
         buffer: &mut [u8],
@@ -419,7 +418,6 @@ where
     ///
     /// This is used after `send_sigint` to discard stale prompts left behind by an aborted
     /// `prompt()` call. Returns the number of chunks drained.
-    #[cfg_attr(not(test), expect(unused))]
     pub async fn drain_buffered_chunks(&mut self, opts: &ReadOpts<'_>) -> miette::Result<usize> {
         self.drain_pending(opts.writing).await?;
         let mut count = 0;
