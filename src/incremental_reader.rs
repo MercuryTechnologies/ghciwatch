@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::pin::Pin;
+use std::time::Duration;
 
 use aho_corasick::AhoCorasick;
 use line_span::LineSpans;
@@ -41,11 +42,15 @@ pub struct IncrementalReader<R, W> {
     /// We're not guaranteed that the data we read at one time is aligned on a UTF-8 boundary. If
     /// that's the case, we store the data here until we get more data.
     non_utf8: Vec<u8>,
+    /// Decoded data that has been read but not yet split into lines.
+    /// Stored on `self` for cancel-safety: if a future is dropped mid-processing,
+    /// unprocessed data survives in this field and is drained on the next operation.
+    pending: String,
 }
 
 impl<R, W> IncrementalReader<R, W>
 where
-    R: AsyncRead,
+    R: AsyncRead + Unpin,
     W: AsyncWrite,
 {
     /// Construct a new incremental reader wrapping the given reader.
@@ -56,6 +61,7 @@ where
             lines: String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
             line: String::with_capacity(LINE_BUFFER_CAPACITY),
             non_utf8: Vec::with_capacity(SPLIT_UTF8_CODEPOINT_CAPACITY),
+            pending: String::new(),
         }
     }
 
@@ -86,10 +92,9 @@ where
     /// Examines the internal buffer and reads at most once from the underlying reader. If a line
     /// beginning with one of the `end_marker` patterns is seen, the lines before the marker are
     /// returned. Otherwise, nothing is returned.
-    pub async fn try_read_until(
-        &mut self,
-        opts: &mut ReadOpts<'_>,
-    ) -> miette::Result<Option<String>> {
+    async fn try_read_until(&mut self, opts: &mut ReadOpts<'_>) -> miette::Result<Option<String>> {
+        self.drain_pending(opts.writing).await?;
+
         if let Some(chunk) = self.take_chunk_from_buffer(opts) {
             tracing::trace!(data = chunk.len(), "Got data from buffer");
             return Ok(Some(chunk));
@@ -164,6 +169,71 @@ where
                 }
             }
         }
+    }
+
+    /// Read any immediately-available data into the internal buffer without waiting for an end
+    /// marker. Reads in a loop until the timeout expires or EOF is reached.
+    ///
+    /// This method is cancel-safe: decoded data is stored in `self.pending` (synchronously,
+    /// before any `.await`) so it survives if the future is dropped. Any un-forwarded data in
+    /// `pending` is drained on the next operation via [`Self::drain_pending`].
+    #[expect(unused)]
+    pub async fn buffer_available(
+        &mut self,
+        buffer: &mut [u8],
+        timeout: Duration,
+        writing: WriteBehavior,
+    ) -> miette::Result<()> {
+        match tokio::time::timeout(timeout, async {
+            loop {
+                match self.reader.read(buffer).await {
+                    Ok(0) => return Ok(()),
+                    Ok(n) => {
+                        let decoded = self.decode(&buffer[..n]);
+                        self.buffer_decoded(&decoded, writing).await?;
+                    }
+                    Err(err) => return Err(err).into_diagnostic(),
+                }
+            }
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_elapsed) => Ok(()),
+        }
+    }
+
+    /// Buffer a decoded string into the internal line/lines buffers without checking for end
+    /// markers.
+    ///
+    /// Cancel-safe: data is pushed to `self.pending` synchronously before any `.await`.
+    async fn buffer_decoded(&mut self, data: &str, writing: WriteBehavior) -> miette::Result<()> {
+        self.pending.push_str(data);
+        self.drain_pending(writing).await
+    }
+
+    /// Process complete lines from `self.pending` into `self.line`/`self.lines` via
+    /// [`Self::finish_line`], which also forwards to the writer.
+    ///
+    /// After draining all complete lines, any remaining partial line is moved from `pending`
+    /// into `self.line`.
+    ///
+    /// Cancel-safe: if dropped mid-processing, unprocessed data remains in `self.pending`
+    /// and will be drained on the next call.
+    async fn drain_pending(&mut self, writing: WriteBehavior) -> miette::Result<()> {
+        loop {
+            let Some(newline_idx) = self.pending.find('\n') else {
+                break;
+            };
+            self.line.push_str(&self.pending[..newline_idx]);
+            self.pending.replace_range(..newline_idx + 1, "");
+            self.finish_line(writing).await?;
+        }
+        if !self.pending.is_empty() {
+            self.line.push_str(&self.pending);
+            self.pending.clear();
+        }
+        Ok(())
     }
 
     /// Consumes a string, adding it to the internal buffer.
@@ -343,6 +413,20 @@ where
         }
 
         None
+    }
+
+    /// Drain any end-marker matches already present in the internal buffer without performing I/O.
+    ///
+    /// This is used after `send_sigint` to discard stale prompts left behind by an aborted
+    /// `prompt()` call. Returns the number of chunks drained.
+    #[cfg_attr(not(test), expect(unused))]
+    pub async fn drain_buffered_chunks(&mut self, opts: &ReadOpts<'_>) -> miette::Result<usize> {
+        self.drain_pending(opts.writing).await?;
+        let mut count = 0;
+        while self.take_chunk_from_buffer(opts).is_some() {
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// Add arbitrary data to the internal buffer. Used for testing.
@@ -660,7 +744,7 @@ mod tests {
         assert_eq!(reader.buffer(), String::new());
     }
 
-    async fn step<T: AsyncRead, W: AsyncWrite>(
+    async fn step<T: AsyncRead + Unpin, W: AsyncWrite>(
         reader: &mut IncrementalReader<T, W>,
         buffer: &mut Vec<u8>,
         end_marker: &AhoCorasick,
@@ -901,5 +985,77 @@ b"~###",
         utf8_boundary([b"\xc1\nghci> "], "�\n").await;
         utf8_boundary([b"\xf5\nghci> "], "�\n").await;
         utf8_boundary([b"\xff\nghci> "], "�\n").await;
+    }
+
+    /// Verifies the fix for the double-prompt race after SIGINT.
+    ///
+    /// When `task.abort()` cancels a reload mid-`prompt()`, GHCi may have already printed
+    /// the command's prompt (which the aborted `prompt()` never consumed). Then SIGINT
+    /// produces a second prompt. `send_sigint` reads one prompt — but two are pending.
+    ///
+    /// The fix: `send_sigint` calls `drain_buffered_chunks` after reading the first prompt,
+    /// which discards the stale extra prompt without I/O. The next command's `prompt()` then
+    /// correctly waits for the real response.
+    #[tokio::test]
+    async fn test_double_prompt_after_sigint() {
+        let prompt = "###~GHCIWATCH-PROMPT~###";
+        let end_marker = AhoCorasick::from_anchored_patterns([prompt]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        // Two prompts in one chunk: the first is the aborted command's unconsumed prompt,
+        // the second is GHCi's response to SIGINT.
+        let data = format!("{prompt}\n{prompt}");
+        let fake_reader = FakeReader::with_byte_chunks([
+            data.as_bytes(),
+            // The next command's response (after the reload cycle restarts).
+            b"command output\n",
+            prompt.as_bytes(),
+        ]);
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+
+        // First read_until: simulates send_sigint's prompt(FindAt::Anywhere).
+        // This consumes the first prompt (the aborted command's prompt).
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::Anywhere,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            result, "",
+            "First prompt should yield empty chunk (nothing before it)"
+        );
+
+        // Before the fix, the second prompt would remain in the buffer, causing an
+        // off-by-one. Now drain_buffered_chunks discards it.
+        let drained = reader
+            .drain_buffered_chunks(&ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::Anywhere,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(drained, 1, "Should drain exactly one stale prompt");
+        assert_eq!(reader.buffer(), "", "Buffer should be empty after draining");
+
+        // The next command's prompt() now correctly reads the actual command output.
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            result, "command output\n",
+            "Command output arrives on the first read after drain"
+        );
     }
 }
