@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "ghciwatch"
-version = "1.3.2"
+version = "1.3.3"
 dependencies = [
  "aho-corasick",
  "ansi-to-tui",
