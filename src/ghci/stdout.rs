@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use aho_corasick::AhoCorasick;
 use miette::Context;
 use miette::IntoDiagnostic;
@@ -96,6 +98,42 @@ impl GhciStdout {
 
         self.parse_into_log(&data, log).await?;
         Ok(())
+    }
+
+    /// Read any immediately-available output from the pipe, then drain stale prompts from
+    /// the internal buffer. Returns the number of prompts found and discarded.
+    #[expect(unused)]
+    pub async fn buffer_and_drain_prompts(&mut self, timeout: Duration) -> miette::Result<usize> {
+        self.reader
+            .buffer_available(&mut self.buffer, timeout, WriteBehavior::NoFinalLine)
+            .await?;
+
+        self.reader
+            .drain_buffered_chunks(&ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find: FindAt::Anywhere,
+                writing: WriteBehavior::NoFinalLine,
+                buffer: &mut self.buffer,
+            })
+            .await
+    }
+
+    /// Read stdout until the given marker string is found, discarding everything before it.
+    ///
+    /// Used by `send_sigint` to synchronize with GHCi after an interrupt: a sync expression
+    /// is sent on stdin and this method reads until its output appears, guaranteeing that all
+    /// prior output has been consumed.
+    #[expect(unused)]
+    pub async fn read_until_marker(&mut self, marker: &str) -> miette::Result<String> {
+        let pattern = AhoCorasick::from_anchored_patterns([marker]);
+        self.reader
+            .read_until(&mut ReadOpts {
+                end_marker: &pattern,
+                find: FindAt::Anywhere,
+                writing: WriteBehavior::NoFinalLine,
+                buffer: &mut self.buffer,
+            })
+            .await
     }
 
     #[instrument(skip_all, level = "debug")]
