@@ -13,12 +13,15 @@ use std::fmt::Debug;
 use std::io::IsTerminal;
 use std::process::ExitStatus;
 use std::process::Stdio;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::io::DuplexStream;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use aho_corasick::AhoCorasick;
+use backoff::backoff::Backoff;
+use backoff::ExponentialBackoff;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::miette;
@@ -268,6 +271,8 @@ pub struct Ghci {
     search_paths: ShowPaths,
     /// Tasks running `async:` shell commands in the background.
     command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
+    /// Monotonic counter for generating unique sync barrier nonces.
+    sync_nonce: u64,
 }
 
 impl Debug for Ghci {
@@ -398,6 +403,7 @@ impl Ghci {
                 search_paths: Default::default(),
             },
             command_handles,
+            sync_nonce: 0,
         })
     }
 
@@ -837,20 +843,141 @@ impl Ghci {
         Ok(())
     }
 
+    /// Interrupt the running GHCi session.
+    ///
+    /// On `Err`, the GHCi session may have been killed (e.g. because the sync
+    /// barrier could not restore the prompt). Callers MUST treat an error here
+    /// as a session-died event and route through the normal restart path
+    /// rather than propagating it as fatal. See [`Ghci::sync_barrier`] for details.
     #[instrument(skip_all, level = "debug")]
     async fn send_sigint(&mut self) -> miette::Result<()> {
         let start_instant = Instant::now();
-        signal::killpg(self.process_group_id, Signal::SIGINT)
-            .into_diagnostic()
-            .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
-        self.stdout
-            .prompt(
-                crate::incremental_reader::FindAt::Anywhere,
-                // Ignore compilation messages.
-                &mut Default::default(),
-            )
-            .await?;
-        tracing::debug!("Interrupted ghci in {:.2?}", start_instant.elapsed());
+
+        // Phase 1: Send SIGINT repeatedly until we find a clean, uninterrupted prompt.
+        //
+        // An interrupted reload can cause interleaved output between the GHCi prompt and
+        // compilation output (due to GHC bug where the logging thread isn't stopped on
+        // async exception — see `runParPipelines` in GHC's Driver/Make.hs). We send
+        // SIGINT with exponential backoff until we see a prompt that isn't garbled.
+        let mut backoff = ExponentialBackoff {
+            initial_interval: Duration::from_millis(5),
+            max_interval: Duration::from_millis(100),
+            multiplier: 1.25,
+            max_elapsed_time: Some(Duration::from_secs(10)),
+            ..Default::default()
+        };
+
+        let mut sigint_count: usize = 0;
+        loop {
+            let Some(delay) = backoff.next_backoff() else {
+                return Err(miette!(
+                    "Timed out waiting for GHCi to respond to SIGINT after {:.2?}",
+                    start_instant.elapsed()
+                ));
+            };
+
+            sigint_count += 1;
+            signal::killpg(self.process_group_id, Signal::SIGINT)
+                .into_diagnostic()
+                .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
+            tracing::debug!(count = sigint_count, "Sent SIGINT");
+
+            let found = self.stdout.buffer_and_drain_prompts(delay).await?;
+            if found > 0 {
+                tracing::debug!(
+                    found,
+                    elapsed = ?start_instant.elapsed(),
+                    "Found prompt after SIGINT"
+                );
+                break;
+            }
+        }
+
+        // If we only sent 1 SIGINT, then there cannot be extra prompts waiting to be read from the
+        // buffer; only do the sync barrier process if we sent multiple SIGINTs.
+        if sigint_count > 1 {
+            self.sync_barrier().await?;
+        }
+
+        tracing::info!("Interrupted ghci in {:.2?}", start_instant.elapsed());
+        Ok(())
+    }
+
+    /// Sync barrier: deterministically consume all stale prompts from the pipe.
+    ///
+    /// We rely on the fact that GHCi processes input commands one at a time, in order. When we send
+    /// a command to GHCi, we read its output up until the next prompt and know that the output
+    /// we've read matches the command we sent. This is important because we parse GHCi output in
+    /// several places (e.g. compilation errors go to the `error_log`, `:show paths` and `:show
+    /// targets` are used to inform module additions/removals/reloads, etc.), so if we're parsing
+    /// output from a different command, we'll Have Problems.
+    ///
+    /// When we're hitting Ctrl-C repeatedly (in case of a user input prompt interleaved with
+    /// compilation output in GHCi's stdout stream), we don't know how many times GHCi will print a
+    /// prompt that we can read.
+    ///
+    /// Therefore, we _change_ the prompt and read until _that_ specific prompt shows up in the
+    /// output, using a unique (to the `ghci` process) and different prompt each time we call this
+    /// method. This ensures we consume all remaining stale output, without having to wait until we
+    /// "think it's safe" and wasting the user's time after GHCi is done writing.
+    #[instrument(skip_all, level = "debug")]
+    async fn sync_barrier(&mut self) -> miette::Result<()> {
+        self.sync_nonce += 1;
+        let nonce = self.sync_nonce;
+        let sync_marker = format!("~~~GHCIWATCH-SYNC-{nonce}~~~");
+
+        // Set the prompt to our sync marker.
+        self.stdin
+            .write_set_prompt(&sync_marker)
+            .await
+            .wrap_err("Failed to write sync command to ghci stdin")?;
+
+        // From here until the prompt is restored, any failure leaves the session
+        // unable to match `PROMPT` again. Restoring in-band after a failed read
+        // is not safe (the buffer is in an unknown state, and confirming the
+        // restore would itself depend on prompt matching), so on any error we
+        // SIGKILL the process and let the manager restart the session.
+        let sync_timeout = Duration::from_secs(3);
+        let read =
+            tokio::time::timeout(sync_timeout, self.stdout.read_until_marker(&sync_marker)).await;
+        let result = match read {
+            Ok(Ok(_ghci_output)) => self
+                .stdin
+                .set_prompt(
+                    &mut self.stdout,
+                    PROMPT,
+                    crate::incremental_reader::FindAt::LineStart,
+                    // We don't expect to see any compilation here, so we pass a stub
+                    // `CompilationLog` and discard it.
+                    &mut Default::default(),
+                )
+                .await
+                .wrap_err("Failed to restore prompt after sync barrier"),
+            Ok(Err(e)) => Err(e).wrap_err("Failed to read until sync marker"),
+            Err(_elapsed) => Err(miette!(
+                "Timed out waiting for GHCi sync marker after {sync_timeout:?}"
+            )),
+        };
+
+        if let Err(e) = result {
+            // Kill the process directly rather than going through `restart_sender`.
+            // `restart_sender` is the graceful-shutdown path: `GhciProcess` consumes it
+            // and intentionally suppresses `exited_sender`, so the manager would never
+            // learn ghci died. We need the wait future in `GhciProcess::run` to win the
+            // select so `exited_sender` fires and `wait_and_restart_runtime` takes over.
+            if let Err(kill_err) = signal::killpg(self.process_group_id, Signal::SIGKILL)
+                .into_diagnostic()
+                .wrap_err("Failed to send `SIGKILL` to ghci session")
+            {
+                tracing::error!(
+                    error = %kill_err,
+                    "Failed to SIGKILL ghci after sync_barrier failure",
+                );
+            }
+            return Err(e).wrap_err(
+                "ghci sync barrier failed; killed the session because the prompt could not be restored",
+            );
+        }
         Ok(())
     }
 

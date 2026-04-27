@@ -102,7 +102,6 @@ impl GhciStdout {
 
     /// Read any immediately-available output from the pipe, then drain stale prompts from
     /// the internal buffer. Returns the number of prompts found and discarded.
-    #[expect(unused)]
     pub async fn buffer_and_drain_prompts(&mut self, timeout: Duration) -> miette::Result<usize> {
         self.reader
             .buffer_available(&mut self.buffer, timeout, WriteBehavior::NoFinalLine)
@@ -123,7 +122,6 @@ impl GhciStdout {
     /// Used by `send_sigint` to synchronize with GHCi after an interrupt: a sync expression
     /// is sent on stdin and this method reads until its output appears, guaranteeing that all
     /// prior output has been consumed.
-    #[expect(unused)]
     pub async fn read_until_marker(&mut self, marker: &str) -> miette::Result<String> {
         let pattern = AhoCorasick::from_anchored_patterns([marker]);
         self.reader
