@@ -13,6 +13,7 @@ use tracing::instrument;
 
 use crate::event_filter::FileEvent;
 use crate::ghci::CompilationLog;
+use crate::haskell_source_file::is_haskell_source_file;
 use crate::hooks;
 use crate::hooks::LifecycleEvent;
 use crate::shutdown::ShutdownHandle;
@@ -344,6 +345,31 @@ fn drain_pending(event: &mut WatcherEvent, receiver: &mut mpsc::Receiver<Watcher
     while let Ok(new_event) = receiver.try_recv() {
         event.merge(new_event);
     }
+}
+
+/// Check whether an event would trigger a reload or restart.
+///
+/// Uses a default (empty) module set for classification, which correctly
+/// identifies restart, reload, and add actions. The one gap: remove-module
+/// actions require knowing the loaded targets, so we conservatively treat any
+/// `Remove` of a Haskell source file as relevant. This may produce a false
+/// positive (e.g. for files in the reload-ignore list), but a needless dispatch
+/// is harmless — the real classify inside `reload()` will filter it out.
+#[expect(unused)]
+fn is_relevant(event: &WatcherEvent, classifier: &FileClassifier) -> miette::Result<bool> {
+    let WatcherEvent::Reload { ref events } = *event;
+    let kind = classifier
+        .classify(events.clone(), &ModuleSet::default())?
+        .kind();
+    if !matches!(kind, GhciReloadKind::None) {
+        return Ok(true);
+    }
+    // classify with an empty module set misses remove-module actions because
+    // targets.contains_source_path is always false. Conservatively treat any
+    // removed Haskell source file as relevant.
+    Ok(events
+        .iter()
+        .any(|e| matches!(e, FileEvent::Remove(_)) && is_haskell_source_file(e.as_path())))
 }
 
 /// Drain all pending events from the receiver, merge them, classify, and return the kind.
