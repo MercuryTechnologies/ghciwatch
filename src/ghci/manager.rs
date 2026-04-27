@@ -339,6 +339,13 @@ impl GhciManager {
     }
 }
 
+/// Drain all pending events from the receiver and merge them into `event`.
+fn drain_pending(event: &mut WatcherEvent, receiver: &mut mpsc::Receiver<WatcherEvent>) {
+    while let Ok(new_event) = receiver.try_recv() {
+        event.merge(new_event);
+    }
+}
+
 /// Drain all pending events from the receiver, merge them, classify, and return the kind.
 /// Returns `None` when the combined events are irrelevant ([`GhciReloadKind::None`]).
 fn drain_and_classify(
@@ -347,9 +354,7 @@ fn drain_and_classify(
     classifier: &FileClassifier,
 ) -> miette::Result<Option<GhciReloadKind>> {
     let mut event = initial;
-    while let Ok(new_event) = receiver.try_recv() {
-        event.merge(new_event);
-    }
+    drain_pending(&mut event, receiver);
     let WatcherEvent::Reload { events } = event;
     let kind = classifier.classify(events, &ModuleSet::default())?.kind();
     if matches!(kind, GhciReloadKind::None) {
