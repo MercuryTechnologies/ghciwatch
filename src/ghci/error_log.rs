@@ -1,10 +1,11 @@
-use camino::Utf8PathBuf;
 use miette::Context;
 use miette::IntoDiagnostic;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
 use tracing::instrument;
+
+use crate::normal_path::NormalPath;
 
 use super::parse::CompilationResult;
 use super::parse::ModulesLoaded;
@@ -22,13 +23,20 @@ const STILL_COMPILING: &str = "[ghciwatch is still compiling]";
 /// This produces `ghcid`-compatible output, which can be consumed by `ghcid` plugins in your
 /// editor of choice.
 pub struct ErrorLog {
-    path: Option<Utf8PathBuf>,
+    path: Option<NormalPath>,
 }
 
 impl ErrorLog {
     /// Construct a new error log writer for the given path.
-    pub fn new(path: Option<Utf8PathBuf>) -> Self {
+    pub fn new(path: Option<NormalPath>) -> Self {
         Self { path }
+    }
+
+    /// Get the path this error log is written to.
+    ///
+    /// Paths in GHC error messages are written to this path.
+    pub fn path(&self) -> Option<&NormalPath> {
+        self.path.as_ref()
     }
 
     /// Write the "still compiling" message to the error log before a reload or restart.

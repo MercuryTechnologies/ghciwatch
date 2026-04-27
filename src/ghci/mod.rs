@@ -382,7 +382,10 @@ impl Ghci {
             })
             .await;
 
-        let error_log = ErrorLog::new(opts.error_path.clone());
+        let error_log = ErrorLog::new(match &opts.error_path {
+            Some(error_path) => Some(NormalPath::from_cwd(error_path)?),
+            None => None,
+        });
         let classifier =
             FileClassifier::new(opts.restart_globs.clone(), opts.reload_globs.clone())?;
 
@@ -1019,6 +1022,10 @@ impl Ghci {
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
     ) -> miette::Result<()> {
+        if let Some(error_log_dir) = self.error_log.path().and_then(|path| path.parent()) {
+            log.relocate(&self.search_paths.cwd, error_log_dir)?;
+        }
+
         // Allow hooks to consume the error log by updating it before running the hooks.
         self.write_error_log(log).await?;
 

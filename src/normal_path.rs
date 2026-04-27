@@ -50,6 +50,11 @@ impl NormalPath {
         Self::new(original, crate::current_dir()?)
     }
 
+    /// Relocate this path to be relative to a different base directory.
+    pub fn relocate(&self, new_base: impl AsRef<Path>) -> miette::Result<Self> {
+        Self::new(self.absolute(), new_base)
+    }
+
     /// Get a reference to the absolute (normalized) path, borrowed as a [`Utf8Path`].
     pub fn absolute(&self) -> &Utf8Path {
         self.normal.as_path()
@@ -245,5 +250,22 @@ mod tests {
 
         assert_eq!(path.absolute(), Utf8Path::new("a/b/c/d/e/f"));
         assert_eq!(path.relative(), Utf8Path::new("d/e/f"));
+    }
+
+    #[test]
+    fn test_normalpath_relocate() {
+        let relative = Utf8Path::new("src/Lib.hs");
+        let base = Utf8Path::new("/var/my-project/my-package");
+        let new_base = Utf8Path::new("/var/my-project");
+        let path = NormalPath::new(relative, base)
+            .unwrap()
+            .relocate(new_base)
+            .unwrap();
+
+        assert_eq!(
+            path.absolute(),
+            Utf8Path::new("/var/my-project/my-package/src/Lib.hs")
+        );
+        assert_eq!(path.relative(), Utf8Path::new("my-package/src/Lib.hs"));
     }
 }
