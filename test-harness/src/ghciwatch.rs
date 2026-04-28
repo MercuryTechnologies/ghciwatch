@@ -8,11 +8,10 @@ use std::process::ExitStatus;
 use std::time::Duration;
 
 use clonable_command::Command as ClonableCommand;
+use eyre::eyre;
+use eyre::Context;
 use futures_util::future::BoxFuture;
 use itertools::Itertools;
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
 use tap::Conv;
 use tokio::process::Command;
 
@@ -38,7 +37,7 @@ pub struct GhciWatchBuilder {
     cabal_args: Vec<String>,
     cabal_target: String,
     #[allow(clippy::type_complexity)]
-    before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
+    before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, eyre::Result<()>> + Send>>,
     default_timeout: Duration,
     startup_timeout: Duration,
     log_filters: Vec<String>,
@@ -112,7 +111,7 @@ impl GhciWatchBuilder {
     /// `ghciwatch` is started.
     pub fn before_start<F>(mut self, before_start: impl Fn(PathBuf) -> F + Send + 'static) -> Self
     where
-        F: Future<Output = miette::Result<()>> + Send + 'static,
+        F: Future<Output = eyre::Result<()>> + Send + 'static,
     {
         self.before_start = Some(Box::new(move |path| Box::pin(before_start(path))));
         self
@@ -137,7 +136,7 @@ impl GhciWatchBuilder {
     }
 
     /// Start `ghciwatch`.
-    pub async fn start(self) -> miette::Result<GhciWatch> {
+    pub async fn start(self) -> eyre::Result<GhciWatch> {
         GhciWatch::from_builder(self).await
     }
 
@@ -226,7 +225,7 @@ impl Session {
         command: &ClonableCommand,
         timeout: Duration,
         log_path: &Path,
-    ) -> miette::Result<Self> {
+    ) -> eyre::Result<Self> {
         let fs = Fs::new();
         if log_path.exists() {
             fs.remove(log_path).await?;
@@ -238,7 +237,6 @@ impl Session {
             .conv::<Command>()
             .kill_on_drop(true)
             .spawn()
-            .into_diagnostic()
             .wrap_err("Failed to start `ghciwatch`")?;
 
         let creates_log_path = fs.wait_for_path(timeout, log_path);
@@ -246,10 +244,10 @@ impl Session {
             child_result = child.wait() => {
                 return match child_result {
                     Err(err) => {
-                        Err(err).into_diagnostic().wrap_err("ghciwatch failed to execute")
+                        Err(err).wrap_err("ghciwatch failed to execute")
                     }
                     Ok(status) => {
-                        Err(miette!("ghciwatch exited: {status}"))
+                        Err(eyre!("ghciwatch exited: {status}"))
                     }
                 }
             }
@@ -259,9 +257,7 @@ impl Session {
             else => {}
         }
 
-        let pid = child
-            .id()
-            .ok_or_else(|| miette!("`ghciwatch` has no PID"))?;
+        let pid = child.id().ok_or_else(|| eyre!("`ghciwatch` has no PID"))?;
 
         crate::internal::set_ghciwatch_process(child)?;
 
@@ -301,7 +297,7 @@ pub struct GhciWatch {
 }
 
 impl GhciWatch {
-    async fn from_builder(mut builder: GhciWatchBuilder) -> miette::Result<Self> {
+    async fn from_builder(mut builder: GhciWatchBuilder) -> eyre::Result<Self> {
         let ghc_version = FullGhcVersion::current()?;
         let tempdir = crate::internal::set_tempdir()?;
         let fs = Fs::new();
@@ -314,11 +310,10 @@ impl GhciWatch {
         let paths_to_copy = vec![&builder.project_directory];
         tracing::info!(?paths_to_copy, "Copying project files");
         fs_extra::copy_items(&paths_to_copy, &tempdir, &Default::default())
-            .into_diagnostic()
             .wrap_err("Failed to copy project files")?;
 
         let project_directory_name = builder.project_directory.file_name().ok_or_else(|| {
-            miette!(
+            eyre!(
                 "Path has no directory name: {:?}",
                 builder.project_directory
             )
@@ -395,7 +390,7 @@ impl GhciWatch {
     }
 
     /// Start a new `ghciwatch` session in a copy of the given path.
-    pub async fn new(project_directory: impl AsRef<Path>) -> miette::Result<Self> {
+    pub async fn new(project_directory: impl AsRef<Path>) -> eyre::Result<Self> {
         GhciWatchBuilder::new(project_directory).start().await
     }
 
@@ -408,7 +403,7 @@ impl GhciWatch {
     }
 
     /// Read an event from the `ghciwatch` session.
-    async fn read_event(&mut self) -> miette::Result<&Event> {
+    async fn read_event(&mut self) -> eyre::Result<&Event> {
         let event = self.ghciwatch.tracing_reader.next_event().await?;
         self.events.push(event);
         Ok(self.events.last().expect("We just inserted this event"))
@@ -417,7 +412,7 @@ impl GhciWatch {
     /// Find a matching event in previously-read events.
     ///
     /// Returns the first matching event, or `None` if no matching events were found.
-    fn find_logged(&self, matcher: &mut dyn Matcher) -> miette::Result<Option<&Event>> {
+    fn find_logged(&self, matcher: &mut dyn Matcher) -> eyre::Result<Option<&Event>> {
         for event in &self.events {
             if matcher.matches(event)? {
                 return Ok(Some(event));
@@ -427,10 +422,10 @@ impl GhciWatch {
     }
 
     /// Assert that a matching event was logged.
-    pub fn assert_logged(&self, matcher: impl IntoMatcher) -> miette::Result<&Event> {
+    pub fn assert_logged(&self, matcher: impl IntoMatcher) -> eyre::Result<&Event> {
         let mut matcher = matcher.into_matcher()?;
         self.find_logged(&mut matcher)?
-            .ok_or_else(|| miette!("No log message matching {matcher} found"))
+            .ok_or_else(|| eyre!("No log message matching {matcher} found"))
     }
 
     /// Wait until a matching log event is found, with the given timeout.
@@ -444,7 +439,7 @@ impl GhciWatch {
         matcher: impl IntoMatcher,
         check_existing: bool,
         timeout_duration: Duration,
-    ) -> miette::Result<Event> {
+    ) -> eyre::Result<Event> {
         let timeout_duration = timeout_mult(timeout_duration)?;
 
         let mut matcher = matcher.into_matcher()?;
@@ -467,7 +462,7 @@ impl GhciWatch {
         {
             Ok(Ok(event)) => Ok(event),
             Ok(Err(err)) => Err(err),
-            Err(_) => Err(miette!(
+            Err(_) => Err(eyre!(
                 "Waiting for a log message matching {matcher} \
                  timed out after {timeout_duration:.2?}"
             )),
@@ -481,7 +476,7 @@ impl GhciWatch {
         &mut self,
         matcher: impl IntoMatcher,
         timeout_duration: Duration,
-    ) -> miette::Result<Event> {
+    ) -> eyre::Result<Event> {
         self.wait_for_log_with_timeout_inner(matcher, false, timeout_duration)
             .await
     }
@@ -491,23 +486,20 @@ impl GhciWatch {
     pub async fn assert_logged_or_wait(
         &mut self,
         matcher: impl IntoMatcher,
-    ) -> miette::Result<Event> {
+    ) -> eyre::Result<Event> {
         self.wait_for_log_with_timeout_inner(matcher, true, self.default_timeout)
             .await
     }
 
     /// Wait until a matching log event is found with the `default_timeout`.
-    pub async fn wait_for_log(&mut self, matcher: impl IntoMatcher) -> miette::Result<Event> {
+    pub async fn wait_for_log(&mut self, matcher: impl IntoMatcher) -> eyre::Result<Event> {
         self.wait_for_log_with_timeout_inner(matcher, false, self.default_timeout)
             .await
     }
 
     /// Wait for a matching log event with the `startup_timeout`, checking previously-read
     /// events first.
-    pub async fn wait_for_startup_log(
-        &mut self,
-        matcher: impl IntoMatcher,
-    ) -> miette::Result<Event> {
+    pub async fn wait_for_startup_log(&mut self, matcher: impl IntoMatcher) -> eyre::Result<Event> {
         self.wait_for_log_with_timeout_inner(matcher, true, self.startup_timeout)
             .await
     }
@@ -515,7 +507,7 @@ impl GhciWatch {
     /// Wait until `ghciwatch` completes its initial load.
     ///
     /// Returns immediately if `ghciwatch` has already completed its initial load.
-    pub async fn wait_until_started(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_started(&mut self) -> eyre::Result<()> {
         self.wait_for_log_with_timeout_inner(
             BaseMatcher::ghci_started(),
             true,
@@ -529,7 +521,7 @@ impl GhciWatch {
     /// Wait until `ghciwatch` is ready to receive file events.
     ///
     /// Returns immediately if `ghciwatch` has already become ready to receive file events.
-    pub async fn wait_until_watcher_started(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_watcher_started(&mut self) -> eyre::Result<()> {
         self.wait_for_log_with_timeout_inner(
             BaseMatcher::watcher_started(),
             true,
@@ -544,7 +536,7 @@ impl GhciWatch {
     ///
     /// Returns immediately if `ghciwatch` has already completed its initial load and become ready
     /// to receive file events.
-    pub async fn wait_until_ready(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_ready(&mut self) -> eyre::Result<()> {
         self.wait_for_log_with_timeout_inner(
             BaseMatcher::ghci_started().and(BaseMatcher::watcher_started()),
             true,
@@ -556,34 +548,33 @@ impl GhciWatch {
     }
 
     /// Wait until `ghciwatch` reloads the `ghci` session due to changed modules.
-    pub async fn wait_until_reload(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_reload(&mut self) -> eyre::Result<()> {
         // TODO: It would be nice to verify which modules are changed.
         self.wait_for_log(BaseMatcher::ghci_reload()).await?;
         Ok(())
     }
 
     /// Wait until `ghciwatch` adds new modules to the `ghci` session.
-    pub async fn wait_until_add(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_add(&mut self) -> eyre::Result<()> {
         // TODO: It would be nice to verify which modules are being added.
         self.wait_for_log(BaseMatcher::ghci_add()).await?;
         Ok(())
     }
 
     /// Wait until `ghciwatch` restarts the `ghci` session.
-    pub async fn wait_until_restart(&mut self) -> miette::Result<()> {
+    pub async fn wait_until_restart(&mut self) -> eyre::Result<()> {
         // TODO: It would be nice to verify which modules have been deleted/moved.
         self.wait_for_log(BaseMatcher::ghci_restart()).await?;
         Ok(())
     }
 
     /// Wait until `ghciwatch` exits and return its status.
-    pub async fn wait_until_exit(&self) -> miette::Result<ExitStatus> {
+    pub async fn wait_until_exit(&self) -> eyre::Result<ExitStatus> {
         let mut child = crate::internal::take_ghciwatch_process()?;
 
         let status = child
             .wait()
             .await
-            .into_diagnostic()
             .wrap_err("Failed to wait for `ghciwatch` to exit")?;
 
         // Put it back.
@@ -593,7 +584,7 @@ impl GhciWatch {
     }
 
     /// Restart the `ghciwatch` session.
-    pub async fn restart_ghciwatch(&mut self) -> miette::Result<()> {
+    pub async fn restart_ghciwatch(&mut self) -> eyre::Result<()> {
         let child = crate::internal::take_ghciwatch_process()?;
         crate::internal::send_signal(&child, nix::sys::signal::Signal::SIGINT)?;
         // Put it back.
@@ -639,10 +630,8 @@ impl GhciWatch {
 /// Write an empty `~/.cabal/config` so that `cabal` doesn't try to access the internet.
 ///
 /// See: <https://github.com/haskell/cabal/issues/6167>
-async fn write_cabal_config(fs: &Fs, home: &Path) -> miette::Result<()> {
-    std::fs::create_dir_all(home.join(".cabal"))
-        .into_diagnostic()
-        .wrap_err("Failed to create `.cabal` directory")?;
+async fn write_cabal_config(fs: &Fs, home: &Path) -> eyre::Result<()> {
+    std::fs::create_dir_all(home.join(".cabal")).wrap_err("Failed to create `.cabal` directory")?;
     fs.touch(home.join(".cabal/config"))
         .await
         .wrap_err("Failed to write empty `.cabal/config`")?;
@@ -653,12 +642,11 @@ async fn write_cabal_config(fs: &Fs, home: &Path) -> miette::Result<()> {
 ///
 /// This is a nice check that the given GHC version is present in the environment, to fail tests
 /// early without waiting for `ghciwatch` to fail.
-async fn check_ghc_version(home: &Path, ghc_version: &FullGhcVersion) -> miette::Result<()> {
+async fn check_ghc_version(home: &Path, ghc_version: &FullGhcVersion) -> eyre::Result<()> {
     let _output = Command::new(format!("ghc-{ghc_version}"))
         .env("HOME", home)
         .output()
         .await
-        .into_diagnostic()
         .wrap_err_with(|| format!("Failed to find GHC {ghc_version}"))?;
     // `ghc --version` returns a nonzero status code. As long as we could actually execute it, it's
     // OK if it failed.

@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use aho_corasick::AhoCorasick;
 use line_span::LineSpans;
-use miette::IntoDiagnostic;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWrite;
@@ -81,7 +80,7 @@ where
     ///
     /// TODO: Should this even use `aho_corasick`? Might be overkill, and with the automaton
     /// construction cost it might not even be more efficient.
-    pub async fn read_until(&mut self, opts: &mut ReadOpts<'_>) -> miette::Result<String> {
+    pub async fn read_until(&mut self, opts: &mut ReadOpts<'_>) -> eyre::Result<String> {
         loop {
             if let Some(lines) = self.try_read_until(opts).await? {
                 return Ok(lines);
@@ -92,7 +91,7 @@ where
     /// Examines the internal buffer and reads at most once from the underlying reader. If a line
     /// beginning with one of the `end_marker` patterns is seen, the lines before the marker are
     /// returned. Otherwise, nothing is returned.
-    async fn try_read_until(&mut self, opts: &mut ReadOpts<'_>) -> miette::Result<Option<String>> {
+    async fn try_read_until(&mut self, opts: &mut ReadOpts<'_>) -> eyre::Result<Option<String>> {
         self.drain_pending(opts.writing).await?;
 
         if let Some(chunk) = self.take_chunk_from_buffer(opts) {
@@ -124,7 +123,7 @@ where
                     }
                 }
             }
-            Err(err) => Err(err).into_diagnostic(),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -182,7 +181,7 @@ where
         buffer: &mut [u8],
         timeout: Duration,
         writing: WriteBehavior,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         match tokio::time::timeout(timeout, async {
             loop {
                 match self.reader.read(buffer).await {
@@ -191,7 +190,7 @@ where
                         let decoded = self.decode(&buffer[..n]);
                         self.buffer_decoded(&decoded, writing).await?;
                     }
-                    Err(err) => return Err(err).into_diagnostic(),
+                    Err(err) => return Err(eyre::Report::from(err)),
                 }
             }
         })
@@ -206,7 +205,7 @@ where
     /// markers.
     ///
     /// Cancel-safe: data is pushed to `self.pending` synchronously before any `.await`.
-    async fn buffer_decoded(&mut self, data: &str, writing: WriteBehavior) -> miette::Result<()> {
+    async fn buffer_decoded(&mut self, data: &str, writing: WriteBehavior) -> eyre::Result<()> {
         self.pending.push_str(data);
         self.drain_pending(writing).await
     }
@@ -219,7 +218,7 @@ where
     ///
     /// Cancel-safe: if dropped mid-processing, unprocessed data remains in `self.pending`
     /// and will be drained on the next call.
-    async fn drain_pending(&mut self, writing: WriteBehavior) -> miette::Result<()> {
+    async fn drain_pending(&mut self, writing: WriteBehavior) -> eyre::Result<()> {
         loop {
             let Some(newline_idx) = self.pending.find('\n') else {
                 break;
@@ -246,7 +245,7 @@ where
         &mut self,
         mut data: &str,
         opts: &ReadOpts<'_>,
-    ) -> miette::Result<Option<String>> {
+    ) -> eyre::Result<Option<String>> {
         // Proof of this function's corectness: just trust me
 
         let mut ret = None;
@@ -323,16 +322,13 @@ where
     }
 
     /// Clears `self.lines` and `self.line`, returning the previous value of `self.lines`.
-    async fn take_lines(&mut self, writing: WriteBehavior) -> miette::Result<String> {
+    async fn take_lines(&mut self, writing: WriteBehavior) -> eyre::Result<String> {
         if let Some(writer) = &mut self.writer {
             match writing {
                 WriteBehavior::Write => {
-                    writer
-                        .write_all(self.line.as_bytes())
-                        .await
-                        .into_diagnostic()?;
+                    writer.write_all(self.line.as_bytes()).await?;
                     // We'll just pretend this is the end of the line...
-                    writer.write_all(b"\n").await.into_diagnostic()?;
+                    writer.write_all(b"\n").await?;
                 }
                 WriteBehavior::NoFinalLine | WriteBehavior::Hide => {}
             }
@@ -346,15 +342,12 @@ where
     }
 
     /// Add `self.line` to `self.lines`, replacing `self.line` with an empty buffer.
-    async fn finish_line(&mut self, writing: WriteBehavior) -> miette::Result<()> {
+    async fn finish_line(&mut self, writing: WriteBehavior) -> eyre::Result<()> {
         if let Some(writer) = &mut self.writer {
             match writing {
                 WriteBehavior::Write | WriteBehavior::NoFinalLine => {
-                    writer
-                        .write_all(self.line.as_bytes())
-                        .await
-                        .into_diagnostic()?;
-                    writer.write_all(b"\n").await.into_diagnostic()?;
+                    writer.write_all(self.line.as_bytes()).await?;
+                    writer.write_all(b"\n").await?;
                 }
                 WriteBehavior::Hide => {}
             }
@@ -418,7 +411,7 @@ where
     ///
     /// This is used after `send_sigint` to discard stale prompts left behind by an aborted
     /// `prompt()` call. Returns the number of chunks drained.
-    pub async fn drain_buffered_chunks(&mut self, opts: &ReadOpts<'_>) -> miette::Result<usize> {
+    pub async fn drain_buffered_chunks(&mut self, opts: &ReadOpts<'_>) -> eyre::Result<usize> {
         self.drain_pending(opts.writing).await?;
         let mut count = 0;
         while self.take_chunk_from_buffer(opts).is_some() {

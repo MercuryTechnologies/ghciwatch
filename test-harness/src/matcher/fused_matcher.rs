@@ -26,7 +26,7 @@ impl<M: Display> Display for FusedMatcher<M> {
 }
 
 impl<M: Matcher> Matcher for FusedMatcher<M> {
-    fn matches(&mut self, event: &crate::Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &crate::Event) -> eyre::Result<bool> {
         if self.matched {
             Ok(true)
         } else {

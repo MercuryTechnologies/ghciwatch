@@ -6,9 +6,6 @@ use clap::builder::StringValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
 use humantime::DurationError;
-use miette::LabeledSpan;
-use miette::MietteDiagnostic;
-use miette::Report;
 
 use super::value_validation_error;
 
@@ -29,50 +26,23 @@ impl TypedValueParser for DurationValueParser {
     ) -> Result<Self::Value, clap::Error> {
         self.inner.parse_ref(cmd, arg, value).and_then(|str_value| {
             humantime::parse_duration(&str_value).map_err(|err| {
-                let diagnostic = Report::new(MietteDiagnostic {
-                    message: match &err {
-                        DurationError::InvalidCharacter(_) => "Invalid character".to_owned(),
-                        DurationError::NumberExpected(_) => "Expected number".to_owned(),
-                        DurationError::UnknownUnit { unit, .. } => format!("Unknown unit `{unit}`"),
-                        DurationError::NumberOverflow => "Duration is too long".to_owned(),
-                        DurationError::Empty => "No duration given".to_owned(),
-                    },
-                    code: None,
-                    severity: None,
-                    help: match &err {
-                        DurationError::InvalidCharacter(_) => {
-                            Some("Non-alphanumeric characters are prohibited".to_owned())
-                        }
-                        DurationError::NumberExpected(_) => {
-                            Some("Did you split a unit into multiple words?".to_owned())
-                        }
-                        DurationError::UnknownUnit { .. } => Some(
-                            "Valid units include `ms` (milliseconds) and `s` (seconds)".to_owned(),
-                        ),
-                        DurationError::NumberOverflow => None,
-                        DurationError::Empty => None,
-                    },
-                    url: None,
-                    labels: match err {
-                        DurationError::InvalidCharacter(offset) => Some(vec![LabeledSpan::at(
-                            offset..offset + 1,
-                            "Invalid character",
-                        )]),
-                        DurationError::NumberExpected(offset) => {
-                            Some(vec![LabeledSpan::at(offset..offset + 1, "Expected number")])
-                        }
-                        DurationError::UnknownUnit {
-                            start,
-                            end,
-                            unit: _,
-                            value: _,
-                        } => Some(vec![LabeledSpan::at(start..end, "Unknown unit")]),
-                        DurationError::NumberOverflow => None,
-                        DurationError::Empty => None,
-                    },
-                })
-                .with_source_code(str_value.clone());
-                value_validation_error(arg, &str_value, format!("{diagnostic:?}"))
+                // NB: These error messages are not as good as they were with `miette`, but
+                // they're not exactly common so I don't really want to add the `miette` dependency
+                // back just for this.
+                let message = match &err {
+                    DurationError::InvalidCharacter(offset) => format!(
+                        "Invalid character at offset {offset}; non-alphanumeric characters are prohibited"
+                    ),
+                    DurationError::NumberExpected(offset) => format!(
+                        "Expected number at offset {offset}; did you split a unit into multiple words?"
+                    ),
+                    DurationError::UnknownUnit { unit, .. } => format!(
+                        "Unknown unit `{unit}`; valid units include `ms` (milliseconds) and `s` (seconds)"
+                    ),
+                    DurationError::NumberOverflow => "Duration is too long".to_owned(),
+                    DurationError::Empty => "No duration given".to_owned(),
+                };
+                value_validation_error(arg, &str_value, message)
             })
         })
     }

@@ -8,8 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use miette::miette;
-use miette::IntoDiagnostic;
+use eyre::eyre;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -65,7 +64,7 @@ impl ShutdownManager {
     where
         S: Into<String>,
         F: FnOnce(ShutdownHandle) -> Fut,
-        Fut: Future<Output = miette::Result<()>> + Send + 'static,
+        Fut: Future<Output = eyre::Result<()>> + Send + 'static,
     {
         let sender = self.sender.clone();
         let receiver = sender.subscribe();
@@ -82,7 +81,7 @@ impl ShutdownManager {
 
     /// Wait for tasks to shut down/error or Ctrl-C to be pressed and then shuts down gracefully.
     #[instrument(level = "debug", skip_all)]
-    pub async fn wait_for_shutdown(mut self) -> miette::Result<()> {
+    pub async fn wait_for_shutdown(mut self) -> eyre::Result<()> {
         drop(self.guard_sender);
         let mut all_finished = false;
 
@@ -91,7 +90,7 @@ impl ShutdownManager {
             _ = tokio::signal::ctrl_c() => {
                 tracing::debug!("Ctrl-C pressed, shutting down gracefully");
                 // Note that we need to trigger the shutdown manually in this case.
-                self.sender.send(()).into_diagnostic()?;
+                self.sender.send(())?;
             }
             _ = self.guard_receiver.recv() => {
                 tracing::debug!("All tasks finished");
@@ -148,7 +147,7 @@ impl Handles {
     }
 
     #[instrument(level = "debug", skip_all)]
-    async fn check_task_failures(&mut self) -> miette::Result<()> {
+    async fn check_task_failures(&mut self) -> eyre::Result<()> {
         let mut failures = Vec::new();
 
         for task in std::mem::take(self.0.lock().await.deref_mut()) {
@@ -173,7 +172,7 @@ impl Handles {
                     .into_iter()
                     .map(|(name, error)| format!("{name}: {error}")),
             );
-            Err(miette!("Tasks failed:\n{failures}"))
+            Err(eyre!("Tasks failed:\n{failures}"))
         }
     }
 }
@@ -215,14 +214,14 @@ impl ShutdownHandle {
     /// Check if a shutdown has been requested; if so, return a [`ShutdownError`].
     ///
     /// Otherwise, return `Ok(())`.
-    pub fn error_if_shutdown_requested(&mut self) -> miette::Result<()> {
+    pub fn error_if_shutdown_requested(&mut self) -> eyre::Result<()> {
         match self.receiver.try_recv() {
             Ok(()) | Err(broadcast::error::TryRecvError::Lagged(_)) => Err(ShutdownError.into()),
             Err(broadcast::error::TryRecvError::Empty) => {
                 // No shutdown requested.
                 Ok(())
             }
-            err @ Err(broadcast::error::TryRecvError::Closed) => err.into_diagnostic(),
+            Err(err @ broadcast::error::TryRecvError::Closed) => Err(err.into()),
         }
     }
 
@@ -237,7 +236,7 @@ impl ShutdownHandle {
     where
         S: Into<String>,
         F: FnOnce(ShutdownHandle) -> Fut,
-        Fut: Future<Output = miette::Result<()>> + Send + 'static,
+        Fut: Future<Output = eyre::Result<()>> + Send + 'static,
     {
         let handle = tokio::task::spawn(make_task(self.clone()));
         self.handles
@@ -254,7 +253,7 @@ struct Task {
     /// A handle for remotely cancelling the task.
     abort_handle: AbortHandle,
     /// A receiver for the task's return value.
-    receiver: oneshot::Receiver<Option<miette::Report>>,
+    receiver: oneshot::Receiver<Option<eyre::Report>>,
     /// A handle for the manager which runs asynchronously and requests a shutdown if the task
     /// errors.
     #[allow(dead_code)]
@@ -265,7 +264,7 @@ impl Task {
     /// Create a new task with the given name and handle.
     fn new(
         name: String,
-        handle: JoinHandle<miette::Result<()>>,
+        handle: JoinHandle<eyre::Result<()>>,
         request_shutdown: broadcast::Sender<()>,
     ) -> Self {
         let abort_handle = handle.abort_handle();
@@ -295,8 +294,8 @@ impl Task {
     }
 
     /// Wait for the task to complete and get its name and an error message if it fails.
-    async fn into_result(self) -> miette::Result<Option<(String, miette::ErrReport)>> {
-        let maybe_error = self.receiver.await.into_diagnostic()?;
+    async fn into_result(self) -> eyre::Result<Option<(String, eyre::ErrReport)>> {
+        let maybe_error = self.receiver.await?;
         Ok(maybe_error.map(|err| (self.name, err)))
     }
 }
@@ -304,9 +303,9 @@ impl Task {
 /// Manage a task, requesting a shutdown if it fails and notifying the given sender of any errors.
 async fn manage_handle(
     name: String,
-    handle: JoinHandle<miette::Result<()>>,
+    handle: JoinHandle<eyre::Result<()>>,
     request_shutdown: broadcast::Sender<()>,
-    sender: oneshot::Sender<Option<miette::Report>>,
+    sender: oneshot::Sender<Option<eyre::Report>>,
 ) {
     let mut ret = None;
     match handle.await {
@@ -326,7 +325,7 @@ async fn manage_handle(
                 tracing::debug!(task = name, "Task cancelled");
             } else {
                 tracing::debug!(task = name, "Task panicked: {err}");
-                ret = Some(miette!("{err}"));
+                ret = Some(eyre!("{err}"));
             }
         }
     }
@@ -346,9 +345,9 @@ async fn manage_handle(
 pub struct ShutdownError;
 
 impl ShutdownError {
-    /// Get a [`miette::Report`] of a [`ShutdownError`].
-    pub fn as_report() -> miette::Report {
-        miette::Report::msg(Self)
+    /// Get a [`eyre::Report`] of a [`ShutdownError`].
+    pub fn as_report() -> eyre::Report {
+        eyre::Report::msg(Self)
     }
 }
 
@@ -359,5 +358,3 @@ impl Display for ShutdownError {
         write!(f, "Shutdown requested")
     }
 }
-
-impl miette::Diagnostic for ShutdownError {}

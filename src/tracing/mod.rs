@@ -2,8 +2,7 @@
 use std::io::Write;
 
 use camino::Utf8Path;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::io::DuplexStream;
 use tokio_util::io::SyncIoBridge;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -53,8 +52,8 @@ impl<'opts> TracingOpts<'opts> {
     }
 
     /// Initialize the [`tracing`] logging framework.
-    pub fn install(&mut self) -> miette::Result<(Option<DuplexStream>, WorkerGuard)> {
-        let env_filter = EnvFilter::try_new(self.filter_directives).into_diagnostic()?;
+    pub fn install(&mut self) -> eyre::Result<(Option<DuplexStream>, WorkerGuard)> {
+        let env_filter = EnvFilter::try_new(self.filter_directives)?;
 
         let fmt_span = self
             .trace_spans
@@ -106,15 +105,14 @@ fn tracing_json_layer<S>(
     filter_directives: &str,
     log_path: &Utf8Path,
     fmt_span: FmtSpan,
-) -> miette::Result<Box<dyn tracing_subscriber::Layer<S> + Send + Sync + 'static>>
+) -> eyre::Result<Box<dyn tracing_subscriber::Layer<S> + Send + Sync + 'static>>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
-    let file = std::fs::File::create(log_path)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to open {log_path:?}"))?;
+    let file =
+        std::fs::File::create(log_path).wrap_err_with(|| format!("Failed to open {log_path:?}"))?;
 
-    let env_filter = EnvFilter::try_new(filter_directives).into_diagnostic()?;
+    let env_filter = EnvFilter::try_new(filter_directives)?;
 
     let layer = fmt::layer()
         .with_span_events(fmt_span)

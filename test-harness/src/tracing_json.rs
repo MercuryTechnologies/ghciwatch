@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use serde::Deserialize;
 use tracing::Level;
 
@@ -69,7 +68,7 @@ impl Display for Event {
 }
 
 impl TryFrom<JsonEvent> for Event {
-    type Error = miette::Report;
+    type Error = eyre::Report;
 
     fn try_from(event: JsonEvent) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -77,7 +76,6 @@ impl TryFrom<JsonEvent> for Event {
             level: event
                 .level
                 .parse()
-                .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to parse tracing level: {}", event.level))?,
             message: event.fields.message,
             fields: event.fields.fields,

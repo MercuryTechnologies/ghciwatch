@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
+use eyre::eyre;
 use itertools::Itertools;
-use miette::miette;
 use winnow::ascii::newline;
 use winnow::ascii::space0;
 use winnow::ascii::space1;
@@ -31,7 +31,7 @@ pub struct ShowPaths {
 
 impl ShowPaths {
     /// Convert a target (from `:show targets` output) to a module source path.
-    pub fn target_to_path(&self, target: &str) -> miette::Result<LoadedModule> {
+    pub fn target_to_path(&self, target: &str) -> eyre::Result<LoadedModule> {
         let target_path = Utf8Path::new(target);
         if is_haskell_source_file(target_path) {
             // The target is already a path.
@@ -58,7 +58,7 @@ impl ShowPaths {
                 }
             }
         }
-        Err(miette!("Couldn't find source path for {target}"))
+        Err(eyre!("Couldn't find source path for {target}"))
     }
 
     fn absolute_search_paths(&self) -> impl Iterator<Item = Utf8PathBuf> + '_ {
@@ -72,7 +72,7 @@ impl ShowPaths {
     }
 
     /// Convert a Haskell source path to a module name.
-    pub fn path_to_module(&self, path: &Utf8Path) -> miette::Result<String> {
+    pub fn path_to_module(&self, path: &Utf8Path) -> eyre::Result<String> {
         let path = path.with_extension("");
         let path_str = path.as_str();
 
@@ -89,13 +89,13 @@ impl ShowPaths {
             }
         }
 
-        Err(miette!("Couldn't convert {path} to module name"))
+        Err(eyre!("Couldn't convert {path} to module name"))
     }
 }
 
 /// Parse `:show paths` output into a set of module search paths.
-pub fn parse_show_paths(input: &str) -> miette::Result<ShowPaths> {
-    let mut show_paths = show_paths.parse(input).map_err(|err| miette!("{err}"))?;
+pub fn parse_show_paths(input: &str) -> eyre::Result<ShowPaths> {
+    let mut show_paths = show_paths.parse(input).map_err(|err| eyre!("{err}"))?;
 
     // Deduplicate the search paths.
     show_paths.search_paths = show_paths

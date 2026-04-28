@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use miette::miette;
-use miette::IntoDiagnostic;
+use eyre::eyre;
 use notify_debouncer_full::notify;
 use notify_debouncer_full::notify::PollWatcher;
 use notify_debouncer_full::notify::RecommendedWatcher;
@@ -53,7 +52,7 @@ pub async fn run_watcher(
     handle: ShutdownHandle,
     ghci_sender: mpsc::Sender<WatcherEvent>,
     opts: WatcherOpts,
-) -> miette::Result<()> {
+) -> eyre::Result<()> {
     if opts.poll.is_some() {
         run_debouncer::<PollWatcher>(handle, ghci_sender, opts).await
     } else {
@@ -65,7 +64,7 @@ async fn run_debouncer<T: notify::Watcher>(
     mut handle: ShutdownHandle,
     ghci_sender: mpsc::Sender<WatcherEvent>,
     opts: WatcherOpts,
-) -> miette::Result<()> {
+) -> eyre::Result<()> {
     let mut config = notify::Config::default();
     if let Some(interval) = opts.poll {
         config = config.with_poll_interval(interval);
@@ -88,8 +87,7 @@ async fn run_debouncer<T: notify::Watcher>(
         event_handler,
         cache,
         config,
-    )
-    .into_diagnostic()?;
+    )?;
 
     {
         let watcher = debouncer.watcher();
@@ -101,12 +99,12 @@ async fn run_debouncer<T: notify::Watcher>(
                         kind: notify::ErrorKind::Io(e),
                         ..
                     } if e.kind() == std::io::ErrorKind::NotFound => {
-                        miette!(
+                        eyre!(
                             "Cannot watch path that doesn't exist: {:?}",
                             path.absolute()
                         )
                     }
-                    err => miette!("{err}"),
+                    err => eyre!("{err}"),
                 })?;
         }
         let mut cache = debouncer.cache();
@@ -139,7 +137,7 @@ impl EventHandler {
         }
     }
 
-    async fn handle_event_inner(&self, event: DebounceEventResult) -> miette::Result<()> {
+    async fn handle_event_inner(&self, event: DebounceEventResult) -> eyre::Result<()> {
         let events = match event {
             Ok(events) => events,
             Err(errors) => {
@@ -154,7 +152,7 @@ impl EventHandler {
                 }
 
                 return if fatal_error {
-                    Err(miette!("Watching files failed"))
+                    Err(eyre!("Watching files failed"))
                 } else {
                     Ok(())
                 };
@@ -173,8 +171,7 @@ impl EventHandler {
             tracing::debug!(?events, "Processed events");
             self.ghci_sender
                 .send(WatcherEvent::Reload { events })
-                .await
-                .into_diagnostic()?;
+                .await?;
         }
 
         Ok(())

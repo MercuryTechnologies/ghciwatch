@@ -1,4 +1,4 @@
-use miette::Diagnostic;
+use std::error::Error as StdError;
 
 use crate::BaseMatcher;
 use crate::Matcher;
@@ -9,7 +9,7 @@ pub trait IntoMatcher {
     type Matcher: Matcher;
 
     /// Convert the object into a `Matcher`.
-    fn into_matcher(self) -> miette::Result<Self::Matcher>;
+    fn into_matcher(self) -> eyre::Result<Self::Matcher>;
 }
 
 impl<M> IntoMatcher for M
@@ -18,7 +18,7 @@ where
 {
     type Matcher = Self;
 
-    fn into_matcher(self) -> miette::Result<Self::Matcher> {
+    fn into_matcher(self) -> eyre::Result<Self::Matcher> {
         Ok(self)
     }
 }
@@ -26,7 +26,7 @@ where
 impl IntoMatcher for &BaseMatcher {
     type Matcher = BaseMatcher;
 
-    fn into_matcher(self) -> miette::Result<Self::Matcher> {
+    fn into_matcher(self) -> eyre::Result<Self::Matcher> {
         Ok(self.clone())
     }
 }
@@ -34,7 +34,7 @@ impl IntoMatcher for &BaseMatcher {
 impl IntoMatcher for &str {
     type Matcher = BaseMatcher;
 
-    fn into_matcher(self) -> miette::Result<Self::Matcher> {
+    fn into_matcher(self) -> eyre::Result<Self::Matcher> {
         Ok(BaseMatcher::message(self))
     }
 }
@@ -42,11 +42,11 @@ impl IntoMatcher for &str {
 impl<M, E> IntoMatcher for Result<M, E>
 where
     M: IntoMatcher,
-    E: Diagnostic + Send + Sync + 'static,
+    E: StdError + Send + Sync + 'static,
 {
     type Matcher = <M as IntoMatcher>::Matcher;
 
-    fn into_matcher(self) -> miette::Result<Self::Matcher> {
-        self.map_err(|err| miette::Report::new(err))?.into_matcher()
+    fn into_matcher(self) -> eyre::Result<Self::Matcher> {
+        self.map_err(eyre::Report::new)?.into_matcher()
     }
 }

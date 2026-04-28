@@ -1,4 +1,4 @@
-use miette::miette;
+use eyre::eyre;
 use winnow::combinator::repeat;
 use winnow::Parser;
 
@@ -8,10 +8,10 @@ use super::lines::until_newline;
 use super::show_paths::ShowPaths;
 
 /// Parse `:show targets` output into a set of module source paths.
-pub fn parse_show_targets(search_paths: &ShowPaths, input: &str) -> miette::Result<ModuleSet> {
+pub fn parse_show_targets(search_paths: &ShowPaths, input: &str) -> eyre::Result<ModuleSet> {
     let targets: Vec<_> = repeat(0.., until_newline)
         .parse(input)
-        .map_err(|err| miette!("{err}"))?;
+        .map_err(|err| eyre!("{err}"))?;
 
     targets
         .into_iter()

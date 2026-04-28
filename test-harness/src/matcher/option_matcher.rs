@@ -35,7 +35,7 @@ impl<M: Display> Display for OptionMatcher<M> {
 }
 
 impl<M: Matcher> Matcher for OptionMatcher<M> {
-    fn matches(&mut self, event: &crate::Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &crate::Event) -> eyre::Result<bool> {
         match &mut self.0 {
             Some(ref mut matcher) => matcher.matches(event),
             None => Ok(false),
@@ -46,7 +46,7 @@ impl<M: Matcher> Matcher for OptionMatcher<M> {
 impl<M: Matcher> IntoMatcher for Option<M> {
     type Matcher = OptionMatcher<M>;
 
-    fn into_matcher(self) -> miette::Result<Self::Matcher> {
+    fn into_matcher(self) -> eyre::Result<Self::Matcher> {
         Ok(OptionMatcher(self))
     }
 }

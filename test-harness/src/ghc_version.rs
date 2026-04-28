@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-use miette::miette;
+use eyre::eyre;
 use regex::Regex;
 
 /// A GHC version, including the patch level.
@@ -15,7 +15,7 @@ pub struct FullGhcVersion {
 
 impl FullGhcVersion {
     /// Get the GHC version for the current test.
-    pub fn current() -> miette::Result<Self> {
+    pub fn current() -> eyre::Result<Self> {
         let full = crate::internal::get_ghc_version()?;
         let major = full.parse()?;
         Ok(Self { full, major })
@@ -51,11 +51,11 @@ fn ghc_version_re() -> &'static Regex {
 }
 
 impl FromStr for GhcVersion {
-    type Err = miette::Error;
+    type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let captures = ghc_version_re().captures(s).ok_or_else(|| {
-            miette!("Failed to parse GHC version. Expected a string like \"9.6.2\", got {s:?}")
+            eyre!("Failed to parse GHC version. Expected a string like \"9.6.2\", got {s:?}")
         })?;
 
         let (_full, [major, minor, _patch]) = captures.extract();
@@ -66,7 +66,7 @@ impl FromStr for GhcVersion {
             ("9", "8") => Ok(Self::Ghc98),
             ("9", "10") => Ok(Self::Ghc910),
             ("9", "12") => Ok(Self::Ghc912),
-            (_, _) => Err(miette!(
+            (_, _) => Err(eyre!(
                 "Only the following GHC versions are supported:\n\
                 - 9.4\n\
                 - 9.6\n\

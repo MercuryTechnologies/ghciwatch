@@ -37,7 +37,7 @@ pub trait Matcher: Display {
     /// Feeds an event to the matcher and determines if the matcher has finished.
     ///
     /// Note that matchers may need multiple separate log messages to complete matching.
-    fn matches(&mut self, event: &Event) -> miette::Result<bool>;
+    fn matches(&mut self, event: &Event) -> eyre::Result<bool>;
 
     /// Construct a matcher that matches when this matcher or the `other` matcher have
     /// finished matching.
@@ -83,7 +83,7 @@ impl<M> Matcher for &mut M
 where
     M: Matcher,
 {
-    fn matches(&mut self, event: &Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &Event) -> eyre::Result<bool> {
         (*self).matches(event)
     }
 }

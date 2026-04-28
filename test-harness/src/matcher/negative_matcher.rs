@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use miette::miette;
+use eyre::eyre;
 
 use crate::Event;
 use crate::Matcher;
@@ -35,9 +35,9 @@ where
     A: Display + Matcher,
     B: Display + Matcher,
 {
-    fn matches(&mut self, event: &Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &Event) -> eyre::Result<bool> {
         if self.negative.matches(event)? {
-            Err(miette!("Log event matched {}: {}", self.negative, event))
+            Err(eyre!("Log event matched {}: {}", self.negative, event))
         } else if self.inner.matches(event)? {
             Ok(true)
         } else {

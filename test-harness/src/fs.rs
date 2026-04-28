@@ -6,9 +6,8 @@ use std::time::Duration;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::eyre;
+use eyre::Context;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -64,7 +63,7 @@ impl Fs {
 
     /// Touch a path.
     #[tracing::instrument]
-    pub async fn touch(&self, path: impl AsRef<Path> + Debug) -> miette::Result<()> {
+    pub async fn touch(&self, path: impl AsRef<Path> + Debug) -> eyre::Result<()> {
         let path = path.as_ref();
         if path.exists() {
             // I've had trouble with the pure-`open` approach getting detected, so let's actually
@@ -81,7 +80,6 @@ impl Fs {
                 .write(true)
                 .open(path)
                 .await
-                .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to touch {path:?}"))
                 .map(|_| ())
         }
@@ -93,7 +91,7 @@ impl Fs {
         &self,
         path: impl AsRef<Path> + Debug,
         data: impl AsRef<[u8]>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             self.create_dir(parent).await?;
@@ -103,7 +101,6 @@ impl Fs {
 
         tokio::fs::write(path, data)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to write {path:?}"))
     }
 
@@ -113,15 +110,15 @@ impl Fs {
         &self,
         path: impl AsRef<Path> + Debug,
         data: impl AsRef<[u8]>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let path = path.as_ref();
         let mut file = OpenOptions::new()
             .append(true)
             .open(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to open {path:?}"))?;
-        file.write_all(data.as_ref()).await.into_diagnostic()
+        file.write_all(data.as_ref()).await?;
+        Ok(())
     }
 
     /// Prepend some data to a path.
@@ -130,30 +127,26 @@ impl Fs {
         &self,
         path: impl AsRef<Path> + Debug,
         data: impl AsRef<[u8]>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let path = path.as_ref();
         let contents = self.read(path).await?;
         let mut file = File::create(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to open {path:?}"))?;
         file.write_all(data.as_ref())
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to write {path:?}"))?;
         file.write_all(contents.as_ref())
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to write {path:?}"))
     }
 
     /// Read a path into a string.
     #[tracing::instrument]
-    pub async fn read(&self, path: impl AsRef<Path> + Debug) -> miette::Result<String> {
+    pub async fn read(&self, path: impl AsRef<Path> + Debug) -> eyre::Result<String> {
         let path = path.as_ref();
         tokio::fs::read_to_string(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {path:?}"))
     }
 
@@ -164,25 +157,22 @@ impl Fs {
         path: impl AsRef<Path> + Debug,
         from: impl AsRef<str>,
         to: impl AsRef<str>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let path = path.as_ref();
         let old_contents = self.read(path).await?;
         let new_contents = old_contents.replace(from.as_ref(), to.as_ref());
         if old_contents == new_contents {
-            return Err(miette!(
-                "Replacing substring in file didn't make any changes"
-            ));
+            return Err(eyre!("Replacing substring in file didn't make any changes"));
         }
         self.write(path, new_contents).await
     }
 
     /// Creates a directory and all of its parent components.
     #[tracing::instrument]
-    pub async fn create_dir(&self, path: impl AsRef<Path> + Debug) -> miette::Result<()> {
+    pub async fn create_dir(&self, path: impl AsRef<Path> + Debug) -> eyre::Result<()> {
         let path = path.as_ref();
         tokio::fs::create_dir_all(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to create directory {path:?}"))
     }
 
@@ -190,14 +180,13 @@ impl Fs {
     ///
     /// Directories are removed recursively; be careful.
     #[tracing::instrument]
-    pub async fn remove(&self, path: impl AsRef<Path> + Debug) -> miette::Result<()> {
+    pub async fn remove(&self, path: impl AsRef<Path> + Debug) -> eyre::Result<()> {
         let path = path.as_ref();
         if path.is_dir() {
             tokio::fs::remove_dir_all(path).await
         } else {
             tokio::fs::remove_file(path).await
         }
-        .into_diagnostic()
         .wrap_err_with(|| format!("Failed to remove {path:?}"))
     }
 
@@ -207,12 +196,11 @@ impl Fs {
         &self,
         from: impl AsRef<Path> + Debug,
         to: impl AsRef<Path> + Debug,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let from = from.as_ref();
         let to = to.as_ref();
         tokio::fs::rename(from, to)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to move {from:?} to {to:?}"))
     }
 
@@ -220,7 +208,7 @@ impl Fs {
     ///
     /// This should generally be run under a [`tokio::time::timeout`].
     #[tracing::instrument]
-    pub async fn wait_for_path(&self, duration: Duration, path: &Path) -> miette::Result<()> {
+    pub async fn wait_for_path(&self, duration: Duration, path: &Path) -> eyre::Result<()> {
         let mut backoff = ExponentialBackoff {
             max_interval: Duration::from_secs(1),
             max_elapsed_time: Some(duration),
@@ -233,7 +221,7 @@ impl Fs {
             tracing::debug!("Waiting {duration:?} before retrying");
             tokio::time::sleep(duration).await;
         }
-        Err(miette!(
+        Err(eyre!(
             "Path was not created after waiting {duration:.2?}: {path:?}"
         ))
     }

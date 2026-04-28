@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use miette::miette;
+use eyre::eyre;
 use winnow::combinator::alt;
 use winnow::combinator::repeat;
 use winnow::prelude::*;
@@ -145,7 +145,7 @@ impl GhcDiagnostic {
         &mut self,
         old_base: &Utf8Path,
         new_base: &Utf8Path,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         if let Some(path) = self.path.take() {
             tracing::trace!(
                 %path, %old_base, %new_base,
@@ -187,13 +187,13 @@ impl Display for GhcDiagnostic {
 }
 
 /// Parse [`GhcMessage`]s from lines of compiler output.
-pub fn parse_ghc_messages(lines: &str) -> miette::Result<Vec<GhcMessage>> {
+pub fn parse_ghc_messages(lines: &str) -> eyre::Result<Vec<GhcMessage>> {
     // TODO: Preserve ANSI colors somehow.
     let uncolored_lines = strip_ansi_escapes::strip_str(lines);
 
     parse_messages_inner
         .parse(&uncolored_lines)
-        .map_err(|err| miette!("{err}"))
+        .map_err(|err| eyre!("{err}"))
 }
 
 fn parse_messages_inner(input: &mut &str) -> PResult<Vec<GhcMessage>> {

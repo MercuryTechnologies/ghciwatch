@@ -13,7 +13,7 @@ impl Display for NeverMatcher {
 }
 
 impl Matcher for NeverMatcher {
-    fn matches(&mut self, _event: &crate::Event) -> miette::Result<bool> {
+    fn matches(&mut self, _event: &crate::Event) -> eyre::Result<bool> {
         Ok(false)
     }
 }

@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use miette::IntoDiagnostic;
 use notify_debouncer_full::notify::EventKind;
 use notify_debouncer_full::DebouncedEvent;
 
@@ -34,7 +33,7 @@ impl FileEvent {
 }
 
 /// Process a set of events into a set of [`FileEvent`]s.
-pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> miette::Result<BTreeSet<FileEvent>> {
+pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> eyre::Result<BTreeSet<FileEvent>> {
     let mut ret = BTreeSet::new();
 
     for event in events {
@@ -56,7 +55,7 @@ pub fn file_events_from_action(events: Vec<DebouncedEvent>) -> miette::Result<BT
         }
 
         for path in event.paths {
-            let path: Utf8PathBuf = path.try_into().into_diagnostic()?;
+            let path: Utf8PathBuf = path.try_into()?;
 
             if !path.exists() || removed {
                 ret.insert(FileEvent::Remove(path));

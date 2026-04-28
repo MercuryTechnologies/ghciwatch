@@ -4,8 +4,7 @@ use std::collections::BTreeSet;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -57,7 +56,7 @@ pub async fn run_ghci(
     mut handle: ShutdownHandle,
     opts: GhciOpts,
     mut watcher_receiver: mpsc::Receiver<WatcherEvent>,
-) -> miette::Result<()> {
+) -> eyre::Result<()> {
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
 
@@ -120,7 +119,7 @@ async fn dispatch(
     ghci: Arc<Mutex<Ghci>>,
     event: WatcherEvent,
     reload_sender: oneshot::Sender<GhciReloadKind>,
-) -> miette::Result<()> {
+) -> eyre::Result<()> {
     match event {
         WatcherEvent::Reload { events } => {
             ghci.lock().await.reload(events, reload_sender).await?;
@@ -184,7 +183,7 @@ enum HandleResult {
 }
 
 impl GhciManager {
-    async fn run(mut self) -> miette::Result<()> {
+    async fn run(mut self) -> eyre::Result<()> {
         let mut maybe_event: Option<WatcherEvent> = None;
         loop {
             let event = match maybe_event.take() {
@@ -206,7 +205,7 @@ impl GhciManager {
     }
 
     /// Wait for the next watcher event, handling shutdown and ghci death along the way.
-    async fn wait_for_event(&mut self) -> miette::Result<WaitResult> {
+    async fn wait_for_event(&mut self) -> eyre::Result<WaitResult> {
         let ghci_exited = {
             let GhciManager {
                 ref ghci,
@@ -255,7 +254,7 @@ impl GhciManager {
     /// the ghci `Mutex` and deadlock the next iteration. Events that arrive during a
     /// non-interruptible dispatch are accumulated into `pending_event` and returned as
     /// `Interrupted` for retry.
-    async fn handle_event(&mut self, mut event: WatcherEvent) -> miette::Result<HandleResult> {
+    async fn handle_event(&mut self, mut event: WatcherEvent) -> eyre::Result<HandleResult> {
         let (reload_sender, reload_receiver) = oneshot::channel();
         let mut task = Box::pin(tokio::task::spawn(dispatch(
             self.ghci.clone(),
@@ -350,7 +349,7 @@ impl GhciManager {
                                             .recv()
                                             .await
                                             .ok_or_else(|| {
-                                                miette::miette!(
+                                                eyre::eyre!(
                                                     "ghci exit channel closed after kill"
                                                 )
                                             })?;
@@ -373,7 +372,7 @@ impl GhciManager {
                     continue;
                 }
                 ret = &mut task => {
-                    ret.into_diagnostic()??;
+                    ret??;
                     tracing::debug!("Finished dispatching ghci event");
                     None
                 }
@@ -403,10 +402,7 @@ impl GhciManager {
 
     /// Wait for a relevant file change, then attempt to restart ghci.
     #[instrument(level = "debug", skip_all)]
-    async fn wait_and_restart_runtime(
-        &mut self,
-        status: ExitStatus,
-    ) -> miette::Result<RetryResult> {
+    async fn wait_and_restart_runtime(&mut self, status: ExitStatus) -> eyre::Result<RetryResult> {
         wait_and_restart(
             &mut self.handle,
             &mut self.watcher_receiver,
@@ -434,7 +430,7 @@ fn drain_pending(event: &mut WatcherEvent, watcher_receiver: &mut mpsc::Receiver
 /// `Remove` of a Haskell source file as relevant. This may produce a false
 /// positive (e.g. for files in the reload-ignore list), but a needless dispatch
 /// is harmless — the real classify inside `reload()` will filter it out.
-fn is_relevant(event: &WatcherEvent, classifier: &FileClassifier) -> miette::Result<bool> {
+fn is_relevant(event: &WatcherEvent, classifier: &FileClassifier) -> eyre::Result<bool> {
     let WatcherEvent::Reload { ref events } = *event;
     let kind = classifier
         .classify(events.clone(), &ModuleSet::default())?
@@ -456,7 +452,7 @@ fn drain_and_classify(
     initial: WatcherEvent,
     watcher_receiver: &mut mpsc::Receiver<WatcherEvent>,
     classifier: &FileClassifier,
-) -> miette::Result<Option<GhciReloadKind>> {
+) -> eyre::Result<Option<GhciReloadKind>> {
     let mut event = initial;
     drain_pending(&mut event, watcher_receiver);
     let WatcherEvent::Reload { events } = event;
@@ -492,7 +488,7 @@ impl RestartStrategy<'_> {
         }
     }
 
-    async fn restart(&mut self) -> miette::Result<()> {
+    async fn restart(&mut self) -> eyre::Result<()> {
         match self {
             Self::Startup(ghci) => ghci
                 .startup_restart()
@@ -520,7 +516,7 @@ async fn wait_and_restart(
     classifier: &FileClassifier,
     mut status: ExitStatus,
     strategy: &mut RestartStrategy<'_>,
-) -> miette::Result<RetryResult> {
+) -> eyre::Result<RetryResult> {
     let context = strategy.context();
     tracing::warn!(
         %status,

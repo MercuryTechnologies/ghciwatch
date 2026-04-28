@@ -5,9 +5,8 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::eyre;
+use eyre::Context;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
@@ -156,10 +155,10 @@ async fn cleanup() {
 }
 
 /// Get the GHC version for this thread as given by `GHC_VERSION`.
-pub(crate) fn get_ghc_version() -> miette::Result<String> {
+pub(crate) fn get_ghc_version() -> eyre::Result<String> {
     let ghc_version = GHC_VERSION.with(|version| version.borrow().to_owned());
     if ghc_version.is_empty() {
-        Err(miette!("`GHC_VERSION` is not set"))
+        Err(eyre!("`GHC_VERSION` is not set"))
             .wrap_err("`GhciWatch` can only be used in `#[test_harness::test]` functions")
     } else {
         Ok(ghc_version)
@@ -169,15 +168,13 @@ pub(crate) fn get_ghc_version() -> miette::Result<String> {
 /// Create a new temporary directory and set [`TEMPDIR`] to it, persisting it to disk.
 ///
 /// Fails if [`TEMPDIR`] is already set.
-pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
-    let tempdir = tempfile::tempdir()
-        .into_diagnostic()
-        .wrap_err("Failed to create temporary directory")?;
+pub(crate) fn set_tempdir() -> eyre::Result<PathBuf> {
+    let tempdir = tempfile::tempdir().wrap_err("Failed to create temporary directory")?;
 
     // Set the thread-local tempdir for cleanup later.
     TEMPDIR.with(|thread_tempdir| {
         if thread_tempdir.borrow().is_some() {
-            return Err(miette!(
+            return Err(eyre!(
                 "`GhciWatch` can only be constructed once per `#[test_harness::test]` function"
             ));
         }
@@ -192,10 +189,10 @@ pub(crate) fn set_tempdir() -> miette::Result<PathBuf> {
 /// Set the `GHCIWATCH_PROCESS` for the current thread to the given [`Child`].
 ///
 /// Fails if the `GHCIWATCH_PROCESS` is already set.
-pub(crate) fn set_ghciwatch_process(child: Child) -> miette::Result<()> {
+pub(crate) fn set_ghciwatch_process(child: Child) -> eyre::Result<()> {
     GHCIWATCH_PROCESS.with(|maybe_child| {
         if maybe_child.borrow().is_some() {
-            return Err(miette!(
+            return Err(eyre!(
                 "`GhciWatch` can only be constructed once per `#[test_harness::test]` function"
             ));
         }
@@ -209,24 +206,23 @@ pub(crate) fn set_ghciwatch_process(child: Child) -> miette::Result<()> {
 /// Take the `GHCIWATCH_PROCESS` for the current thread.
 ///
 /// Fails if the `GHCIWATCH_PROCESS` is not set.
-pub(crate) fn take_ghciwatch_process() -> miette::Result<Child> {
+pub(crate) fn take_ghciwatch_process() -> eyre::Result<Child> {
     GHCIWATCH_PROCESS
         .with(|child| child.take())
-        .ok_or_else(|| miette!("GHCIWATCH_PROCESS is not set; have you constructed a `GhciWatch`?"))
+        .ok_or_else(|| eyre!("GHCIWATCH_PROCESS is not set; have you constructed a `GhciWatch`?"))
 }
 
 /// Send a signal to a child process.
-pub(crate) fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
+pub(crate) fn send_signal(child: &Child, signal: Signal) -> eyre::Result<()> {
     signal::kill(
         Pid::from_raw(
             child
                 .id()
-                .ok_or_else(|| miette!("Command has no pid, likely because it has already exited"))?
+                .ok_or_else(|| eyre!("Command has no pid, likely because it has already exited"))?
                 .try_into()
-                .into_diagnostic()
                 .wrap_err("Failed to convert pid type")?,
         ),
         signal,
-    )
-    .into_diagnostic()
+    )?;
+    Ok(())
 }

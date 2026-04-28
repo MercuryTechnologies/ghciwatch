@@ -171,12 +171,12 @@ pub struct WatchOpts {
 
 impl WatchOpts {
     /// Build the specified globs into a matcher.
-    pub fn reload_globs(&self) -> miette::Result<GlobMatcher> {
+    pub fn reload_globs(&self) -> eyre::Result<GlobMatcher> {
         GlobMatcher::from_globs(self.reload_globs.iter())
     }
 
     /// Build the specified globs into a matcher.
-    pub fn restart_globs(&self) -> miette::Result<GlobMatcher> {
+    pub fn restart_globs(&self) -> eyre::Result<GlobMatcher> {
         GlobMatcher::from_globs(self.restart_globs.iter())
     }
 }
@@ -249,7 +249,7 @@ impl Opts {
 
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
-    pub fn init(&mut self) -> miette::Result<()> {
+    pub fn init(&mut self) -> eyre::Result<()> {
         if let Some(file) = &self.file {
             self.watch.paths.push(file.clone());
         } else if self.watch.paths.is_empty() {

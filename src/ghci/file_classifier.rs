@@ -33,7 +33,7 @@ impl FileClassifier {
     /// current working directory.
     ///
     /// This is suitable for use before GHCi has initialized.
-    pub fn new(restart_globs: GlobMatcher, reload_globs: GlobMatcher) -> miette::Result<Self> {
+    pub fn new(restart_globs: GlobMatcher, reload_globs: GlobMatcher) -> eyre::Result<Self> {
         Ok(Self {
             restart_globs,
             reload_globs,
@@ -47,7 +47,7 @@ impl FileClassifier {
     }
 
     /// Make a path relative to the working directory.
-    pub fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
+    pub fn relative_path(&self, path: impl AsRef<Path>) -> eyre::Result<NormalPath> {
         NormalPath::new(path, &self.cwd)
     }
 
@@ -59,7 +59,7 @@ impl FileClassifier {
         &self,
         events: BTreeSet<FileEvent>,
         targets: &ModuleSet,
-    ) -> miette::Result<ReloadActions> {
+    ) -> eyre::Result<ReloadActions> {
         // Once we know which paths were modified and which paths were removed, we can combine
         // that with information about this `ghci` session to determine which modules need to be
         // reloaded, which modules need to be added, and which modules were removed. In the case

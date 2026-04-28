@@ -1,9 +1,8 @@
 use crossterm::cursor;
 use crossterm::event;
 use crossterm::terminal;
-use miette::miette;
-use miette::IntoDiagnostic;
-use miette::WrapErr;
+use eyre::eyre;
+use eyre::WrapErr;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::prelude::Terminal;
 use std::io::Stdout;
@@ -53,11 +52,11 @@ static INSIDE: AtomicBool = AtomicBool::new(false);
 
 /// Enter raw-mode for the terminal on stdout, set up a panic hook, etc.
 #[instrument(level = "debug")]
-pub fn enter() -> miette::Result<TerminalGuard> {
+pub fn enter() -> eyre::Result<TerminalGuard> {
     use event::KeyboardEnhancementFlags as KEF;
 
     if INSIDE.load(Ordering::SeqCst) {
-        return Err(miette!(
+        return Err(eyre!(
             "Cannot enter raw mode; the terminal is already set up"
         ));
     }
@@ -67,9 +66,7 @@ pub fn enter() -> miette::Result<TerminalGuard> {
 
     let mut stdout = std::io::stdout();
 
-    terminal::enable_raw_mode()
-        .into_diagnostic()
-        .wrap_err("Failed to enable raw mode")?;
+    terminal::enable_raw_mode().wrap_err("Failed to enable raw mode")?;
 
     crossterm::execute!(
         stdout,
@@ -84,7 +81,6 @@ pub fn enter() -> miette::Result<TerminalGuard> {
                 | KEF::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         ),
     )
-    .into_diagnostic()
     .wrap_err("Failed to execute crossterm commands")?;
 
     let previous_hook = panic::take_hook();
@@ -97,16 +93,14 @@ pub fn enter() -> miette::Result<TerminalGuard> {
 
     let backend = CrosstermBackend::new(stdout);
 
-    let terminal = Terminal::new(backend)
-        .into_diagnostic()
-        .wrap_err("Failed to create ratatui terminal")?;
+    let terminal = Terminal::new(backend).wrap_err("Failed to create ratatui terminal")?;
 
     Ok(TerminalGuard { terminal })
 }
 
 /// Exits terminal raw-mode.
 #[instrument(level = "debug")]
-pub fn exit() -> miette::Result<()> {
+pub fn exit() -> eyre::Result<()> {
     if !INSIDE.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -122,12 +116,9 @@ pub fn exit() -> miette::Result<()> {
         cursor::Show,
         terminal::LeaveAlternateScreen,
     )
-    .into_diagnostic()
     .wrap_err("Failed to execute crossterm commands")?;
 
-    terminal::disable_raw_mode()
-        .into_diagnostic()
-        .wrap_err("Failed to disable raw mode")?;
+    terminal::disable_raw_mode().wrap_err("Failed to disable raw mode")?;
 
     INSIDE.store(false, Ordering::SeqCst);
 
