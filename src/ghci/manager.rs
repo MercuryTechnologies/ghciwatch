@@ -68,25 +68,36 @@ pub async fn run_ghci(
         .wrap_err("Failed to start `ghci`")?;
 
     // Wait for ghci to finish loading.
+    //
+    // NB: We wait for the `ghci.initialize()` call to complete _even if_ `ghci` exits mid-way
+    // through; this lets us read the rest of its output and write a compilation log for startup
+    // errors.
     let mut log = CompilationLog::default();
-    // Use biased select with exited_receiver before startup_result. When ghci dies, its stdout
-    // closes and read_until enters a yield loop (returning Ok(None) on each EOF read), so
-    // startup_result never completes. exited_receiver.recv() fires once GhciProcess detects the
-    // exit, and with biased polling it is guaranteed to win once a message is available.
-    let startup_exit: Option<ExitStatus> = tokio::select! {
-        biased;
+    tokio::select! {
         _ = handle.on_shutdown_requested() => {
             ghci.stop().await.wrap_err("Failed to quit ghci")?;
             return Ok(());
         }
-        Some(status) = exited_receiver.recv() => Some(status),
         startup_result = ghci.initialize(&mut log, [LifecycleEvent::Startup(hooks::When::After)]) => {
             // Only reachable if ghci starts successfully (startup_result = Ok) or if
             // initialization fails for a non-EOF reason (e.g., a lifecycle hook error).
-            startup_result?;
-            None
+            match startup_result {
+                Ok(()) => {},
+                Err(err) => {
+                    let is_broken_pipe = err.chain().any(|e| {
+                        e.downcast_ref::<std::io::Error>()
+                            .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
+                    });
+                    if is_broken_pipe {
+                        tracing::debug!("ghci stdin closed during startup (broken pipe): {err}");
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
         }
     };
+    let startup_exit: Option<ExitStatus> = exited_receiver.try_recv().ok();
     if let Some(status) = startup_exit {
         match wait_and_restart(
             &mut handle,
