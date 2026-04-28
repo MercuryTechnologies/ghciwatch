@@ -27,9 +27,26 @@ impl CompilationLog {
     /// If we start up in `--repl-no-load`, we don't get a compilation summary, but we don't want to
     /// leave the error log empty, so we synthesize an "All good (0 modules)" message.
     pub fn fill_empty_summary(&mut self) {
-        self.summary.get_or_insert(CompilationSummary {
-            result: CompilationResult::Ok,
-            modules_loaded: ModulesLoaded::Count(0),
+        self.summary.get_or_insert_with(|| {
+            // We usually infer the success status from the "Ok" or "Failed" message at the end of
+            // compilation. If we don't have that, let's use the presence of error diagnostics as a
+            // proxy.
+
+            let has_errors = self
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Severity::Error);
+
+            let result = if has_errors {
+                CompilationResult::Err
+            } else {
+                CompilationResult::Ok
+            };
+
+            CompilationSummary {
+                result,
+                modules_loaded: ModulesLoaded::Count(0),
+            }
         });
     }
 
