@@ -421,6 +421,26 @@ impl Ghci {
 
         self.error_log.write_still_compiling().await?;
 
+        // Don't propagate the error here immediately so we can be sure we always write the
+        // compilation log.
+        let result = self.initialize_inner(log).await;
+        if let Err(err) = result.as_ref() {
+            // If writing the compilation log or running hooks fails, we should log this error so
+            // it's not lost forever.
+            tracing::debug!("Initializing failed: {err}");
+        }
+
+        // If we're in `--repl-no-load`, we may not have gotten a summary message. In that case,
+        // fill in an empty "All good (0 modules)" message.
+        //
+        // Note: We ONLY want to do this on startup.
+        log.fill_empty_summary();
+        self.finish_compilation(start_instant, log, events).await?;
+
+        result
+    }
+
+    async fn initialize_inner(&mut self, log: &mut CompilationLog) -> eyre::Result<()> {
         // Wait for the stdout job to start up.
         self.stdout.initialize(log).await?;
 
@@ -431,13 +451,6 @@ impl Ghci {
         self.refresh_targets().await?;
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
-
-        // If we're in `--repl-no-load`, we may not have gotten a summary message. In that case,
-        // fill in an empty "All good (0 modules)" message.
-        //
-        // Note: We ONLY want to do this on startup.
-        log.fill_empty_summary();
-        self.finish_compilation(start_instant, log, events).await?;
 
         Ok(())
     }
