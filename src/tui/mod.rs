@@ -7,9 +7,8 @@ use crossterm::event::EventStream;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
 use crossterm::event::MouseEventKind;
-use miette::miette;
-use miette::IntoDiagnostic;
-use miette::WrapErr;
+use eyre::eyre;
+use eyre::WrapErr;
 use ratatui::prelude::Buffer;
 use ratatui::prelude::Constraint;
 use ratatui::prelude::Layout;
@@ -57,7 +56,7 @@ impl Default for TuiState {
 
 impl TuiState {
     #[instrument(level = "trace", skip_all)]
-    fn render_inner(&self, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
+    fn render_inner(&self, area: Rect, buffer: &mut Buffer) -> eyre::Result<()> {
         if area.width == 0 || area.height == 0 {
             return Ok(());
         }
@@ -68,10 +67,9 @@ impl TuiState {
         ])
         .split(area);
 
-        let text = self.scrollback.into_text().into_diagnostic()?;
+        let text = self.scrollback.into_text()?;
 
         let scroll_offset = u16::try_from(self.scroll_offset.0)
-            .into_diagnostic()
             .wrap_err("Scroll offset doesn't fit into 16 bits")?;
 
         Paragraph::new(text)
@@ -165,7 +163,7 @@ impl Tui {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn render(&mut self) -> miette::Result<()> {
+    fn render(&mut self) -> eyre::Result<()> {
         let mut render_result = Ok(());
         self.terminal
             .draw(|frame| {
@@ -173,14 +171,13 @@ impl Tui {
                 let buffer = frame.buffer_mut();
                 render_result = self.state.render_inner(self.size, buffer);
             })
-            .into_diagnostic()
             .wrap_err("Failed to draw to terminal")?;
 
         Ok(())
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn handle_event(&mut self, event: Event) -> miette::Result<()> {
+    fn handle_event(&mut self, event: Event) -> eyre::Result<()> {
         // TODO: Steal Evan's declarative key matching macros?
         // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
         match event {
@@ -218,7 +215,7 @@ pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     ghci_reader: DuplexStream,
     tracing_reader: DuplexStream,
-) -> miette::Result<()> {
+) -> eyre::Result<()> {
     let mut ghci_reader = BufReader::new(ghci_reader).lines();
     let mut tracing_reader = BufReader::new(tracing_reader).lines();
 
@@ -236,7 +233,7 @@ pub async fn run_tui(
             }
 
             line = ghci_reader.next_line() => {
-                let line = line.into_diagnostic().wrap_err("Failed to read line from GHCI")?;
+                let line = line.wrap_err("Failed to read line from GHCI")?;
                 match line {
                     Some(line) => {
                         tui.push_line(line);
@@ -248,7 +245,7 @@ pub async fn run_tui(
             }
 
             line = tracing_reader.next_line() => {
-                let line = line.into_diagnostic().wrap_err("Failed to read line from tracing")?;
+                let line = line.wrap_err("Failed to read line from tracing")?;
                 if let Some(line) = line {
                     tui.push_line(line);
                 }
@@ -256,8 +253,8 @@ pub async fn run_tui(
 
             output = event_stream.next() => {
                 let event = output
-                    .ok_or_else(|| miette!("No more crossterm events"))?
-                    .into_diagnostic()
+                    .ok_or_else(|| eyre!("No more crossterm events"))?
+
                     .wrap_err("Failed to get next crossterm event")?;
                 // TODO: `get_frame` is an expensive call, delay if possible.
                 // https://github.com/MercuryTechnologies/ghciwatch/pull/206#discussion_r1508364135

@@ -9,9 +9,8 @@ use std::str::FromStr;
 use clap::builder::StringValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::eyre;
+use eyre::Context;
 use tokio::process::Command;
 
 use crate::command_ext::CommandExt;
@@ -150,15 +149,14 @@ impl ClonableCommand {
 }
 
 impl FromStr for ClonableCommand {
-    type Err = miette::Report;
+    type Err = eyre::Report;
 
     fn from_str(shell_command: &str) -> Result<Self, Self::Err> {
         let tokens = shell_words::split(shell_command.trim())
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to split shell command: {shell_command:?}"))?;
 
         match &*tokens {
-            [] => Err(miette!("Command has no program: {shell_command:?}")),
+            [] => Err(eyre!("Command has no program: {shell_command:?}")),
             [program] => Ok(ClonableCommand {
                 program: program.into(),
                 ..Default::default()

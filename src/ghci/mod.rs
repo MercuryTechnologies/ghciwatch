@@ -24,9 +24,8 @@ use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use miette::miette;
-use miette::IntoDiagnostic;
-use miette::WrapErr;
+use eyre::eyre;
+use eyre::WrapErr;
 use nix::unistd::Pid;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -137,7 +136,7 @@ impl GhciOpts {
     ///
     /// If running in TUI mode, `ghci` output (from `stdout_writer` and `stderr_writer`) is sent to
     /// the stream given by the second return value.
-    pub fn from_cli(opts: &Opts) -> miette::Result<(Self, Option<DuplexStream>)> {
+    pub fn from_cli(opts: &Opts) -> eyre::Result<(Self, Option<DuplexStream>)> {
         // TODO: implement fancier default command
         // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
         let command = match (&opts.file, &opts.command) {
@@ -214,7 +213,7 @@ impl GhciOpts {
     ///
     /// The classifier uses the process's current working directory. Call
     /// [`FileClassifier::set_cwd`] after GHCi initialization to update it.
-    pub fn file_classifier(&self) -> miette::Result<FileClassifier> {
+    pub fn file_classifier(&self) -> eyre::Result<FileClassifier> {
         FileClassifier::new(self.restart_globs.clone(), self.reload_globs.clone())
     }
 
@@ -270,7 +269,7 @@ pub struct Ghci {
     /// Search paths / current working directory for this `ghci` session.
     search_paths: ShowPaths,
     /// Tasks running `async:` shell commands in the background.
-    command_handles: Vec<JoinHandle<miette::Result<ExitStatus>>>,
+    command_handles: Vec<JoinHandle<eyre::Result<ExitStatus>>>,
     /// Monotonic counter for generating unique sync barrier nonces.
     sync_nonce: u64,
 }
@@ -293,7 +292,7 @@ impl Ghci {
         mut shutdown: ShutdownHandle,
         opts: GhciOpts,
         exited_sender: mpsc::Sender<ExitStatus>,
-    ) -> miette::Result<Self> {
+    ) -> eyre::Result<Self> {
         let mut command_handles = Vec::new();
         {
             let span = tracing::debug_span!("before_startup_shell");
@@ -317,21 +316,20 @@ impl Ghci {
 
             command
                 .group_spawn()
-                .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to start {}", command.display()))?
         };
 
         let process_group_id = Pid::from_raw(
             group
                 .id()
-                .ok_or_else(|| miette!("ghci process has no process group ID"))? as i32,
+                .ok_or_else(|| eyre!("ghci process has no process group ID"))? as i32,
         );
 
         let child = group.inner();
         let process_id = Pid::from_raw(
             child
                 .id()
-                .ok_or_else(|| miette!("ghci process has no process ID"))? as i32,
+                .ok_or_else(|| eyre!("ghci process has no process ID"))? as i32,
         );
         tracing::debug!(
             pid = process_id.as_raw(),
@@ -418,7 +416,7 @@ impl Ghci {
         &mut self,
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let start_instant = Instant::now();
 
         self.error_log.write_still_compiling().await?;
@@ -444,7 +442,7 @@ impl Ghci {
         Ok(())
     }
 
-    fn get_reload_actions(&self, events: BTreeSet<FileEvent>) -> miette::Result<ReloadActions> {
+    fn get_reload_actions(&self, events: BTreeSet<FileEvent>) -> eyre::Result<ReloadActions> {
         self.classifier.classify(events, &self.targets)
     }
 
@@ -459,7 +457,7 @@ impl Ghci {
         &mut self,
         events: BTreeSet<FileEvent>,
         kind_sender: oneshot::Sender<GhciReloadKind>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let start_instant = Instant::now();
         let actions = self.get_reload_actions(events)?;
         let _ = kind_sender.send(actions.kind());
@@ -533,7 +531,7 @@ impl Ghci {
     /// really "restarting" a session so much as starting it again. That is, this method avoids
     /// "broken pipe" errors with `--before-restart-ghci` hooks.
     #[instrument(skip_all, level = "debug")]
-    async fn startup_restart(&mut self) -> miette::Result<()> {
+    async fn startup_restart(&mut self) -> eyre::Result<()> {
         let mut log = CompilationLog::default();
 
         self.restart_inner(&mut log, [LifecycleEvent::Startup(hooks::When::After)])
@@ -544,7 +542,7 @@ impl Ghci {
 
     /// Restart the `ghci` session.
     #[instrument(skip_all, level = "debug")]
-    async fn restart(&mut self) -> miette::Result<()> {
+    async fn restart(&mut self) -> eyre::Result<()> {
         let mut log = CompilationLog::default();
 
         self.run_hooks(LifecycleEvent::Restart(hooks::When::Before), &mut log)
@@ -566,7 +564,7 @@ impl Ghci {
         &mut self,
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         self.stop().await?;
         let new = Self::new(
             self.shutdown.clone(),
@@ -582,14 +580,14 @@ impl Ghci {
 
     /// Run the user provided test command.
     #[instrument(skip_all, level = "debug")]
-    async fn test(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
+    async fn test(&mut self, log: &mut CompilationLog) -> eyre::Result<()> {
         self.run_hooks(LifecycleEvent::Test, log).await?;
         Ok(())
     }
 
     /// Run the eval commands, if enabled.
     #[instrument(skip_all, level = "debug")]
-    async fn eval(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
+    async fn eval(&mut self, log: &mut CompilationLog) -> eyre::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
         }
@@ -623,7 +621,7 @@ impl Ghci {
 
     /// Refresh the listing of targets by parsing the `:show paths` and `:show targets` output.
     #[instrument(skip_all, level = "debug")]
-    async fn refresh_targets(&mut self) -> miette::Result<()> {
+    async fn refresh_targets(&mut self) -> eyre::Result<()> {
         self.refresh_paths().await?;
         self.targets = self
             .stdin
@@ -635,7 +633,7 @@ impl Ghci {
 
     /// Refresh the listing of search paths by parsing the `:show paths` output.
     #[instrument(skip_all, level = "debug")]
-    async fn refresh_paths(&mut self) -> miette::Result<()> {
+    async fn refresh_paths(&mut self) -> eyre::Result<()> {
         self.search_paths = self.stdin.show_paths(&mut self.stdout).await?;
         self.classifier.set_cwd(self.search_paths.cwd.clone());
         tracing::debug!(cwd = %self.search_paths.cwd, search_paths = ?self.search_paths.search_paths, "Parsed paths");
@@ -644,7 +642,7 @@ impl Ghci {
 
     /// Refresh `eval_commands` by reading and parsing the files in `targets`.
     #[instrument(skip_all, level = "debug")]
-    async fn refresh_eval_commands(&mut self) -> miette::Result<()> {
+    async fn refresh_eval_commands(&mut self) -> eyre::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
         }
@@ -667,7 +665,7 @@ impl Ghci {
     async fn refresh_eval_commands_for_paths(
         &mut self,
         paths: impl IntoIterator<Item = impl Borrow<NormalPath>>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         if !self.opts.enable_eval {
             return Ok(());
         }
@@ -698,10 +696,9 @@ impl Ghci {
 
     /// Read and parse eval commands from the given `path`.
     #[instrument(level = "trace")]
-    async fn parse_eval_commands(path: &Utf8Path) -> miette::Result<Vec<EvalCommand>> {
+    async fn parse_eval_commands(path: &Utf8Path) -> eyre::Result<Vec<EvalCommand>> {
         let contents = tokio::fs::read_to_string(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {path}"))?;
         let commands = parse_eval_commands(&contents)
             .wrap_err_with(|| format!("Failed to parse eval commands from file {path}"))?;
@@ -714,11 +711,11 @@ impl Ghci {
         &mut self,
         paths: &[NormalPath],
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let mut modules = Vec::with_capacity(paths.len());
         for path in paths {
             if self.targets.contains_source_path(path) {
-                return Err(miette!(
+                return Err(eyre!(
                     "Attempting to add already-loaded module: {path}\n\
                     This is a ghciwatch bug; please report it upstream"
                 ));
@@ -795,7 +792,7 @@ impl Ghci {
         &mut self,
         path: &NormalPath,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let module = self.targets.get_import_name(path);
 
         self.stdin
@@ -819,7 +816,7 @@ impl Ghci {
         &mut self,
         paths: &[NormalPath],
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let modules = paths
             .iter()
             .map(|path| self.targets.get_import_name(path).into_owned())
@@ -843,7 +840,7 @@ impl Ghci {
 
     /// Stop this `ghci` session and cancel the async tasks associated with it.
     #[instrument(skip_all, level = "debug")]
-    async fn stop(&mut self) -> miette::Result<()> {
+    async fn stop(&mut self) -> eyre::Result<()> {
         // Tell the `GhciProcess` to shut down `ghci` without requesting a shutdown for
         // `ghciwatch`.
         let _ = self.restart_sender.try_send(());
@@ -858,7 +855,7 @@ impl Ghci {
     /// as a session-died event and route through the normal restart path
     /// rather than propagating it as fatal. See [`Ghci::sync_barrier`] for details.
     #[instrument(skip_all, level = "debug")]
-    async fn send_sigint(&mut self) -> miette::Result<()> {
+    async fn send_sigint(&mut self) -> eyre::Result<()> {
         let start_instant = Instant::now();
 
         // Phase 1: Send SIGINT repeatedly until we find a clean, uninterrupted prompt.
@@ -878,7 +875,7 @@ impl Ghci {
         let mut sigint_count: usize = 0;
         loop {
             let Some(delay) = backoff.next_backoff() else {
-                return Err(miette!(
+                return Err(eyre!(
                     "Timed out waiting for GHCi to respond to SIGINT after {:.2?}",
                     start_instant.elapsed()
                 ));
@@ -886,7 +883,6 @@ impl Ghci {
 
             sigint_count += 1;
             signal::killpg(self.process_group_id, Signal::SIGINT)
-                .into_diagnostic()
                 .wrap_err("Failed to send `Ctrl-C` (`SIGINT`) to ghci session")?;
             tracing::debug!(count = sigint_count, "Sent SIGINT");
 
@@ -929,7 +925,7 @@ impl Ghci {
     /// method. This ensures we consume all remaining stale output, without having to wait until we
     /// "think it's safe" and wasting the user's time after GHCi is done writing.
     #[instrument(skip_all, level = "debug")]
-    async fn sync_barrier(&mut self) -> miette::Result<()> {
+    async fn sync_barrier(&mut self) -> eyre::Result<()> {
         self.sync_nonce += 1;
         let nonce = self.sync_nonce;
         let sync_marker = format!("~~~GHCIWATCH-SYNC-{nonce}~~~");
@@ -962,7 +958,7 @@ impl Ghci {
                 .await
                 .wrap_err("Failed to restore prompt after sync barrier"),
             Ok(Err(e)) => Err(e).wrap_err("Failed to read until sync marker"),
-            Err(_elapsed) => Err(miette!(
+            Err(_elapsed) => Err(eyre!(
                 "Timed out waiting for GHCi sync marker after {sync_timeout:?}"
             )),
         };
@@ -974,7 +970,6 @@ impl Ghci {
             // learn ghci died. We need the wait future in `GhciProcess::run` to win the
             // select so `exited_sender` fires and `wait_and_restart_runtime` takes over.
             if let Err(kill_err) = signal::killpg(self.process_group_id, Signal::SIGKILL)
-                .into_diagnostic()
                 .wrap_err("Failed to send `SIGKILL` to ghci session")
             {
                 tracing::error!(
@@ -991,7 +986,7 @@ impl Ghci {
 
     #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip_all, level = "trace")]
-    async fn before_startup_shell(command: &ClonableCommand) -> miette::Result<()> {
+    async fn before_startup_shell(command: &ClonableCommand) -> eyre::Result<()> {
         let program = &command.program;
         let mut command = command.as_tokio();
         command.kill_on_drop(true);
@@ -1000,7 +995,6 @@ impl Ghci {
         let status = command
             .status()
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to execute `{command_formatted}`"))?;
         if status.success() {
             tracing::debug!("{program:?} exited successfully: {status}");
@@ -1026,7 +1020,7 @@ impl Ghci {
         compilation_start: Instant,
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         if let Some(error_log_dir) = self.error_log.path().and_then(|path| path.parent()) {
             log.relocate(&self.search_paths.cwd, error_log_dir)?;
         }
@@ -1067,7 +1061,7 @@ impl Ghci {
         &mut self,
         event: LifecycleEvent,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         for hook in self.opts.hooks.select(event) {
             tracing::info!(command = %hook.command, "Running {hook} command");
             match &hook.command {
@@ -1090,7 +1084,7 @@ impl Ghci {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
+    async fn write_error_log(&mut self, log: &CompilationLog) -> eyre::Result<()> {
         self.error_log.write(log).await
     }
 }

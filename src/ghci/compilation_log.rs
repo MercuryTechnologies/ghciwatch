@@ -17,7 +17,7 @@ pub struct CompilationLog {
 
 impl CompilationLog {
     /// Make the diagnostic paths for this log relative to a different directory.
-    pub fn relocate(&mut self, old_base: &Utf8Path, new_base: &Utf8Path) -> miette::Result<()> {
+    pub fn relocate(&mut self, old_base: &Utf8Path, new_base: &Utf8Path) -> eyre::Result<()> {
         for diagnostic in self.diagnostics.iter_mut() {
             diagnostic.make_relative_to(old_base, new_base)?;
         }

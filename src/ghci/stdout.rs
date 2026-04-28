@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use aho_corasick::AhoCorasick;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::process::ChildStdout;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -37,7 +36,7 @@ pub struct GhciStdout {
 
 impl GhciStdout {
     #[instrument(skip_all, level = "debug")]
-    async fn parse_into_log(&self, data: &str, log: &mut CompilationLog) -> miette::Result<()> {
+    async fn parse_into_log(&self, data: &str, log: &mut CompilationLog) -> eyre::Result<()> {
         // Parse GHCi output into compiler messages.
         //
         // These include diagnostics, which modules were compiled, and a compilation summary.
@@ -47,7 +46,7 @@ impl GhciStdout {
                 .stderr_sender
                 .send(StderrEvent::GetBuffer { sender })
                 .await;
-            receiver.await.into_diagnostic()?
+            receiver.await?
         };
         log.extend(parse_ghc_messages(data).wrap_err("Failed to parse compiler output")?);
         log.extend(parse_ghc_messages(&stderr_data).wrap_err("Failed to parse compiler output")?);
@@ -55,7 +54,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, name = "stdout_initialize", level = "debug")]
-    pub async fn initialize(&mut self, log: &mut CompilationLog) -> miette::Result<()> {
+    pub async fn initialize(&mut self, log: &mut CompilationLog) -> eyre::Result<()> {
         // Wait for `ghci` to start up. This may involve compiling a bunch of stuff.
         let bootup_patterns = AhoCorasick::from_anchored_patterns([
             "GHCi, version ",
@@ -79,11 +78,8 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn prompt(&mut self, find: FindAt, log: &mut CompilationLog) -> miette::Result<()> {
-        self.stderr_sender
-            .send(StderrEvent::ClearBuffer)
-            .await
-            .into_diagnostic()?;
+    pub async fn prompt(&mut self, find: FindAt, log: &mut CompilationLog) -> eyre::Result<()> {
+        self.stderr_sender.send(StderrEvent::ClearBuffer).await?;
 
         let data = self
             .reader
@@ -102,7 +98,7 @@ impl GhciStdout {
 
     /// Read any immediately-available output from the pipe, then drain stale prompts from
     /// the internal buffer. Returns the number of prompts found and discarded.
-    pub async fn buffer_and_drain_prompts(&mut self, timeout: Duration) -> miette::Result<usize> {
+    pub async fn buffer_and_drain_prompts(&mut self, timeout: Duration) -> eyre::Result<usize> {
         self.reader
             .buffer_available(&mut self.buffer, timeout, WriteBehavior::NoFinalLine)
             .await?;
@@ -122,7 +118,7 @@ impl GhciStdout {
     /// Used by `send_sigint` to synchronize with GHCi after an interrupt: a sync expression
     /// is sent on stdin and this method reads until its output appears, guaranteeing that all
     /// prior output has been consumed.
-    pub async fn read_until_marker(&mut self, marker: &str) -> miette::Result<String> {
+    pub async fn read_until_marker(&mut self, marker: &str) -> eyre::Result<String> {
         let pattern = AhoCorasick::from_anchored_patterns([marker]);
         self.reader
             .read_until(&mut ReadOpts {
@@ -135,7 +131,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn show_paths(&mut self) -> miette::Result<ShowPaths> {
+    pub async fn show_paths(&mut self) -> eyre::Result<ShowPaths> {
         let lines = self
             .reader
             .read_until(&mut ReadOpts {
@@ -149,7 +145,7 @@ impl GhciStdout {
     }
 
     #[instrument(skip_all, level = "debug")]
-    pub async fn show_targets(&mut self, search_paths: &ShowPaths) -> miette::Result<ModuleSet> {
+    pub async fn show_targets(&mut self, search_paths: &ShowPaths) -> eyre::Result<ModuleSet> {
         let lines = self
             .reader
             .read_until(&mut ReadOpts {
@@ -164,7 +160,7 @@ impl GhciStdout {
 
     #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip_all, level = "debug")]
-    pub async fn quit(&mut self) -> miette::Result<()> {
+    pub async fn quit(&mut self) -> eyre::Result<()> {
         let leaving_ghci = AhoCorasick::from_anchored_patterns(["Leaving GHCi."]);
         let data = self
             .reader

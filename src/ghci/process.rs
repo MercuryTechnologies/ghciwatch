@@ -3,8 +3,7 @@ use std::pin::Pin;
 use std::process::ExitStatus;
 
 use command_group::AsyncGroupChild;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
@@ -29,7 +28,7 @@ pub struct GhciProcess {
 
 impl GhciProcess {
     #[instrument(skip_all, name = "ghci_process", level = "debug")]
-    pub async fn run(mut self, mut process: AsyncGroupChild) -> miette::Result<()> {
+    pub async fn run(mut self, mut process: AsyncGroupChild) -> eyre::Result<()> {
         // We can only call `wait()` once at a time, so we store the future and pass it into the
         // `stop()` handler.
         let mut wait = std::pin::pin!(process.wait());
@@ -43,7 +42,7 @@ impl GhciProcess {
             }
             result = &mut wait => {
                 tracing::debug!(?result, "ghci exited");
-                let status = result.into_diagnostic()?;
+                let status = result?;
                 self.exited(status).await;
                 let _ = self.exited_sender.send(status).await;
             }
@@ -55,21 +54,19 @@ impl GhciProcess {
     async fn stop(
         &self,
         wait: Pin<&mut impl Future<Output = Result<ExitStatus, std::io::Error>>>,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         // Kill it otherwise.
         tracing::debug!("Killing ghci process tree with SIGKILL");
         // This is what `self.process.kill()` does, but we can't call that due to borrow
         // checker shennanigans.
-        signal::killpg(self.process_group_id, Signal::SIGKILL)
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to kill ghci process (pid {})",
-                    self.process_group_id
-                )
-            })?;
+        signal::killpg(self.process_group_id, Signal::SIGKILL).wrap_err_with(|| {
+            format!(
+                "Failed to kill ghci process (pid {})",
+                self.process_group_id
+            )
+        })?;
         // Report the exit status.
-        let status = wait.await.into_diagnostic()?;
+        let status = wait.await?;
 
         self.exited(status).await;
         Ok(())

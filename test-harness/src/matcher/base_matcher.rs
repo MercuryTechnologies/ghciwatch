@@ -202,7 +202,7 @@ impl Display for BaseMatcher {
 }
 
 impl Matcher for BaseMatcher {
-    fn matches(&mut self, event: &Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &Event) -> eyre::Result<bool> {
         if !self.message.is_match(&event.message) {
             return Ok(false);
         }

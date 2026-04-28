@@ -2,12 +2,11 @@
 
 use std::path::Path;
 
+use eyre::Context;
 use ignore::gitignore::Gitignore;
 use ignore::gitignore::GitignoreBuilder;
 use ignore::gitignore::Glob;
 use ignore::Match;
-use miette::Context;
-use miette::IntoDiagnostic;
 
 /// A matcher against sets of globs, `.gitignore` style.
 ///
@@ -27,20 +26,18 @@ impl GlobMatcher {
     /// the last matching pattern decides the match outcome.
     ///
     /// [gitignore]: https://www.man7.org/linux/man-pages/man5/gitignore.5.html
-    pub fn from_globs(globs: impl IntoIterator<Item = impl AsRef<str>>) -> miette::Result<Self> {
+    pub fn from_globs(globs: impl IntoIterator<Item = impl AsRef<str>>) -> eyre::Result<Self> {
         let mut builder = GitignoreBuilder::new(crate::current_dir()?);
 
         for glob in globs {
             let glob = glob.as_ref();
             builder
                 .add_line(None, glob)
-                .into_diagnostic()
                 .wrap_err_with(|| format!("Failed to compile glob: {glob:?}"))?;
         }
 
         builder
             .build()
-            .into_diagnostic()
             .wrap_err("Failed to compile glob matcher")
             .map(Self)
     }

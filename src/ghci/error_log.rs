@@ -1,5 +1,4 @@
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
@@ -40,7 +39,7 @@ impl ErrorLog {
     }
 
     /// Write the "still compiling" message to the error log before a reload or restart.
-    pub async fn write_still_compiling(&self) -> miette::Result<()> {
+    pub async fn write_still_compiling(&self) -> eyre::Result<()> {
         let path = match &self.path {
             Some(path) => path,
             None => {
@@ -51,7 +50,6 @@ impl ErrorLog {
 
         tokio::fs::write(path, STILL_COMPILING)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| "Failed to write error log: {path}")?;
 
         Ok(())
@@ -59,7 +57,7 @@ impl ErrorLog {
 
     /// Write the error log, if any, with the given compilation summary and diagnostic messages.
     #[instrument(skip(self, log), name = "error_log_write", level = "debug")]
-    pub async fn write(&mut self, log: &CompilationLog) -> miette::Result<()> {
+    pub async fn write(&mut self, log: &CompilationLog) -> eyre::Result<()> {
         let path = match &self.path {
             Some(path) => path,
             None => {
@@ -68,7 +66,7 @@ impl ErrorLog {
             }
         };
 
-        let file = File::create(path).await.into_diagnostic()?;
+        let file = File::create(path).await?;
         let mut writer = BufWriter::new(file);
 
         if let Some(summary) = log.summary {
@@ -82,22 +80,18 @@ impl ErrorLog {
                 };
                 writer
                     .write_all(format!("All good ({modules_loaded})\n").as_bytes())
-                    .await
-                    .into_diagnostic()?;
+                    .await?;
             }
         }
 
         for diagnostic in &log.diagnostics {
             tracing::debug!(%diagnostic, "Writing diagnostic");
-            writer
-                .write_all(diagnostic.to_string().as_bytes())
-                .await
-                .into_diagnostic()?;
+            writer.write_all(diagnostic.to_string().as_bytes()).await?;
         }
 
         // This is load-bearing! If we don't properly flush/shutdown the handle, nothing gets
         // written!
-        writer.shutdown().await.into_diagnostic()?;
+        writer.shutdown().await?;
 
         Ok(())
     }

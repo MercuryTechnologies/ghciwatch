@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::ops::Range;
 
+use eyre::eyre;
 use line_span::LineSpanExt;
-use miette::miette;
 use winnow::ascii::line_ending;
 use winnow::ascii::space0;
 use winnow::combinator::alt;
@@ -56,10 +56,10 @@ struct ByteSpanCommand {
 }
 
 /// Parse Haskell source file contents into a `Vec` of [`EvalCommand`]s to evaluate on reloads.
-pub fn parse_eval_commands(contents: &str) -> miette::Result<Vec<EvalCommand>> {
+pub fn parse_eval_commands(contents: &str) -> eyre::Result<Vec<EvalCommand>> {
     let mut byte_commands = eval_commands
         .parse(Located::new(contents))
-        .map_err(|err| miette!("{err}"))?;
+        .map_err(|err| eyre!("{err}"))?;
 
     // Convert the byte offsets into line and column numbers.
     //

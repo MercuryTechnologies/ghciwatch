@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use miette::miette;
+use eyre::eyre;
 use winnow::ascii::space1;
 use winnow::combinator::repeat;
 use winnow::error::AddContext;
@@ -40,10 +40,10 @@ pub struct CompilingModule {
 }
 
 impl FromStr for CompilingModule {
-    type Err = miette::Report;
+    type Err = eyre::Report;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        module_and_files.parse(s).map_err(|err| miette!("{err}"))
+        module_and_files.parse(s).map_err(|err| eyre!("{err}"))
     }
 }
 

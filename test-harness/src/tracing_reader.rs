@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -23,12 +22,11 @@ impl TracingReader {
     /// This watches for data to be read from the given `path`. When a line is written to `path`
     /// (by `ghciwatch`), the `TracingReader` will deserialize the line from JSON into an [`Event`]
     /// and send it to the given `sender` for another task to receive.
-    pub async fn new(path: impl AsRef<Path>) -> miette::Result<Self> {
+    pub async fn new(path: impl AsRef<Path>) -> eyre::Result<Self> {
         let path = path.as_ref();
 
         let file = File::open(path)
             .await
-            .into_diagnostic()
             .wrap_err_with(|| format!("Failed to open {path:?}"))?;
 
         let lines = BufReader::new(file).lines();
@@ -39,7 +37,7 @@ impl TracingReader {
     /// Read the next event from the contained file.
     ///
     /// This will block indefinitely until a line is written to the contained file.
-    pub async fn next_event(&mut self) -> miette::Result<Event> {
+    pub async fn next_event(&mut self) -> eyre::Result<Event> {
         let mut backoff = ExponentialBackoff {
             max_elapsed_time: None,
             max_interval: Duration::from_secs(1),
@@ -47,9 +45,8 @@ impl TracingReader {
         };
 
         while let Some(duration) = backoff.next_backoff() {
-            if let Some(line) = self.lines.next_line().await.into_diagnostic()? {
+            if let Some(line) = self.lines.next_line().await? {
                 let event = serde_json::from_str(&line)
-                    .into_diagnostic()
                     .wrap_err_with(|| format!("Failed to deserialize JSON: {line}"))?;
                 return Ok(event);
             }

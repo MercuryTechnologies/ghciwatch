@@ -1,6 +1,5 @@
+use eyre::Context;
 use itertools::Itertools;
-use miette::Context;
-use miette::IntoDiagnostic;
 use tokio::io::AsyncWriteExt;
 use tokio::process::ChildStdin;
 use tracing::instrument;
@@ -33,11 +32,8 @@ impl GhciStdin {
         line: &str,
         find: FindAt,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
-        self.stdin
-            .write_all(line.as_bytes())
-            .await
-            .into_diagnostic()?;
+    ) -> eyre::Result<()> {
+        self.stdin.write_all(line.as_bytes()).await?;
         stdout.prompt(find, log).await
     }
 
@@ -49,7 +45,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         line: &str,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         self.write_line_with_prompt_at(stdout, line, FindAt::LineStart, log)
             .await
     }
@@ -63,7 +59,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         command: &GhciCommand,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         for line in command.lines() {
             self.write_line(stdout, &format!("{line}\n"), log).await?;
         }
@@ -75,11 +71,11 @@ impl GhciStdin {
     ///
     /// Callers that need to wait for GHCi to acknowledge the new prompt should use
     /// [`Self::set_prompt`] instead.
-    pub async fn write_set_prompt(&mut self, prompt: &str) -> miette::Result<()> {
+    pub async fn write_set_prompt(&mut self, prompt: &str) -> eyre::Result<()> {
         self.stdin
             .write_all(format!(":set prompt \"{prompt}\"\n").as_bytes())
-            .await
-            .into_diagnostic()
+            .await?;
+        Ok(())
     }
 
     /// Set the GHCi prompt to the given string.
@@ -92,7 +88,7 @@ impl GhciStdin {
         prompt: &str,
         find: FindAt,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         self.write_set_prompt(prompt).await?;
         stdout.prompt(find, log).await
     }
@@ -102,7 +98,7 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         // We tell stdout/stderr we're compiling for the first prompt because this includes all the
         // module compilation before the first prompt.
         self.set_prompt(stdout, PROMPT, FindAt::Anywhere, log)
@@ -117,7 +113,7 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         self.write_line(stdout, ":reload\n", log).await
     }
 
@@ -127,7 +123,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         modules: impl IntoIterator<Item = &LoadedModule>,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let modules = modules.into_iter().format(" ");
         // We use `:add` because `:load` unloads all previously loaded modules:
         //
@@ -146,7 +142,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         modules: impl IntoIterator<Item = &LoadedModule>,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         let modules = modules.into_iter().format(" ");
         self.write_line(stdout, &format!(":unadd {modules}\n"), log)
             .await
@@ -158,7 +154,7 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         module: &LoadedModule,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         // `:add *` forces the module to be interpreted, even if it was already loaded from
         // bytecode. This is necessary to access the module's top-level binds for the eval feature.
         self.write_line(stdout, &format!(":add *{module}\n"), log)
@@ -172,7 +168,7 @@ impl GhciStdin {
         module_name: &str,
         command: &GhciCommand,
         log: &mut CompilationLog,
-    ) -> miette::Result<()> {
+    ) -> eyre::Result<()> {
         self.write_line(stdout, &format!(":module + *{module_name}\n"), log)
             .await?;
 
@@ -185,11 +181,8 @@ impl GhciStdin {
     }
 
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
-        self.stdin
-            .write_all(b":show paths\n")
-            .await
-            .into_diagnostic()?;
+    pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> eyre::Result<ShowPaths> {
+        self.stdin.write_all(b":show paths\n").await?;
 
         stdout.show_paths().await
     }
@@ -199,22 +192,18 @@ impl GhciStdin {
         &mut self,
         stdout: &mut GhciStdout,
         show_paths: &ShowPaths,
-    ) -> miette::Result<ModuleSet> {
-        self.stdin
-            .write_all(b":show targets\n")
-            .await
-            .into_diagnostic()?;
+    ) -> eyre::Result<ModuleSet> {
+        self.stdin.write_all(b":show targets\n").await?;
 
         stdout.show_targets(show_paths).await
     }
 
     #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
+    pub async fn quit(&mut self, stdout: &mut GhciStdout) -> eyre::Result<()> {
         self.stdin
             .write_all(b":quit\n")
             .await
-            .into_diagnostic()
             .wrap_err("Failed to tell ghci to `:quit`")?;
         stdout
             .quit()

@@ -10,8 +10,7 @@ use camino::Utf8PathBuf;
 use clap::builder::PathBufValueParser;
 use clap::builder::TypedValueParser;
 use clap::builder::ValueParserFactory;
-use miette::miette;
-use miette::IntoDiagnostic;
+use eyre::eyre;
 use path_absolutize::Absolutize;
 
 /// A normalized [`Utf8PathBuf`] in tandem with a relative path.
@@ -31,27 +30,27 @@ pub struct NormalPath {
 
 impl NormalPath {
     /// Creates a new normalized path relative to the given base path.
-    pub fn new(original: impl AsRef<Path>, base: impl AsRef<Path>) -> miette::Result<Self> {
+    pub fn new(original: impl AsRef<Path>, base: impl AsRef<Path>) -> eyre::Result<Self> {
         let base = base.as_ref();
-        let normal = original.as_ref().absolutize_from(base).into_diagnostic()?;
+        let normal = original.as_ref().absolutize_from(base)?;
         let normal = normal
             .into_owned()
             .try_into()
-            .map_err(|err| miette!("{err}"))?;
+            .map_err(|err| eyre!("{err}"))?;
         let relative = match pathdiff::diff_paths(&normal, base) {
-            Some(path) => Some(path.try_into().map_err(|err| miette!("{err}"))?),
+            Some(path) => Some(path.try_into().map_err(|err| eyre!("{err}"))?),
             None => None,
         };
         Ok(Self { normal, relative })
     }
 
     /// Create a new normalized path relative to the current working directory.
-    pub fn from_cwd(original: impl AsRef<Path>) -> miette::Result<Self> {
+    pub fn from_cwd(original: impl AsRef<Path>) -> eyre::Result<Self> {
         Self::new(original, crate::current_dir()?)
     }
 
     /// Relocate this path to be relative to a different base directory.
-    pub fn relocate(&self, new_base: impl AsRef<Path>) -> miette::Result<Self> {
+    pub fn relocate(&self, new_base: impl AsRef<Path>) -> eyre::Result<Self> {
         Self::new(self.absolute(), new_base)
     }
 

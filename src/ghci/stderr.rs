@@ -3,8 +3,7 @@ use std::time::Instant;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::Context;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::Lines;
@@ -38,7 +37,7 @@ pub struct GhciStderr {
 
 impl GhciStderr {
     #[instrument(skip_all, name = "stderr", level = "debug")]
-    pub async fn run(mut self) -> miette::Result<()> {
+    pub async fn run(mut self) -> eyre::Result<()> {
         let mut backoff = ExponentialBackoff::default();
         while let Some(duration) = backoff.next_backoff() {
             match self.run_inner().await {
@@ -58,7 +57,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    pub async fn run_inner(&mut self) -> miette::Result<()> {
+    pub async fn run_inner(&mut self) -> eyre::Result<()> {
         loop {
             tokio::select! {
                 Ok(Some(line)) = self.reader.next_line() => {
@@ -80,7 +79,7 @@ impl GhciStderr {
         Ok(())
     }
 
-    async fn dispatch(&mut self, event: StderrEvent) -> miette::Result<()> {
+    async fn dispatch(&mut self, event: StderrEvent) -> eyre::Result<()> {
         match event {
             StderrEvent::ClearBuffer => {
                 self.clear_buffer().await;
@@ -94,14 +93,11 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn ingest_line(&mut self, mut line: String) -> miette::Result<()> {
+    async fn ingest_line(&mut self, mut line: String) -> eyre::Result<()> {
         tracing::debug!(line, "Read stderr line");
         line.push('\n');
         self.buffer.push_str(&line);
-        self.writer
-            .write_all(line.as_bytes())
-            .await
-            .into_diagnostic()?;
+        self.writer.write_all(line.as_bytes()).await?;
         Ok(())
     }
 
@@ -111,7 +107,7 @@ impl GhciStderr {
     }
 
     #[instrument(skip(self, sender), level = "debug")]
-    async fn get_buffer(&mut self, sender: oneshot::Sender<String>) -> miette::Result<()> {
+    async fn get_buffer(&mut self, sender: oneshot::Sender<String>) -> eyre::Result<()> {
         // Read lines from the stderr stream until we can't read a line within 0.05 seconds.
         //
         // This helps make sure we've read all the available data.
@@ -121,10 +117,7 @@ impl GhciStderr {
         while let Ok(maybe_line) =
             tokio::time::timeout(Duration::from_millis(50), self.reader.next_line()).await
         {
-            match maybe_line
-                .into_diagnostic()
-                .wrap_err("Failed to read stderr line")?
-            {
+            match maybe_line.wrap_err("Failed to read stderr line")? {
                 Some(line) => {
                     self.ingest_line(line).await?;
                 }

@@ -4,9 +4,8 @@ use std::process::ExitStatus;
 use std::process::Stdio;
 use std::str::FromStr;
 
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
+use eyre::eyre;
+use eyre::Context;
 use tokio::task::JoinHandle;
 use tracing::instrument;
 use tracing::Instrument;
@@ -34,12 +33,12 @@ impl Display for MaybeAsyncCommand {
 }
 
 impl FromStr for MaybeAsyncCommand {
-    type Err = miette::Report;
+    type Err = eyre::Report;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_maybe_async_command
             .parse(s)
-            .map_err(|err| miette!("{err}"))
+            .map_err(|err| eyre!("{err}"))
     }
 }
 
@@ -65,7 +64,6 @@ impl MaybeAsyncCommand {
                     .stderr(Stdio::piped())
                     .output()
                     .await
-                    .into_diagnostic()
                     .wrap_err_with(|| format!("Failed to execute `{command_formatted}`"))?;
 
                 let status = output.status;
@@ -109,7 +107,6 @@ impl MaybeAsyncCommand {
             let command_formatted = self.display();
             let status = join_handle
                 .await
-                .into_diagnostic()
                 .wrap_err_with(|| format!("Panicked while executing `{command_formatted}`"))
                 .and_then(std::convert::identity);
             MaybeAsyncCommandStatus::Sync(status)
@@ -122,8 +119,8 @@ impl MaybeAsyncCommand {
     /// task to the given list of handles.
     pub async fn run_on(
         &self,
-        handles: &mut Vec<JoinHandle<miette::Result<ExitStatus>>>,
-    ) -> miette::Result<()> {
+        handles: &mut Vec<JoinHandle<eyre::Result<ExitStatus>>>,
+    ) -> eyre::Result<()> {
         match self.status().await {
             MaybeAsyncCommandStatus::Sync(result) => {
                 // If we failed to execute the program, that's an actual error, but if the
@@ -141,8 +138,8 @@ impl MaybeAsyncCommand {
 }
 
 pub enum MaybeAsyncCommandStatus {
-    Sync(miette::Result<ExitStatus>),
-    Async(JoinHandle<miette::Result<ExitStatus>>),
+    Sync(eyre::Result<ExitStatus>),
+    Async(JoinHandle<eyre::Result<ExitStatus>>),
 }
 
 impl CommandExt for MaybeAsyncCommand {

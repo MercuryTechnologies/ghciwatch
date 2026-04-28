@@ -311,8 +311,8 @@ impl HookOpts {
     pub async fn run_shell_hooks(
         &self,
         event: LifecycleEvent,
-        handles: &mut Vec<JoinHandle<miette::Result<ExitStatus>>>,
-    ) -> miette::Result<()> {
+        handles: &mut Vec<JoinHandle<eyre::Result<ExitStatus>>>,
+    ) -> eyre::Result<()> {
         for hook in self.select(event) {
             if let Command::Shell(command) = &hook.command {
                 tracing::info!(%command, "Running {hook} command");

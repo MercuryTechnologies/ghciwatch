@@ -22,7 +22,7 @@ where
     A: Display + Matcher,
     B: Display + Matcher,
 {
-    fn matches(&mut self, event: &Event) -> miette::Result<bool> {
+    fn matches(&mut self, event: &Event) -> eyre::Result<bool> {
         // There may be some overlap in the events these matchers require to complete, so
         // we eagerly evaluate both matchers before combining the boolean result.
         let match_a = self.0.matches(event)?;

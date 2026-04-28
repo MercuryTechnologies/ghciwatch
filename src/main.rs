@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use clap::CommandFactory;
 use clap::Parser;
+use eyre::eyre;
 use ghciwatch::cli;
 use ghciwatch::cli::ExperimentalFeature;
 use ghciwatch::run_ghci;
@@ -17,17 +18,16 @@ use ghciwatch::GhciOpts;
 use ghciwatch::ShutdownManager;
 use ghciwatch::TracingOpts;
 use ghciwatch::WatcherOpts;
-use miette::miette;
 use tokio::sync::mpsc;
 
 #[tokio::main]
-async fn main() -> miette::Result<()> {
-    miette::set_panic_hook();
+async fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
     let mut opts = cli::Opts::parse();
     opts.init()?;
 
     if opts.tui {
-        return Err(miette!(
+        return Err(eyre!(
             "`--tui` has been removed. Please use `--experimental-features tui` instead."
         ));
     }
@@ -48,13 +48,10 @@ async fn main() -> miette::Result<()> {
 
     #[cfg(feature = "clap_mangen")]
     if let Some(out_dir) = opts.generate_man_pages {
-        use miette::IntoDiagnostic;
-        use miette::WrapErr;
+        use eyre::WrapErr;
 
         let command = cli::Opts::command();
-        clap_mangen::generate_to(command, out_dir)
-            .into_diagnostic()
-            .wrap_err("Failed to generate man pages")?;
+        clap_mangen::generate_to(command, out_dir).wrap_err("Failed to generate man pages")?;
         return Ok(());
     }
 

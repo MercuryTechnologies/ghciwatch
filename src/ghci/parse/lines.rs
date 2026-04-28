@@ -92,10 +92,10 @@ mod tests {
 
     #[test]
     fn test_parse_lines_repeat() {
-        fn parser(input: &str) -> miette::Result<Vec<&str>> {
+        fn parser(input: &str) -> eyre::Result<Vec<&str>> {
             repeat(0.., rest_of_line)
                 .parse(input)
-                .map_err(|err| miette::miette!("{err}"))
+                .map_err(|err| eyre::eyre!("{err}"))
         }
 
         assert_eq!(
