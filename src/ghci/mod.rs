@@ -434,6 +434,11 @@ impl Ghci {
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
 
+        // If we're in `--repl-no-load`, we may not have gotten a summary message. In that case,
+        // fill in an empty "All good (0 modules)" message.
+        //
+        // Note: We ONLY want to do this on startup.
+        log.fill_empty_summary();
         self.finish_compilation(start_instant, log, events).await?;
 
         Ok(())

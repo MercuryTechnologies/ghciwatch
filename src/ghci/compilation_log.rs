@@ -6,6 +6,8 @@ use crate::ghci::parse::GhcDiagnostic;
 use crate::ghci::parse::GhcMessage;
 use crate::ghci::parse::Severity;
 
+use super::parse::ModulesLoaded;
+
 /// A log of messages from compilation, used to write the error log.
 #[derive(Debug, Clone, Default)]
 pub struct CompilationLog {
@@ -20,6 +22,15 @@ impl CompilationLog {
             diagnostic.make_relative_to(old_base, new_base)?;
         }
         Ok(())
+    }
+
+    /// If we start up in `--repl-no-load`, we don't get a compilation summary, but we don't want to
+    /// leave the error log empty, so we synthesize an "All good (0 modules)" message.
+    pub fn fill_empty_summary(&mut self) {
+        self.summary.get_or_insert(CompilationSummary {
+            result: CompilationResult::Ok,
+            modules_loaded: ModulesLoaded::Count(0),
+        });
     }
 
     /// Get the result of compilation.
