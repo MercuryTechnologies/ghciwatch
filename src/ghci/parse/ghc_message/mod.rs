@@ -2,6 +2,7 @@
 
 use std::fmt::Display;
 
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use miette::miette;
 use winnow::combinator::alt;
@@ -44,6 +45,8 @@ use module_import_cycle_diagnostic::module_import_cycle_diagnostic;
 
 mod no_location_info_diagnostic;
 use no_location_info_diagnostic::no_location_info_diagnostic;
+
+use crate::normal_path::NormalPath;
 
 use super::rest_of_line;
 
@@ -122,6 +125,41 @@ pub struct GhcDiagnostic {
     pub span: PositionRange,
     /// The associated message.
     pub message: String,
+}
+
+impl GhcDiagnostic {
+    /// Make this diagnostic's path (if it exists) relative to a different directory.
+    ///
+    /// If you run `cabal repl my-package`, where `my-package` is a package listed in the
+    /// `cabal.project` in a different directory than the one where you run `cabal repl` from, then
+    /// `:show paths` will say the working directory is (e.g.) `my-package`, and paths in error
+    /// messages will be written relative to the _working directory_ and _not_ the directory you
+    /// launch `cabal repl` from (or the directory you write your error log to).
+    ///
+    /// Therefore, this method lets us rewrite the paths in diagnostics to be relative to a
+    /// different directory, e.g. for usage with [`static-ls`][static-ls] or the ghcid VS Code
+    /// plugin.
+    ///
+    /// [static-ls]: https://github.com/josephsumabat/static-ls
+    pub fn make_relative_to(
+        &mut self,
+        old_base: &Utf8Path,
+        new_base: &Utf8Path,
+    ) -> miette::Result<()> {
+        if let Some(path) = self.path.take() {
+            tracing::trace!(
+                %path, %old_base, %new_base,
+                "Relocating GHC diagnostic"
+            );
+            self.path = Some(
+                NormalPath::new(path, old_base)?
+                    .relocate(new_base)?
+                    .into_relative(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 impl Display for GhcDiagnostic {

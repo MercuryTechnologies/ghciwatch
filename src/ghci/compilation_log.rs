@@ -1,3 +1,5 @@
+use camino::Utf8Path;
+
 use crate::ghci::parse::CompilationResult;
 use crate::ghci::parse::CompilationSummary;
 use crate::ghci::parse::GhcDiagnostic;
@@ -12,6 +14,14 @@ pub struct CompilationLog {
 }
 
 impl CompilationLog {
+    /// Make the diagnostic paths for this log relative to a different directory.
+    pub fn relocate(&mut self, old_base: &Utf8Path, new_base: &Utf8Path) -> miette::Result<()> {
+        for diagnostic in self.diagnostics.iter_mut() {
+            diagnostic.make_relative_to(old_base, new_base)?;
+        }
+        Ok(())
+    }
+
     /// Get the result of compilation.
     pub fn result(&self) -> Option<CompilationResult> {
         self.summary.map(|summary| summary.result)
