@@ -3,6 +3,7 @@ use indoc::indoc;
 
 use test_harness::test;
 use test_harness::BaseMatcher;
+use test_harness::GhcVersion;
 use test_harness::GhciWatchBuilder;
 
 /// Test that `ghciwatch --errors ...` can write the error log.
@@ -122,4 +123,67 @@ async fn can_write_error_log_compilation_errors() {
         All good (2 modules)
     "#]]
     .assert_eq(&error_contents);
+}
+
+/// Test that `ghciwatch --errors ...` can use the correct basename in paths in error messages.
+#[test]
+async fn can_adjust_error_log_paths() {
+    let error_path = "ghcid.txt";
+    let mut session = GhciWatchBuilder::new("tests/data/with-dep")
+        .with_args(["--errors", error_path, "--watch", "simple-dep/src"])
+        .with_cabal_target("simple-dep")
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let error_path = session.path(error_path);
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch loads ghci");
+
+    session
+        .fs()
+        .replace(
+            session.path("simple-dep/src/SimpleDep.hs"),
+            "\"depFunc\"",
+            "\"depFunc",
+        )
+        .await
+        .expect("can break simple-dep");
+
+    session
+        .wait_for_log(BaseMatcher::span_close().in_leaf_spans(["error_log_write"]))
+        .await
+        .expect("ghciwatch writes ghcid.txt");
+
+    session
+        .wait_for_log(BaseMatcher::reload_completes())
+        .await
+        .expect("ghciwatch finishes reloading");
+
+    let error_contents = session
+        .fs()
+        .read(&error_path)
+        .await
+        .expect("ghciwatch writes ghcid.txt");
+
+    // The path includes the path to the package:
+    let expected = match session.ghc_version() {
+        GhcVersion::Ghc96 | GhcVersion::Ghc98 | GhcVersion::Ghc910 => expect![[r#"
+            simple-dep/src/SimpleDep.hs:4:28: error: [GHC-21231]
+                lexical error in string/character literal at character '\n'
+              |
+            4 | depFunc = putStrLn "depFunc
+              |                            ^
+        "#]],
+        GhcVersion::Ghc912 => expect![[r#"
+            simple-dep/src/SimpleDep.hs:4:20: error: [GHC-21231]
+                lexical error at character '\n'
+              |
+            4 | depFunc = putStrLn "depFunc
+              |                    ^^^^^^^^
+        "#]],
+    };
+
+    expected.assert_eq(&error_contents);
 }
