@@ -56,7 +56,7 @@ impl WatcherEvent {
 pub async fn run_ghci(
     mut handle: ShutdownHandle,
     opts: GhciOpts,
-    mut receiver: mpsc::Receiver<WatcherEvent>,
+    mut watcher_receiver: mpsc::Receiver<WatcherEvent>,
 ) -> miette::Result<()> {
     // This function is pretty tricky! We need to handle shutdowns at each stage, and the process
     // is a little different each time, so the `select!`s can't be consolidated.
@@ -91,7 +91,7 @@ pub async fn run_ghci(
     if let Some(status) = startup_exit {
         match wait_and_restart(
             &mut handle,
-            &mut receiver,
+            &mut watcher_receiver,
             &mut exited_receiver,
             &classifier,
             status,
@@ -107,7 +107,7 @@ pub async fn run_ghci(
     let manager = GhciManager {
         ghci: Arc::new(Mutex::new(ghci)),
         handle,
-        receiver,
+        watcher_receiver,
         exited_receiver,
         classifier,
         interrupt_reloads,
@@ -157,7 +157,7 @@ async fn should_interrupt(reload_receiver: oneshot::Receiver<GhciReloadKind>) ->
 struct GhciManager {
     ghci: Arc<Mutex<Ghci>>,
     handle: ShutdownHandle,
-    receiver: mpsc::Receiver<WatcherEvent>,
+    watcher_receiver: mpsc::Receiver<WatcherEvent>,
     exited_receiver: mpsc::Receiver<ExitStatus>,
     classifier: FileClassifier,
     interrupt_reloads: bool,
@@ -211,7 +211,7 @@ impl GhciManager {
             let GhciManager {
                 ref ghci,
                 ref mut handle,
-                ref mut receiver,
+                ref mut watcher_receiver,
                 ref mut exited_receiver,
                 ..
             } = *self;
@@ -221,7 +221,7 @@ impl GhciManager {
                         .wrap_err("Failed to quit ghci")?;
                     return Ok(WaitResult::Shutdown);
                 }
-                ret = receiver.recv() => {
+                ret = watcher_receiver.recv() => {
                     match ret {
                         Some(event) => {
                             tracing::debug!(?event, "Received ghci event from watcher");
@@ -274,7 +274,7 @@ impl GhciManager {
             let GhciManager {
                 ref ghci,
                 ref mut handle,
-                ref mut receiver,
+                ref mut watcher_receiver,
                 ref mut exited_receiver,
                 ref classifier,
                 interrupt_reloads,
@@ -295,12 +295,12 @@ impl GhciManager {
                     task.abort();
                     Some(status)
                 }
-                Some(mut new_event) = receiver.recv() => {
+                Some(mut new_event) = watcher_receiver.recv() => {
                     // Drain any other events already queued up so we treat a burst
                     // as one decision point — otherwise we'd loop once per event,
                     // and on interrupt we'd only fold in the first one and trigger
                     // another interrupt on the next iteration.
-                    drain_pending(&mut new_event, receiver);
+                    drain_pending(&mut new_event, watcher_receiver);
                     tracing::debug!(
                         ?new_event,
                         "Received ghci event from watcher while reloading"
@@ -394,7 +394,7 @@ impl GhciManager {
         // `pending_event`, and `merge` only adds events, so the accumulated set is
         // guaranteed relevant.
         if let Some(mut pending_event) = pending_event {
-            drain_pending(&mut pending_event, &mut self.receiver);
+            drain_pending(&mut pending_event, &mut self.watcher_receiver);
             return Ok(HandleResult::Interrupted(pending_event));
         }
 
@@ -409,7 +409,7 @@ impl GhciManager {
     ) -> miette::Result<RetryResult> {
         wait_and_restart(
             &mut self.handle,
-            &mut self.receiver,
+            &mut self.watcher_receiver,
             &mut self.exited_receiver,
             &self.classifier,
             status,
@@ -420,8 +420,8 @@ impl GhciManager {
 }
 
 /// Drain all pending events from the receiver and merge them into `event`.
-fn drain_pending(event: &mut WatcherEvent, receiver: &mut mpsc::Receiver<WatcherEvent>) {
-    while let Ok(new_event) = receiver.try_recv() {
+fn drain_pending(event: &mut WatcherEvent, watcher_receiver: &mut mpsc::Receiver<WatcherEvent>) {
+    while let Ok(new_event) = watcher_receiver.try_recv() {
         event.merge(new_event);
     }
 }
@@ -454,11 +454,11 @@ fn is_relevant(event: &WatcherEvent, classifier: &FileClassifier) -> miette::Res
 /// Returns `None` when the combined events are irrelevant ([`GhciReloadKind::None`]).
 fn drain_and_classify(
     initial: WatcherEvent,
-    receiver: &mut mpsc::Receiver<WatcherEvent>,
+    watcher_receiver: &mut mpsc::Receiver<WatcherEvent>,
     classifier: &FileClassifier,
 ) -> miette::Result<Option<GhciReloadKind>> {
     let mut event = initial;
-    drain_pending(&mut event, receiver);
+    drain_pending(&mut event, watcher_receiver);
     let WatcherEvent::Reload { events } = event;
     let kind = classifier.classify(events, &ModuleSet::default())?.kind();
     if matches!(kind, GhciReloadKind::None) {
@@ -515,7 +515,7 @@ impl RestartStrategy<'_> {
 /// waiting.
 async fn wait_and_restart(
     handle: &mut ShutdownHandle,
-    receiver: &mut mpsc::Receiver<WatcherEvent>,
+    watcher_receiver: &mut mpsc::Receiver<WatcherEvent>,
     exited_receiver: &mut mpsc::Receiver<ExitStatus>,
     classifier: &FileClassifier,
     mut status: ExitStatus,
@@ -535,13 +535,13 @@ async fn wait_and_restart(
                 // ghci is already dead; nothing to stop.
                 return Ok(RetryResult::Shutdown);
             }
-            ret = receiver.recv() => {
+            ret = watcher_receiver.recv() => {
                 let Some(event) = ret else {
                     // Channel closed — shutdown in progress. ghci is already dead.
                     tracing::debug!("Watcher event channel closed; shutting down");
                     return Ok(RetryResult::Shutdown);
                 };
-                if drain_and_classify(event, receiver, classifier)?.is_none() {
+                if drain_and_classify(event, watcher_receiver, classifier)?.is_none() {
                     tracing::debug!("File change not relevant to ghci; continuing to wait");
                     continue;
                 }
