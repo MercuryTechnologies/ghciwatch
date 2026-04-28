@@ -33,8 +33,6 @@ impl Display for FullGhcVersion {
 /// Variants of this enum will correspond to `ghcVersions` in `../../flake.nix`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GhcVersion {
-    /// GHC 9.4
-    Ghc94,
     /// GHC 9.6
     Ghc96,
     /// GHC 9.8
@@ -61,14 +59,12 @@ impl FromStr for GhcVersion {
         let (_full, [major, minor, _patch]) = captures.extract();
 
         match (major, minor) {
-            ("9", "4") => Ok(Self::Ghc94),
             ("9", "6") => Ok(Self::Ghc96),
             ("9", "8") => Ok(Self::Ghc98),
             ("9", "10") => Ok(Self::Ghc910),
             ("9", "12") => Ok(Self::Ghc912),
             (_, _) => Err(eyre!(
                 "Only the following GHC versions are supported:\n\
-                - 9.4\n\
                 - 9.6\n\
                 - 9.8\n\
                 - 9.10\n\
@@ -84,26 +80,26 @@ mod tests {
 
     #[test]
     fn test_parse_ghc_version() {
-        assert_eq!("9.4.8".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc94);
         assert_eq!("9.6.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc96);
         assert_eq!("9.10.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
         assert_eq!("9.12.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
 
-        "9.6.1rc1"
+        let _ = "9.6.1rc1"
             .parse::<GhcVersion>()
             .expect_err("Extra information at the end");
-        "9.6.1-pre"
+        let _ = "9.6.1-pre"
             .parse::<GhcVersion>()
             .expect_err("Extra information at the end");
-        "9.6.1.2"
+        let _ = "9.6.1.2"
             .parse::<GhcVersion>()
             .expect_err("Extra version component");
-        "9.6"
+        let _ = "9.6"
             .parse::<GhcVersion>()
             .expect_err("Missing patch version component");
-        "9".parse::<GhcVersion>()
+        let _ = "9"
+            .parse::<GhcVersion>()
             .expect_err("Missing patch and minor version components");
-        "a.b.c"
+        let _ = "a.b.c"
             .parse::<GhcVersion>()
             .expect_err("Non-numeric components");
     }

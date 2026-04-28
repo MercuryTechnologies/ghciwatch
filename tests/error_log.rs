@@ -3,7 +3,6 @@ use indoc::indoc;
 
 use test_harness::test;
 use test_harness::BaseMatcher;
-use test_harness::GhcVersion::*;
 use test_harness::GhciWatchBuilder;
 
 /// Test that `ghciwatch --errors ...` can write the error log.
@@ -84,19 +83,7 @@ async fn can_write_error_log_compilation_errors() {
         .await
         .expect("ghciwatch writes ghcid.txt");
 
-    let expected = match session.ghc_version() {
-        Ghc94 => expect![[r#"
-            src/My/Module.hs:3:11: error:
-                * Couldn't match type `[Char]' with `()'
-                  Expected: ()
-                    Actual: String
-                * In the expression: "Uh oh!"
-                  In an equation for `myIdent': myIdent = "Uh oh!"
-              |
-            3 | myIdent = "Uh oh!"
-              |           ^^^^^^^^
-        "#]],
-        Ghc96 | Ghc98 | Ghc910 | Ghc912 => expect![[r#"
+    expect![[r#"
             src/My/Module.hs:3:11: error: [GHC-83865]
                 * Couldn't match type `[Char]' with `()'
                   Expected: ()
@@ -106,10 +93,8 @@ async fn can_write_error_log_compilation_errors() {
               |
             3 | myIdent = "Uh oh!"
               |           ^^^^^^^^
-        "#]],
-    };
-
-    expected.assert_eq(&error_contents);
+        "#]]
+    .assert_eq(&error_contents);
 
     session
         .fs()
