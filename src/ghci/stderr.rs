@@ -123,6 +123,7 @@ impl GhciStderr {
                 }
                 None => {
                     tracing::debug!("No more lines available from stderr");
+                    break;
                 }
             }
         }
