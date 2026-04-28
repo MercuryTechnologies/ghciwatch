@@ -1,6 +1,5 @@
 //! Adapters for parsing [`clap`] arguments to various types.
 
-mod camino;
 mod error_message;
 mod fmt_span;
 mod humantime;
