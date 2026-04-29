@@ -3,6 +3,7 @@ use indoc::indoc;
 
 use test_harness::test;
 use test_harness::BaseMatcher;
+use test_harness::Fs;
 use test_harness::GhcVersion;
 use test_harness::GhciWatchBuilder;
 
@@ -204,6 +205,64 @@ async fn can_adjust_error_log_paths() {
         "#]],
         GhcVersion::Ghc912 => expect![[r#"
             simple-dep/src/SimpleDep.hs:4:20: error: [GHC-21231]
+                lexical error at character '\n'
+              |
+            4 | depFunc = putStrLn "depFunc
+              |                    ^^^^^^^^
+        "#]],
+    };
+
+    expected.assert_eq(&error_contents);
+}
+
+#[test]
+async fn error_log_startup_failure() {
+    let error_path = "ghcid.txt";
+    let mut session = GhciWatchBuilder::new("tests/data/with-dep")
+        .with_args(["--errors", error_path])
+        .before_start(move |path| {
+            // A version of SimpleDep.hs with an unclosed string literal — cabal will refuse to build it.
+            async move {
+                Fs::new()
+                    .replace(
+                        path.join("simple-dep/src/SimpleDep.hs"),
+                        "\"depFunc\"",
+                        "\"depFunc",
+                    )
+                    .await
+            }
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let error_path = session.path(error_path);
+
+    // First startup fails because simple-dep won't compile.
+    // NB: This message means that ghciwatch didn't crash!
+    session
+        .wait_for_startup_log("ghci exited during startup")
+        .await
+        .expect("ghciwatch detects first startup failure");
+
+    let error_contents = session
+        .fs()
+        .read(&error_path)
+        .await
+        .expect("ghciwatch writes ghcid.txt");
+
+    // We don't have access to the package's directory here so we can't fix these paths!
+    // These _should_ be like `simple-dep/src/SimpleDep.hs` but GHC doesn't emit them relative to
+    // the invocation so users are just Fucked.
+    let expected = match session.ghc_version() {
+        GhcVersion::Ghc96 | GhcVersion::Ghc98 | GhcVersion::Ghc910 => expect![[r#"
+            src/SimpleDep.hs:4:28: error: [GHC-21231]
+                lexical error in string/character literal at character '\n'
+              |
+            4 | depFunc = putStrLn "depFunc
+              |                            ^
+        "#]],
+        GhcVersion::Ghc912 => expect![[r#"
+            src/SimpleDep.hs:4:20: error: [GHC-21231]
                 lexical error at character '\n'
               |
             4 | depFunc = putStrLn "depFunc
