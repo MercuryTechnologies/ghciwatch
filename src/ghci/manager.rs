@@ -81,20 +81,7 @@ pub async fn run_ghci(
         startup_result = ghci.initialize(&mut log, [LifecycleEvent::Startup(hooks::When::After)]) => {
             // Only reachable if ghci starts successfully (startup_result = Ok) or if
             // initialization fails for a non-EOF reason (e.g., a lifecycle hook error).
-            match startup_result {
-                Ok(()) => {},
-                Err(err) => {
-                    let is_broken_pipe = err.chain().any(|e| {
-                        e.downcast_ref::<std::io::Error>()
-                            .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
-                    });
-                    if is_broken_pipe {
-                        tracing::debug!("ghci stdin closed during startup (broken pipe): {err}");
-                    } else {
-                        return Err(err);
-                    }
-                }
-            }
+            handle_broken_pipe(startup_result)?;
         }
     };
     let startup_exit: Option<ExitStatus> = exited_receiver.try_recv().ok();
@@ -500,7 +487,7 @@ impl RestartStrategy<'_> {
     }
 
     async fn restart(&mut self) -> eyre::Result<()> {
-        match self {
+        handle_broken_pipe(match self {
             Self::Startup(ghci) => ghci
                 .startup_restart()
                 .await
@@ -511,7 +498,7 @@ impl RestartStrategy<'_> {
                 .startup_restart()
                 .await
                 .wrap_err("Failed to restart ghci after unexpected exit"),
-        }
+        })
     }
 }
 
@@ -571,6 +558,24 @@ async fn wait_and_restart(
             result = strategy.restart() => {
                 result?;
                 return Ok(RetryResult::Restarted);
+            }
+        }
+    }
+}
+
+fn handle_broken_pipe(result: eyre::Result<()>) -> eyre::Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let is_broken_pipe = err.chain().any(|e| {
+                e.downcast_ref::<std::io::Error>()
+                    .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
+            });
+            if is_broken_pipe {
+                tracing::debug!("ignoring broken pipe error: {err}");
+                Ok(())
+            } else {
+                Err(err)
             }
         }
     }
