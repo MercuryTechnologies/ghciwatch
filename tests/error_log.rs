@@ -30,6 +30,32 @@ async fn can_write_error_log() {
     .assert_eq(&error_contents);
 }
 
+/// Test that `ghciwatch --errors ...` can write the error log with `--repl-no-load`.
+#[test]
+async fn can_write_error_log_repl_no_load() {
+    let error_path = "ghcid.txt";
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_args(["--errors", error_path])
+        .with_cabal_arg("--repl-no-load")
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let error_path = session.path(error_path);
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch loads ghci");
+    let error_contents = session
+        .fs()
+        .read(&error_path)
+        .await
+        .expect("ghciwatch writes ghcid.txt");
+    expect![[r#"
+        All good (0 modules)
+    "#]]
+    .assert_eq(&error_contents);
+}
+
 /// Test that `ghciwatch --errors ...` can write compilation errors.
 /// Then, test that it can reload when modules are changed and will correctly rewrite the error log
 /// once it's fixed.
