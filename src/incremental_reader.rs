@@ -88,9 +88,14 @@ where
         }
     }
 
-    /// Examines the internal buffer and reads at most once from the underlying reader. If a line
-    /// beginning with one of the `end_marker` patterns is seen, the lines before the marker are
-    /// returned. Otherwise, nothing is returned.
+    /// Examines the internal buffer and reads at most once from the underlying reader.
+    ///
+    /// If a line beginning with one of the `end_marker` patterns is seen, the lines before the
+    /// marker are returned.
+    ///
+    /// If the stream EOFs, all the data read is returned immediately.
+    ///
+    /// Otherwise, nothing is returned.
     async fn try_read_until(&mut self, opts: &mut ReadOpts<'_>) -> eyre::Result<Option<String>> {
         self.drain_pending(opts.writing).await?;
 
@@ -101,13 +106,11 @@ where
 
         match self.reader.read(opts.buffer).await {
             Ok(0) => {
-                // EOF — the process closed its stdout. Yield to allow other tasks
-                // (e.g., GhciProcess reporting the exit) to run before we loop again.
-                // This prevents a busy-loop and ensures that a tokio::select! containing
-                // this future will check its other arms (like exited_receiver.recv()) on
-                // the next poll.
-                tokio::task::yield_now().await;
-                Ok(None)
+                // EOF — the process closed its stdout.
+                //
+                // Return all the data we have.
+                let lines = self.take_lines(opts.writing).await?;
+                Ok(Some(lines))
             }
             Ok(n) => {
                 let decoded = self.decode(&opts.buffer[..n]);
