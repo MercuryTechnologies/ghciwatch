@@ -161,23 +161,28 @@ impl GhciStdin {
             .await
     }
 
+    /// Add a module's top level identifiers to scope with `:module + *{module_name}`.
     #[instrument(skip(self, stdout), level = "debug")]
-    pub async fn eval(
+    pub async fn add_module_to_scope(
         &mut self,
         stdout: &mut GhciStdout,
         module_name: &str,
-        command: &GhciCommand,
         log: &mut CompilationLog,
     ) -> eyre::Result<()> {
         self.write_line(stdout, &format!(":module + *{module_name}\n"), log)
-            .await?;
+            .await
+    }
 
-        self.run_command(stdout, command, log).await?;
-
+    /// Remove a module's top level identifiers to scope with `:module - *{module_name}`.
+    #[instrument(skip(self, stdout), level = "debug")]
+    pub async fn remove_module_from_scope(
+        &mut self,
+        stdout: &mut GhciStdout,
+        module_name: &str,
+        log: &mut CompilationLog,
+    ) -> eyre::Result<()> {
         self.write_line(stdout, &format!(":module - *{module_name}\n"), log)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     #[instrument(skip(self, stdout), level = "debug")]

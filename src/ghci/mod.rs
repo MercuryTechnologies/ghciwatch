@@ -609,24 +609,30 @@ impl Ghci {
         // Might be more efficient to swap it out for a default, but then it gets trickier to
         // restore the old value when the function returns.
         for (path, commands) in self.eval_commands.clone() {
+            // If the `module` was already compiled, `ghci` may have loaded the interface file instead
+            // of the interpreted bytecode, giving us this error message when we attempt to
+            // load the top-level scope with `:module + *{module}`:
+            //
+            //     module 'Mercury.Typescript.Golden' is not interpreted
+            //
+            // We use `:add *{module}` to force interpreting the module. We do this here instead of in
+            // `add_module` to save time if eval commands aren't used (or aren't needed for a
+            // particular module).
+            tracing::info!("Loading {path} in interpreted mode for eval commands");
+            self.interpret_module(&path, log).await?;
+            let module = self.search_paths.path_to_module(&path)?;
+            self.stdin
+                .add_module_to_scope(&mut self.stdout, &module, log)
+                .await?;
             for command in commands {
-                // If the `module` was already compiled, `ghci` may have loaded the interface file instead
-                // of the interpreted bytecode, giving us this error message when we attempt to
-                // load the top-level scope with `:module + *{module}`:
-                //
-                //     module 'Mercury.Typescript.Golden' is not interpreted
-                //
-                // We use `:add *{module}` to force interpreting the module. We do this here instead of in
-                // `add_module` to save time if eval commands aren't used (or aren't needed for a
-                // particular module).
-                tracing::info!("Loading {path} in interpreted mode for eval commands");
-                self.interpret_module(&path, log).await?;
-                let module = self.search_paths.path_to_module(&path)?;
                 tracing::info!("Eval {path}:{command}");
                 self.stdin
-                    .eval(&mut self.stdout, &module, &command.command, log)
+                    .run_command(&mut self.stdout, &command.command, log)
                     .await?;
             }
+            self.stdin
+                .remove_module_from_scope(&mut self.stdout, &module, log)
+                .await?;
         }
 
         Ok(())
