@@ -169,15 +169,15 @@ async fn handles_repeated_startup_failures() {
         .await
         .expect("ghciwatch detects first startup failure");
 
+    // Clear events so we don't match the first "ghci exited during startup" again.
+    session.clear_events();
+
     // Touching a source file triggers the first restart attempt, which also fails.
     session
         .fs()
         .touch(session.path("src/MyLib.hs"))
         .await
         .expect("can touch source file");
-
-    // Clear events so we don't match the first "ghci exited during startup" again.
-    session.clear_events();
 
     // The second failure confirms the retry loop re-enters rather than crashing.
     session
@@ -237,15 +237,15 @@ async fn handles_repeated_startup_failures_before_restart_ghci_hook() {
         .await
         .expect("ghciwatch detects first startup failure");
 
+    // Clear events so we don't match the first "ghci exited during startup" again.
+    session.clear_events();
+
     // Touching a source file triggers the first restart attempt, which also fails.
     session
         .fs()
         .touch(session.path("src/MyLib.hs"))
         .await
         .expect("can touch source file");
-
-    // Clear events so we don't match the first "ghci exited during startup" again.
-    session.clear_events();
 
     // The second failure confirms the retry loop re-enters rather than crashing.
     session
