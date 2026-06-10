@@ -61,6 +61,18 @@ pub struct Opts {
     #[arg(long, alias = "allow-eval")]
     pub enable_eval: bool,
 
+    /// An extra directory for converting module paths to module names and vice versa, in
+    /// addition to the module import search paths from GHCi's `:show paths` output.
+    ///
+    /// In some setups (like multi-package projects), GHCi's search paths don't include the
+    /// source directories of all loaded packages, so converting between source paths and module
+    /// names can fail. Use this option to supplement the search paths with extra directories,
+    /// like `my-package/src`.
+    ///
+    /// Can be given multiple times.
+    #[arg(long = "extra-module-search-path", value_name = "PATH")]
+    pub extra_module_search_paths: Vec<NormalPath>,
+
     /// Clear the screen before reloads and restarts.
     #[arg(long)]
     pub clear: bool,
