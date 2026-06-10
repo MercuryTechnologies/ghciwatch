@@ -73,18 +73,31 @@ pub async fn run_ghci(
     // through; this lets us read the rest of its output and write a compilation log for startup
     // errors.
     let mut log = CompilationLog::default();
-    tokio::select! {
+    let startup_result = tokio::select! {
         _ = handle.on_shutdown_requested() => {
             ghci.stop().await.wrap_err("Failed to quit ghci")?;
             return Ok(());
         }
-        startup_result = ghci.initialize(&mut log, [LifecycleEvent::Startup(hooks::When::After)]) => {
-            // Only reachable if ghci starts successfully (startup_result = Ok) or if
-            // initialization fails for a non-EOF reason (e.g., a lifecycle hook error).
-            handle_broken_pipe(startup_result)?;
-        }
+        startup_result = ghci.initialize(&mut log, [LifecycleEvent::Startup(hooks::When::After)]) => startup_result,
     };
-    let startup_exit: Option<ExitStatus> = exited_receiver.try_recv().ok();
+    let startup_exit: Option<ExitStatus> = match startup_result {
+        // Even on success, ghci may have exited right after starting up; check for a
+        // pending exit status so we don't hand the manager a dead session.
+        Ok(()) => exited_receiver.try_recv().ok(),
+        Err(err) if is_broken_pipe(&err) => {
+            // A broken pipe means ghci exited during startup. `GhciProcess` is
+            // guaranteed to deliver the exit status (unless a shutdown wins its
+            // `select!` first), so wait for it rather than racing it with `try_recv` --
+            // losing that race would misattribute the failure to the runtime loop
+            // ("exited unexpectedly" instead of "exited during startup").
+            tracing::debug!("ghci exited during startup: {err}");
+            tokio::select! {
+                _ = handle.on_shutdown_requested() => return Ok(()),
+                status = exited_receiver.recv() => status,
+            }
+        }
+        Err(err) => return Err(err),
+    };
     if let Some(status) = startup_exit {
         match wait_and_restart(
             &mut handle,
@@ -487,7 +500,7 @@ impl RestartStrategy<'_> {
     }
 
     async fn restart(&mut self) -> eyre::Result<()> {
-        handle_broken_pipe(match self {
+        match self {
             Self::Startup(ghci) => ghci
                 .startup_restart()
                 .await
@@ -498,8 +511,19 @@ impl RestartStrategy<'_> {
                 .startup_restart()
                 .await
                 .wrap_err("Failed to restart ghci after unexpected exit"),
-        })
+        }
     }
+}
+
+/// Outcome of racing a restart attempt against the exit channel in [`wait_and_restart`].
+enum RestartRace {
+    /// The restart completed successfully.
+    Restarted,
+    /// ghci exited and the status has already landed on the exit channel.
+    Exited(ExitStatus),
+    /// ghci exited during the restart (seen as a broken pipe), but the exit status
+    /// hasn't landed on the exit channel yet.
+    ExitPending,
 }
 
 /// Wait for a relevant file change, then attempt to restart ghci.
@@ -542,41 +566,64 @@ async fn wait_and_restart(
             }
         }
         tracing::debug!("Restarting ghci");
-        // Race restart against exited_receiver. When ghci dies during restart's
-        // initialize(), read_until loops with yields (rather than erroring on EOF), so
-        // restart never completes on its own. exited_receiver fires when GhciProcess
-        // detects the exit, and with biased polling it wins first so we can retry.
-        tokio::select! {
+        // Race the restart attempt against the exit channel. If ghci dies mid-restart,
+        // the death usually surfaces inside `restart()` itself: its stdout EOFs (which
+        // makes the pending read return early with whatever output is buffered) and the
+        // next write to its stdin fails with a broken pipe. But `GhciProcess` may also
+        // deliver the exit status first, so poll the channel too (biased, so a status
+        // that's already landed wins).
+        let race = tokio::select! {
             biased;
-            Some(new_status) = exited_receiver.recv() => {
-                status = new_status;
-                tracing::warn!(
-                    %status,
-                    "ghci exited {context}; waiting for a file change to restart",
-                );
+            Some(new_status) = exited_receiver.recv() => RestartRace::Exited(new_status),
+            result = strategy.restart() => match result {
+                Ok(()) => RestartRace::Restarted,
+                Err(err) if is_broken_pipe(&err) => {
+                    tracing::debug!("ghci exited while restarting: {err}");
+                    RestartRace::ExitPending
+                }
+                Err(err) => return Err(err),
+            },
+        };
+        let new_status = match race {
+            RestartRace::Restarted => {
+                // The restart can complete successfully right as ghci exits (e.g. it
+                // died just after initialization finished); check for a pending exit
+                // status so we don't return with a dead session.
+                match exited_receiver.try_recv() {
+                    Ok(new_status) => new_status,
+                    Err(_) => return Ok(RetryResult::Restarted),
+                }
             }
-            result = strategy.restart() => {
-                result?;
-                return Ok(RetryResult::Restarted);
+            RestartRace::Exited(new_status) => new_status,
+            RestartRace::ExitPending => {
+                // The exit status is guaranteed to arrive (unless a shutdown wins the
+                // `select!` in `GhciProcess::run` first), so wait for it rather than
+                // racing it with `try_recv` -- losing that race would misattribute the
+                // failure to the runtime loop on the manager's next iteration.
+                tokio::select! {
+                    _ = handle.on_shutdown_requested() => return Ok(RetryResult::Shutdown),
+                    new_status = exited_receiver.recv() => match new_status {
+                        Some(new_status) => new_status,
+                        None => return Ok(RetryResult::Shutdown),
+                    },
+                }
             }
-        }
+        };
+        status = new_status;
+        tracing::warn!(
+            %status,
+            "ghci exited {context}; waiting for a file change to restart",
+        );
     }
 }
 
-fn handle_broken_pipe(result: eyre::Result<()>) -> eyre::Result<()> {
-    match result {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let is_broken_pipe = err.chain().any(|e| {
-                e.downcast_ref::<std::io::Error>()
-                    .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
-            });
-            if is_broken_pipe {
-                tracing::debug!("ignoring broken pipe error: {err}");
-                Ok(())
-            } else {
-                Err(err)
-            }
-        }
-    }
+/// Check whether the error (or anything in its chain) is a broken pipe.
+///
+/// Reading from or writing to ghci fails with a broken pipe when the process has exited;
+/// `GhciProcess` will deliver the exit status on the exit channel shortly afterwards.
+fn is_broken_pipe(err: &eyre::Report) -> bool {
+    err.chain().any(|e| {
+        e.downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
+    })
 }
