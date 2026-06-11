@@ -383,9 +383,33 @@ impl GhciManager {
                     continue;
                 }
                 ret = &mut task => {
-                    ret??;
-                    tracing::debug!("Finished dispatching ghci event");
-                    None
+                    match ret? {
+                        Ok(()) => {
+                            tracing::debug!("Finished dispatching ghci event");
+                            None
+                        }
+                        Err(err) if is_broken_pipe(&err) => {
+                            // ghci died during the dispatch and the death surfaced
+                            // inside the dispatch task itself as a broken pipe. The
+                            // exit status is guaranteed to arrive on the exit channel
+                            // (unless a shutdown wins the `select!` in
+                            // `GhciProcess::run` first), so wait for it and route
+                            // through the standard restart path.
+                            tracing::debug!("ghci exited while dispatching: {err}");
+                            tokio::select! {
+                                _ = handle.on_shutdown_requested() => {
+                                    // ghci is already dead; nothing to stop.
+                                    return Ok(HandleResult::Shutdown);
+                                }
+                                status = exited_receiver.recv() => match status {
+                                    Some(status) => Some(status),
+                                    // Channel closed -- shutdown in progress.
+                                    None => return Ok(HandleResult::Shutdown),
+                                },
+                            }
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
             };
         };
