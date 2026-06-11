@@ -230,6 +230,11 @@ when source files change.</p>
 <p>Evaluate Haskell code in comments.</p>
 <p>This parses line commands starting with <code>-- $&gt;</code> or multiline commands delimited by <code>{- $&gt;</code> and <code>&lt;$ -}</code> and evaluates them after reloads.</p>
 </dd>
+<dt><a id="--extra-module-search-path" href="#--extra-module-search-path"><code>--extra-module-search-path &lt;PATH&gt;</code></a></dt><dd>
+<p>An extra directory for converting module paths to module names and vice versa, in addition to the module import search paths from GHCi’s <code>:show paths</code> output.</p>
+<p>In some setups (like multi-package projects), GHCi’s search paths don’t include the source directories of all loaded packages, so converting between source paths and module names can fail. Use this option to supplement the search paths with extra directories, like <code>my-package/src</code>.</p>
+<p>Can be given multiple times.</p>
+</dd>
 <dt><a id="--clear" href="#--clear"><code>--clear</code></a></dt><dd>
 <p>Clear the screen before reloads and restarts</p>
 </dd>
