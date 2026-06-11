@@ -112,6 +112,9 @@ pub struct GhciOpts {
     pub error_path: Option<Utf8PathBuf>,
     /// Enable running eval commands in files.
     pub enable_eval: bool,
+    /// Extra directories to add to the module import search paths parsed from `:show paths`,
+    /// used for converting module paths to module names and vice versa.
+    pub extra_search_paths: Vec<Utf8PathBuf>,
     /// Lifecycle hooks, mostly `ghci` commands to run at certain points.
     pub hooks: HookOpts,
     /// Restart the `ghci` session when paths matching these globs are changed.
@@ -197,6 +200,11 @@ impl GhciOpts {
                 command,
                 error_path: opts.error_file.clone(),
                 enable_eval: opts.enable_eval,
+                extra_search_paths: opts
+                    .extra_module_search_paths
+                    .iter()
+                    .map(|path| path.absolute().to_owned())
+                    .collect(),
                 hooks: opts.hooks.clone(),
                 restart_globs: opts.watch.restart_globs()?,
                 reload_globs: opts.watch.reload_globs()?,
@@ -386,6 +394,7 @@ impl Ghci {
         });
         let classifier =
             FileClassifier::new(opts.restart_globs.clone(), opts.reload_globs.clone())?;
+        let extra_search_paths = opts.extra_search_paths.clone();
 
         Ok(Ghci {
             opts,
@@ -401,7 +410,7 @@ impl Ghci {
             eval_commands: Default::default(),
             search_paths: ShowPaths {
                 cwd: crate::current_dir_utf8()?,
-                search_paths: Default::default(),
+                search_paths: extra_search_paths,
             },
             command_handles,
             sync_nonce: 0,
@@ -654,6 +663,11 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn refresh_paths(&mut self) -> eyre::Result<()> {
         self.search_paths = self.stdin.show_paths(&mut self.stdout).await?;
+        for path in &self.opts.extra_search_paths {
+            if !self.search_paths.search_paths.contains(path) {
+                self.search_paths.search_paths.push(path.clone());
+            }
+        }
         self.classifier.set_cwd(self.search_paths.cwd.clone());
         tracing::debug!(cwd = %self.search_paths.cwd, search_paths = ?self.search_paths.search_paths, "Parsed paths");
         Ok(())

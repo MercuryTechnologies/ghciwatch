@@ -78,6 +78,15 @@ Evaluate Haskell code in comments.
 This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>` and `<$ -}` and evaluates them after reloads.
 
 </dd>
+<dt><a id="--extra-module-search-path" href="#--extra-module-search-path"><code>--extra-module-search-path &lt;PATH&gt;</code></a></dt><dd>
+
+An extra directory for converting module paths to module names and vice versa, in addition to the module import search paths from GHCi's `:show paths` output.
+
+In some setups (like multi-package projects), GHCi's search paths don't include the source directories of all loaded packages, so converting between source paths and module names can fail. Use this option to supplement the search paths with extra directories, like `my-package/src`.
+
+Can be given multiple times.
+
+</dd>
 <dt><a id="--clear" href="#--clear"><code>--clear</code></a></dt><dd>
 
 Clear the screen before reloads and restarts
