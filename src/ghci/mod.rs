@@ -64,6 +64,7 @@ pub use compilation_log::CompilationLog;
 mod writer;
 use crate::buffers::GHCI_BUFFER_CAPACITY;
 pub use crate::ghci::writer::GhciWriter;
+use crate::haskell_source_file::is_haskell_source_file;
 
 mod progress_writer;
 
@@ -688,6 +689,7 @@ impl Ghci {
         let mut eval_commands = BTreeMap::new();
 
         for target in self.targets.iter() {
+            // Note: Loaded targets are always Haskell modules.
             let commands = Self::parse_eval_commands(target.path()).await?;
             if !commands.is_empty() {
                 eval_commands.insert(target.path().clone(), commands);
@@ -710,6 +712,27 @@ impl Ghci {
 
         for path in paths {
             let path = path.borrow();
+
+            // To actually _execute_ eval commands with the proper bindings in scope, we need to be
+            // able to evaluate (interpret) a file, which requires we know its module _name_
+            // (because `:module + *MODULE_NAME` only supports module names and not source paths).
+            //
+            // We get _all_ file events in this loop, not just Haskell source files, so let's guard
+            // adding an entry to the `eval_commands` map by making sure we can convert the path to
+            // a module name.
+            if self.search_paths.path_to_module(path).is_err() {
+                if is_haskell_source_file(path) {
+                    // If the path is a Haskell source file (ends with `.hs` or similar), we should
+                    // warn the user directly. Otherwise, it's probably a `.persistentmodels` or
+                    // something and the user (probably!) won't expect eval commands to be evaluated
+                    // in it.
+                    tracing::warn!(%path, "Could not determine module path, skipping parsing eval commands");
+                } else {
+                    tracing::debug!(%path, "Could not determine module path, skipping parsing eval commands");
+                }
+                continue;
+            }
+
             let commands = Self::parse_eval_commands(path).await?;
             self.eval_commands.insert(path.clone(), commands);
         }

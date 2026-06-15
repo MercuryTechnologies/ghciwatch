@@ -250,3 +250,65 @@ async fn can_eval_commands_twice() {
         .await
         .expect("ghciwatch evals commands");
 }
+
+/// Test that `ghciwatch` can handle file events (e.g. `--reload-glob`s) for non-Haskell files, and
+/// that we don't try to evaluate/interpret these!
+#[test]
+async fn eval_can_handle_non_haskell_files() {
+    let relative_model_path = "models/doggy.persistentmodels";
+    let cmd = "-- $> example ++ example";
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_args([
+            "--enable-eval",
+            "--watch",
+            "models",
+            "--reload-glob",
+            "*.persistentmodels",
+        ])
+        .before_start(move |path| async move {
+            let fs = Fs::new();
+
+            fs.create_dir(path.join("models")).await?;
+
+            fs.write(path.join(relative_model_path), format!("\n{cmd}\n"))
+                .await?;
+
+            Ok(())
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let model_path = session.path(relative_model_path);
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch didn't start in time");
+
+    let reload_no_eval_matcher = BaseMatcher::reload_completes()
+        .and(
+            BaseMatcher::span_close()
+                .in_leaf_spans(["eval"])
+                .in_module("ghciwatch::ghci"),
+        )
+        .but_not(BaseMatcher::message(&format!(
+            "Loading {} in interpreted mode for eval commands",
+            regex::escape(relative_model_path)
+        )));
+
+    // Make sure we can reload.
+    session.clear_events();
+    session.fs().touch(&model_path).await.unwrap();
+    session
+        .assert_logged_or_wait(reload_no_eval_matcher.clone())
+        .await
+        .expect("ghciwatch handles non-Haskell files in eval mode");
+
+    // Make sure we can reload _again_ (i.e. ghciwatch didn't crash).
+    session.clear_events();
+    session.fs().touch(&model_path).await.unwrap();
+    session
+        .assert_logged_or_wait(reload_no_eval_matcher)
+        .await
+        .expect("ghciwatch handles non-Haskell files in eval mode");
+}
