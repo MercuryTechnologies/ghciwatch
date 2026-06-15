@@ -618,6 +618,11 @@ impl Ghci {
         // Might be more efficient to swap it out for a default, but then it gets trickier to
         // restore the old value when the function returns.
         for (path, commands) in self.eval_commands.clone() {
+            // If we don't have any eval commands for this path, do nothing.
+            if commands.is_empty() {
+                continue;
+            }
+
             // If the `module` was already compiled, `ghci` may have loaded the interface file instead
             // of the interpreted bytecode, giving us this error message when we attempt to
             // load the top-level scope with `:module + *{module}`:
