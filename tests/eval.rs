@@ -55,6 +55,7 @@ async fn can_eval_commands() {
         .expect("ghciwatch finishes initializing");
 
     // Erase the command.
+    session.clear_events();
     session.fs().replace(module_path, cmd, "").await.unwrap();
     session
         .wait_until_reload()
@@ -109,6 +110,7 @@ async fn can_load_new_eval_commands_multiline() {
         .expect("ghciwatch evals commands");
 
     // Erase the command.
+    session.clear_events();
     session
         .fs()
         .replace(module_path, eval_cmd, "")

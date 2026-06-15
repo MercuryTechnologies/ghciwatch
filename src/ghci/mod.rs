@@ -720,6 +720,11 @@ impl Ghci {
             // We get _all_ file events in this loop, not just Haskell source files, so let's guard
             // adding an entry to the `eval_commands` map by making sure we can convert the path to
             // a module name.
+            //
+            // However!!! We're _modifying_ an existing map here, so if we look at a path and
+            // _don't_ find any commands, we need to be careful to _remove_ that entry from the map.
+            //
+            // Hey maybe this should just be a generic multimap structure, anyone ever think of that?
             if self.search_paths.path_to_module(path).is_err() {
                 if is_haskell_source_file(path) {
                     // If the path is a Haskell source file (ends with `.hs` or similar), we should
@@ -730,11 +735,16 @@ impl Ghci {
                 } else {
                     tracing::debug!(%path, "Could not determine module path, skipping parsing eval commands");
                 }
+                self.eval_commands.remove(path);
                 continue;
             }
 
             let commands = Self::parse_eval_commands(path).await?;
-            self.eval_commands.insert(path.clone(), commands);
+            if commands.is_empty() {
+                self.eval_commands.remove(path);
+            } else {
+                self.eval_commands.insert(path.clone(), commands);
+            }
         }
 
         Ok(())
