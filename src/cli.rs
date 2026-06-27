@@ -267,19 +267,10 @@ impl Opts {
             self.watch.paths.push(file.clone());
         } else if self.watch.paths.is_empty() {
             // these are the paths that `cabal <v2->init` suggests to the user
-            let default_watch_paths = [
-                "src",
-                "lib",
-                "src-lib",
-                "app",
-                "exe",
-                "src-exe",
-            ];
+            let default_watch_paths = ["src", "lib", "src-lib", "app", "exe", "src-exe"];
             let mut paths: Vec<_> = default_watch_paths
                 .iter()
-                .map(|path| NormalPath::from_cwd(path)
-                    .expect("invalid path specified at comptime")
-                )
+                .map(|path| NormalPath::from_cwd(path).expect("invalid path specified at comptime"))
                 .filter(|path| {
                     // this can't be done in the map call above since it returns a ref
                     let p = path.absolute();
@@ -296,14 +287,14 @@ impl Opts {
             //     self.watch.paths.push(path);
             //     i += 1;
             // });
-            // 
+            //
             // if i == 0 {
             //     <return error>
             // }
             //
             // However, I think that the thing that I've done is easier to read.
             // and no, I haven't tested the snippet above. it's just a thought.
-            if paths.len() == 0 {
+            if paths.is_empty() {
                 let tried_paths = default_watch_paths.join(", ");
 
                 return Err(eyre!("No directories to watch found (tried {tried_paths})"));
