@@ -5,6 +5,7 @@ use camino::Utf8PathBuf;
 use clap::builder::ValueParserFactory;
 use clap::Parser;
 use clap_complete::Shell;
+use eyre::eyre;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::clap::FmtSpanParserFactory;
@@ -265,7 +266,40 @@ impl Opts {
         if let Some(file) = &self.file {
             self.watch.paths.push(file.clone());
         } else if self.watch.paths.is_empty() {
-            self.watch.paths.push(NormalPath::from_cwd("src")?);
+            // these are the paths that `cabal <v2->init` suggests to the user
+            let default_watch_paths = ["src", "lib", "src-lib", "app", "exe", "src-exe"];
+            let mut paths: Vec<_> = default_watch_paths
+                .iter()
+                .map(|path| NormalPath::from_cwd(path).expect("invalid path specified at comptime"))
+                .filter(|path| {
+                    // this can't be done in the map call above since it returns a ref
+                    let p = path.absolute();
+                    p.is_dir() && p.exists()
+                })
+                .collect();
+
+            // NOTE: this can be somewhat optimized by doing something like this:
+            //
+            // <paths is not collected into a vector and remains an std::iter::Filter>
+            //
+            // let mut i: usize = 0;
+            // paths.for_each(|path| {
+            //     self.watch.paths.push(path);
+            //     i += 1;
+            // });
+            //
+            // if i == 0 {
+            //     <return error>
+            // }
+            //
+            // However, I think that the thing that I've done is easier to read.
+            // and no, I haven't tested the snippet above. it's just a thought.
+            if paths.is_empty() {
+                let tried_paths = default_watch_paths.join(", ");
+
+                return Err(eyre!("No directories to watch found (tried {tried_paths})"));
+            }
+            self.watch.paths.append(&mut paths);
         }
 
         // These help our libraries (particularly `color-eyre`) see these options.
