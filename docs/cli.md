@@ -9,7 +9,7 @@ when source files change.
 
 ## Examples
 
-Load `cabal v2-repl` and watch for changes in `src`:
+Load `cabal v2-repl` and watch for changes in `src`, `lib`, `src-lib`, `app`, `exe`, and `src-exe`:
 
     ghciwatch
 
