@@ -109,6 +109,27 @@ pub fn parse_show_paths(input: &str) -> eyre::Result<ShowPaths> {
 }
 
 fn show_paths(input: &mut &str) -> PResult<ShowPaths> {
+    let first_unit_show_paths = show_single_unit_paths.parse_next(input)?;
+    let other_unit_show_paths: Vec<ShowPaths> =
+        repeat(0.., show_single_unit_paths).parse_next(input)?;
+
+    // assume that working directory for first unit listed is good enough
+    let cwd = first_unit_show_paths.cwd;
+    let search_paths = first_unit_show_paths
+        .search_paths
+        .into_iter()
+        .chain(
+            other_unit_show_paths
+                .into_iter()
+                .flat_map(|show_paths| show_paths.search_paths),
+        )
+        .collect();
+
+    Ok(ShowPaths { cwd, search_paths })
+}
+
+fn show_single_unit_paths(input: &mut &str) -> PResult<ShowPaths> {
+    let _ = opt(("Unit ID: ", until_newline.map(Utf8PathBuf::from))).parse_next(input)?;
     let _ = "current working directory:".parse_next(input)?;
     let _ = space0.parse_next(input)?;
     let _ = newline.parse_next(input)?;
@@ -178,6 +199,46 @@ mod tests {
                       Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/src"),
                       Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen"),
                       Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/simple/dist-newstyle/build/aarch64-osx/ghc-9.0.2/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen"),
+                ],
+            }
+        );
+
+        assert_eq!(
+            show_paths
+                .parse(indoc!(
+                    "
+                    Unit ID: my-simple-package-0.1.0.0-inplace-test-dev
+                    current working directory:
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite
+                    module import search paths:
+                      test
+                      src
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/test-dev
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen
+                    Unit ID: my-simple-package-0.1.0.0-inplace-test-lib
+                    current working directory:
+                      /Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite
+                    module import search paths:
+                      test
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/test-lib
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/test-lib/autogen
+                      dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/global-autogen
+                    "
+                ))
+                .unwrap(),
+            ShowPaths {
+                cwd: Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite"),
+                search_paths: vec![
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/test"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/src"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/test-dev"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/test-dev/autogen"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-dev/build/global-autogen"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/test"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/test-lib"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/test-lib/autogen"),
+                      Utf8PathBuf::from("/Users/wiggles/ghciwatch/ghciwatch/tests/data/with-test-suite/dist-newstyle/build/x86_64-linux/ghc-9.14.1/my-simple-package-0.1.0.0/l/test-lib/build/global-autogen"),
                 ],
             }
         );
