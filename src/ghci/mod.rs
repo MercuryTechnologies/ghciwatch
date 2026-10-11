@@ -524,11 +524,21 @@ impl Ghci {
         }
 
         if !actions.needs_reload.is_empty() {
-            tracing::info!(
-                "Reloading ghci:\n{}",
-                format_bulleted_list(&actions.needs_reload)
-            );
-            self.stdin.reload(&mut self.stdout, &mut log).await?;
+            // `:add` and `:unadd` load all the targets, just like `:reload` (see `addModule` and
+            // `unAddModule` in GHC's `GHCi/UI.hs`), so another `:reload` would only repeat that
+            // load and print its errors again.
+            if actions.needs_add.is_empty() && actions.needs_remove.is_empty() {
+                tracing::info!(
+                    "Reloading ghci:\n{}",
+                    format_bulleted_list(&actions.needs_reload)
+                );
+                self.stdin.reload(&mut self.stdout, &mut log).await?;
+            } else {
+                tracing::info!(
+                    "Reloaded by the preceding `:add`/`:unadd`:\n{}",
+                    format_bulleted_list(&actions.needs_reload)
+                );
+            }
             self.refresh_eval_commands_for_paths(&actions.needs_reload)
                 .await?;
         }
