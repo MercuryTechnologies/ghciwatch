@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tracing::instrument;
 
+use crate::event_filter::reconcile_file_events;
 use crate::event_filter::FileEvent;
 use crate::ghci::CompilationLog;
 use crate::haskell_source_file::is_haskell_source_file;
@@ -45,6 +46,7 @@ impl WatcherEvent {
                 },
             ) => {
                 events.extend(other_events);
+                reconcile_file_events(events);
             }
         }
     }
