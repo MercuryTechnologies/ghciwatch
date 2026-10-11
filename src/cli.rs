@@ -22,6 +22,16 @@ pub enum ExperimentalFeature {
     Progress,
 }
 
+/// Which files' eval commands to run after a successful load; see `--eval-scope`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum EvalScope {
+    /// Run the eval commands in every loaded file
+    #[default]
+    All,
+    /// Only run the eval commands in changed files
+    Changed,
+}
+
 /// Ghciwatch loads a GHCi session for a Haskell project and reloads it
 /// when source files change.
 #[derive(Debug, Clone, Parser)]
@@ -60,6 +70,15 @@ pub struct Opts {
     /// and `<$ -}` and evaluates them after reloads.
     #[arg(long, alias = "allow-eval")]
     pub enable_eval: bool,
+
+    /// Which files' eval commands to run after a successful load (with `--enable-eval`).
+    ///
+    /// With `changed`, editing one file doesn't re-run the eval commands (like test suites) in
+    /// other files. Nothing is evaluated at startup; save or touch a file to run its eval
+    /// commands. Changes made while compilation is failing are remembered until a load succeeds,
+    /// even if `ghci` restarts in the meantime.
+    #[arg(long, value_enum, default_value_t = EvalScope::All)]
+    pub eval_scope: EvalScope,
 
     /// An extra directory for converting module paths to module names and vice versa, in
     /// addition to the module import search paths from GHCi's `:show paths` output.

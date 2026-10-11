@@ -711,6 +711,7 @@ dependencies = [
  "shell-words",
  "strip-ansi-escapes",
  "supports-color 2.1.0",
+ "tempfile",
  "test-harness",
  "tokio",
  "tokio-stream",

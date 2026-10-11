@@ -80,6 +80,7 @@ use loaded_module::LoadedModule;
 
 use crate::aho_corasick::AhoCorasickExt;
 use crate::buffers::LINE_BUFFER_CAPACITY;
+use crate::cli::EvalScope;
 use crate::cli::ExperimentalFeature;
 use crate::cli::Opts;
 use crate::clonable_command::ClonableCommand;
@@ -113,6 +114,8 @@ pub struct GhciOpts {
     pub error_path: Option<Utf8PathBuf>,
     /// Enable running eval commands in files.
     pub enable_eval: bool,
+    /// Which files' eval commands to run after a successful reload.
+    pub eval_scope: EvalScope,
     /// Extra directories to add to the module import search paths parsed from `:show paths`,
     /// used for converting module paths to module names and vice versa.
     pub extra_search_paths: Vec<Utf8PathBuf>,
@@ -201,6 +204,7 @@ impl GhciOpts {
                 command,
                 error_path: opts.error_file.clone(),
                 enable_eval: opts.enable_eval,
+                eval_scope: opts.eval_scope,
                 extra_search_paths: opts
                     .extra_module_search_paths
                     .iter()
@@ -275,6 +279,8 @@ pub struct Ghci {
     targets: ModuleSet,
     /// Eval commands, if `opts.enable_eval` is set.
     eval_commands: BTreeMap<NormalPath, Vec<EvalCommand>>,
+    /// With `--eval-scope changed`, files changed since their eval commands last ran.
+    pending_eval: BTreeSet<NormalPath>,
     /// Search paths / current working directory for this `ghci` session.
     search_paths: ShowPaths,
     /// Tasks running `async:` shell commands in the background.
@@ -409,6 +415,7 @@ impl Ghci {
             classifier,
             targets: Default::default(),
             eval_commands: Default::default(),
+            pending_eval: Default::default(),
             search_paths: ShowPaths {
                 cwd: crate::current_dir_utf8()?,
                 search_paths: extra_search_paths,
@@ -469,6 +476,33 @@ impl Ghci {
         self.classifier.classify(events, &self.targets)
     }
 
+    /// With `--eval-scope changed`, remember changed files so their eval commands run after the
+    /// next successful load. Paths without eval commands (like a `.cabal` file that triggers a
+    /// restart) are forgotten then.
+    fn record_pending_eval(&mut self, actions: &ReloadActions) {
+        if self.opts.eval_scope == EvalScope::Changed {
+            self.pending_eval.extend(
+                actions
+                    .needs_add
+                    .iter()
+                    .chain(&actions.needs_reload)
+                    .chain(&actions.needs_restart)
+                    .cloned(),
+            );
+        }
+    }
+
+    /// Remember file changes that trigger a restart without going through [`Self::reload`]
+    /// (after `ghci` exits unexpectedly), so `--eval-scope changed` still runs their eval
+    /// commands.
+    pub fn record_changed_files(&mut self, events: BTreeSet<FileEvent>) -> eyre::Result<()> {
+        if self.opts.eval_scope == EvalScope::Changed {
+            let actions = self.get_reload_actions(events)?;
+            self.record_pending_eval(&actions);
+        }
+        Ok(())
+    }
+
     /// Reload this `ghci` session to include the given modified and removed paths.
     ///
     /// This may fully restart the `ghci` process.
@@ -484,6 +518,9 @@ impl Ghci {
         let start_instant = Instant::now();
         let actions = self.get_reload_actions(events)?;
         let _ = kind_sender.send(actions.kind());
+
+        // Before a possible restart, which carries pending changes into the new session.
+        self.record_pending_eval(&actions);
 
         if actions.needs_restart() {
             self.opts.clear();
@@ -524,11 +561,21 @@ impl Ghci {
         }
 
         if !actions.needs_reload.is_empty() {
-            tracing::info!(
-                "Reloading ghci:\n{}",
-                format_bulleted_list(&actions.needs_reload)
-            );
-            self.stdin.reload(&mut self.stdout, &mut log).await?;
+            // `:add` and `:unadd` load all the targets, just like `:reload` (see `addModule` and
+            // `unAddModule` in GHC's `GHCi/UI.hs`), so another `:reload` would only repeat that
+            // load and print its errors again.
+            if actions.needs_add.is_empty() && actions.needs_remove.is_empty() {
+                tracing::info!(
+                    "Reloading ghci:\n{}",
+                    format_bulleted_list(&actions.needs_reload)
+                );
+                self.stdin.reload(&mut self.stdout, &mut log).await?;
+            } else {
+                tracing::info!(
+                    "Reloaded by the preceding `:add`/`:unadd`:\n{}",
+                    format_bulleted_list(&actions.needs_reload)
+                );
+            }
             self.refresh_eval_commands_for_paths(&actions.needs_reload)
                 .await?;
         }
@@ -588,6 +635,9 @@ impl Ghci {
         log: &mut CompilationLog,
         events: [LifecycleEvent; N],
     ) -> eyre::Result<()> {
+        // Changed files whose eval commands haven't run yet still need them to. (Cloned rather
+        // than taken so they aren't lost if stopping or starting `ghci` fails.)
+        let pending_eval = self.pending_eval.clone();
         self.stop().await?;
         let new = Self::new(
             self.shutdown.clone(),
@@ -596,6 +646,7 @@ impl Ghci {
         )
         .await?;
         let _ = std::mem::replace(self, new);
+        self.pending_eval = pending_eval;
         self.initialize(log, events).await?;
 
         Ok(())
@@ -615,12 +666,28 @@ impl Ghci {
             return Ok(());
         }
 
+        // With `--eval-scope changed`, only run the eval commands in changed files. A file stays
+        // pending until its commands have run, in case this future is dropped partway through
+        // (when a reload is interrupted).
+        let in_scope = match self.opts.eval_scope {
+            EvalScope::All => None,
+            EvalScope::Changed => Some(self.pending_eval.clone()),
+        };
+
         // TODO: This `clone` is ugly but I can't get the borrow checker to accept it otherwise.
         // Might be more efficient to swap it out for a default, but then it gets trickier to
         // restore the old value when the function returns.
         for (path, commands) in self.eval_commands.clone() {
             // If we don't have any eval commands for this path, do nothing.
             if commands.is_empty() {
+                continue;
+            }
+
+            if in_scope
+                .as_ref()
+                .is_some_and(|in_scope| !in_scope.contains(&path))
+            {
+                tracing::debug!(%path, "Unchanged since its eval commands last ran, skipping");
                 continue;
             }
 
@@ -648,6 +715,12 @@ impl Ghci {
             self.stdin
                 .remove_module_from_scope(&mut self.stdout, &module, log)
                 .await?;
+            self.pending_eval.remove(&path);
+        }
+
+        if let Some(in_scope) = in_scope {
+            // Changed files without eval commands are done, too.
+            self.pending_eval.retain(|path| !in_scope.contains(path));
         }
 
         Ok(())
@@ -902,6 +975,7 @@ impl Ghci {
 
         for path in paths {
             self.targets.remove_source_path(path);
+            self.pending_eval.remove(path);
         }
 
         self.clear_eval_commands_for_paths(paths).await;

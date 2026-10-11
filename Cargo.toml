@@ -85,6 +85,7 @@ test-harness = { path = "test-harness" }
 expect-test = "1.4.0"
 pretty_assertions = "1.2.1"
 regex = "1.9.3"
+tempfile = "3.8.0"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 
 [lib]
