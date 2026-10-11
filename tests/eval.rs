@@ -314,3 +314,143 @@ async fn eval_can_handle_non_haskell_files() {
         .await
         .expect("ghciwatch handles non-Haskell files in eval mode");
 }
+
+/// Test that `--eval-scope changed` only runs the eval commands in changed files.
+#[test]
+async fn eval_scope_changed_only_runs_changed_files() {
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_args(["--enable-eval", "--eval-scope", "changed"])
+        .before_start(|path| async move {
+            let fs = Fs::new();
+            fs.replace(
+                path.join("my-simple-package.cabal"),
+                "exposed-modules: MyLib",
+                "exposed-modules: MyLib, MyAux",
+            )
+            .await?;
+            fs.write(
+                path.join("src/MyAux.hs"),
+                indoc!(
+                    "
+                    module MyAux (aux) where
+
+                    aux :: String
+                    aux = \"aux\"
+
+                    -- $> aux ++ aux
+                    "
+                ),
+            )
+            .await?;
+            fs.append(path.join("src/MyLib.hs"), "\n-- $> example ++ example\n")
+                .await
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let lib_path = session.path("src/MyLib.hs");
+    let aux_path = session.path("src/MyAux.hs");
+
+    let lib_eval = BaseMatcher::message("Read line").with_field("line", "exampleexample");
+    let aux_eval = BaseMatcher::message("Read line").with_field("line", "auxaux");
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch didn't start in time");
+    session
+        .assert_logged_or_wait(
+            BaseMatcher::span_close()
+                .in_leaf_spans(["run_ghci", "initialize"])
+                .but_not(lib_eval.clone())
+                .but_not(aux_eval.clone()),
+        )
+        .await
+        .expect("ghciwatch doesn't eval commands at startup");
+
+    session.clear_events();
+    session.fs().touch(&lib_path).await.unwrap();
+    session
+        .wait_for_log(
+            lib_eval
+                .clone()
+                .and(BaseMatcher::reload_completes())
+                .but_not(aux_eval.clone()),
+        )
+        .await
+        .expect("ghciwatch only evals commands in the changed file");
+
+    session.clear_events();
+    session.fs().touch(&aux_path).await.unwrap();
+    session
+        .wait_for_log(
+            aux_eval
+                .and(BaseMatcher::reload_completes())
+                .but_not(lib_eval),
+        )
+        .await
+        .expect("ghciwatch only evals commands in the changed file");
+}
+
+/// Test that with `--eval-scope changed`, a file changed during a failed reload has its eval
+/// commands run when a restart fixes the build.
+#[test]
+async fn eval_scope_changed_keeps_pending_evals_across_restart() {
+    let module_path = "src/MyLib.hs";
+    let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_args(["--enable-eval", "--eval-scope", "changed"])
+        .before_start(move |path| async move {
+            Fs::new()
+                .append(path.join(module_path), "\n-- $> example ++ example\n")
+                .await
+        })
+        .start()
+        .await
+        .expect("ghciwatch starts");
+    let module_path = session.path(module_path);
+    let cabal_path = session.path("my-simple-package.cabal");
+
+    session
+        .wait_until_ready()
+        .await
+        .expect("ghciwatch didn't start in time");
+
+    // Use `LambdaCase` without enabling it, so the reload fails.
+    session
+        .fs()
+        .replace(
+            &module_path,
+            "example = \"example\"",
+            "example = (\\case () -> \"example\") ()",
+        )
+        .await
+        .unwrap();
+    session
+        .wait_for_log(BaseMatcher::compilation_failed())
+        .await
+        .unwrap();
+
+    // Enabling `LambdaCase` in the `.cabal` file restarts the session and fixes the build
+    // without changing `MyLib` again.
+    session
+        .fs()
+        .replace(
+            &cabal_path,
+            "default-language: Haskell2010",
+            "default-language: Haskell2010\n  default-extensions: LambdaCase",
+        )
+        .await
+        .unwrap();
+    session
+        .wait_until_restart()
+        .await
+        .expect("ghciwatch restarts");
+    // Nothing is evaluated at startup with `--eval-scope changed`, so this can only be the
+    // pending eval.
+    session
+        .wait_for_startup_log(
+            BaseMatcher::message("Read line").with_field("line", "exampleexample"),
+        )
+        .await
+        .expect("ghciwatch evals pending commands after the restart");
+}

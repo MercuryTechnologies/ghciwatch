@@ -47,6 +47,21 @@ spec = do
 [test.hspec]: https://hackage.haskell.org/package/hspec/docs/Test-Hspec.html
 [spec]: https://hackage.haskell.org/package/hspec/docs/Test-Hspec.html#t:Spec
 
+## Only evaluating changed files
+
+By default, ghciwatch runs the eval comments in every loaded module after every
+successful load. With eval comments in several test modules, every edit re-runs
+all of those tests, even the ones unrelated to the change.
+
+With [`--eval-scope changed`](cli.md#--eval-scope), ghciwatch only runs the
+eval comments in files you change (or touch) while it's running:
+
+- Nothing is evaluated at startup. Save a file to run its eval comments.
+- If a file changes while compilation is failing, its eval comments run after
+  the next successful load, even if ghciwatch restarts GHCi in the meantime.
+- If a change interrupts a reload, the retried reload runs the eval comments
+  for the interrupted reload's changes again, along with the new change's.
+
 ## Grammar
 
 Single-line eval comments have the following grammar:

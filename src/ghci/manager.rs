@@ -269,6 +269,9 @@ impl GhciManager {
     /// `Interrupted` for retry.
     async fn handle_event(&mut self, mut event: WatcherEvent) -> eyre::Result<HandleResult> {
         let (reload_sender, reload_receiver) = oneshot::channel();
+        let WatcherEvent::Reload {
+            events: dispatched_events,
+        } = event.clone();
         let mut task = Box::pin(tokio::task::spawn(dispatch(
             self.ghci.clone(),
             event.clone(),
@@ -418,6 +421,11 @@ impl GhciManager {
 
         // If ghci died during the dispatch, wait for a file change and restart.
         if let Some(status) = ghci_exited {
+            // `ghci` may have died before the reload recorded these changes.
+            self.ghci
+                .lock()
+                .await
+                .record_changed_files(dispatched_events)?;
             match self.wait_and_restart_runtime(status).await? {
                 RetryResult::Restarted => {}
                 RetryResult::Shutdown => return Ok(HandleResult::Shutdown),
@@ -483,21 +491,23 @@ fn is_relevant(event: &WatcherEvent, classifier: &FileClassifier) -> eyre::Resul
         .any(|e| matches!(e, FileEvent::Remove(_)) && is_haskell_source_file(e.as_path())))
 }
 
-/// Drain all pending events from the receiver, merge them, classify, and return the kind.
-/// Returns `None` when the combined events are irrelevant ([`GhciReloadKind::None`]).
+/// Drain all pending events from the receiver, merge them, and classify them.
+/// Returns the merged events, or `None` when they're irrelevant ([`GhciReloadKind::None`]).
 fn drain_and_classify(
     initial: WatcherEvent,
     watcher_receiver: &mut mpsc::Receiver<WatcherEvent>,
     classifier: &FileClassifier,
-) -> eyre::Result<Option<GhciReloadKind>> {
+) -> eyre::Result<Option<BTreeSet<FileEvent>>> {
     let mut event = initial;
     drain_pending(&mut event, watcher_receiver);
     let WatcherEvent::Reload { events } = event;
-    let kind = classifier.classify(events, &ModuleSet::default())?.kind();
+    let kind = classifier
+        .classify(events.clone(), &ModuleSet::default())?
+        .kind();
     if matches!(kind, GhciReloadKind::None) {
         Ok(None)
     } else {
-        Ok(Some(kind))
+        Ok(Some(events))
     }
 }
 
@@ -522,6 +532,14 @@ impl RestartStrategy<'_> {
         match self {
             Self::Startup(_) => "during startup",
             Self::Runtime(_) => "unexpectedly",
+        }
+    }
+
+    /// Remember the file changes that trigger a restart; see [`Ghci::record_changed_files`].
+    async fn record_changed_files(&mut self, changed: BTreeSet<FileEvent>) -> eyre::Result<()> {
+        match self {
+            Self::Startup(ghci) => ghci.record_changed_files(changed),
+            Self::Runtime(ghci) => ghci.lock().await.record_changed_files(changed),
         }
     }
 
@@ -574,7 +592,7 @@ async fn wait_and_restart(
         // Wait for a watcher event to use as a restart trigger. We handle both the shutdown
         // signal and the channel closing (which also indicates shutdown, since the sender is
         // exclusively owned by `run_watcher` and it only exits on shutdown).
-        tokio::select! {
+        let changed = tokio::select! {
             _ = handle.on_shutdown_requested() => {
                 // ghci is already dead; nothing to stop.
                 return Ok(RetryResult::Shutdown);
@@ -585,12 +603,17 @@ async fn wait_and_restart(
                     tracing::debug!("Watcher event channel closed; shutting down");
                     return Ok(RetryResult::Shutdown);
                 };
-                if drain_and_classify(event, watcher_receiver, classifier)?.is_none() {
-                    tracing::debug!("File change not relevant to ghci; continuing to wait");
-                    continue;
+                match drain_and_classify(event, watcher_receiver, classifier)? {
+                    Some(changed) => changed,
+                    None => {
+                        tracing::debug!("File change not relevant to ghci; continuing to wait");
+                        continue;
+                    }
                 }
             }
-        }
+        };
+        // Before the race below, so the changes aren't lost if `ghci` exits again first.
+        strategy.record_changed_files(changed).await?;
         tracing::debug!("Restarting ghci");
         // Race the restart attempt against the exit channel. If ghci dies mid-restart,
         // the death usually surfaces inside `restart()` itself: its stdout EOFs (which

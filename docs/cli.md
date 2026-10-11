@@ -78,6 +78,22 @@ Evaluate Haskell code in comments.
 This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>` and `<$ -}` and evaluates them after reloads.
 
 </dd>
+<dt><a id="--eval-scope" href="#--eval-scope"><code>--eval-scope &lt;EVAL_SCOPE&gt;</code></a></dt><dd>
+
+Which files' eval commands to run after a successful load (with `--enable-eval`).
+
+With `changed`, editing one file doesn't re-run the eval commands (like test suites) in other files. Nothing is evaluated at startup; save or touch a file to run its eval commands. Changes made while compilation is failing are remembered until a load succeeds, even if `ghci` restarts in the meantime.
+
+  Default value: `all`
+
+  Possible values:
+  - `all`:
+    Run the eval commands in every loaded file
+  - `changed`:
+    Only run the eval commands in changed files
+
+
+</dd>
 <dt><a id="--extra-module-search-path" href="#--extra-module-search-path"><code>--extra-module-search-path &lt;PATH&gt;</code></a></dt><dd>
 
 An extra directory for converting module paths to module names and vice versa, in addition to the module import search paths from GHCi's `:show paths` output.
